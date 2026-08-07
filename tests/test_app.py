@@ -20,7 +20,7 @@ class FakeGenerator:
 
 
 def test_generate_returns_jpeg_binary() -> None:
-    app = create_app(Settings(output_width=20, output_height=10), FakeGenerator())
+    app = create_app(Settings(output_width=20, output_height=10), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
         response = client.post("/generate", json={"prompt": "a tiny robot"})
 
@@ -30,7 +30,7 @@ def test_generate_returns_jpeg_binary() -> None:
 
 
 def test_generate_uses_requested_esp32_image_size() -> None:
-    app = create_app(Settings(), FakeGenerator())
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
         response = client.post("/generate", json={"prompt": "a tiny robot", "width": 320, "height": 240})
 
@@ -38,8 +38,21 @@ def test_generate_uses_requested_esp32_image_size() -> None:
     assert Image.open(BytesIO(response.content)).size == (320, 240)
 
 
+def test_latest_image_is_available_to_esp32_displays() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        generated = client.post("/generate", json={"prompt": "a tiny robot"})
+        latest = client.get("/latest.jpg")
+        unchanged = client.get("/latest.jpg", headers={"If-None-Match": latest.headers["etag"]})
+
+    assert latest.status_code == 200
+    assert latest.content == generated.content
+    assert latest.headers["content-type"] == "image/jpeg"
+    assert unchanged.status_code == 304
+
+
 def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
-    app = create_app(Settings(model_id="stabilityai/sd-turbo"), FakeGenerator())
+    app = create_app(Settings(model_id="stabilityai/sd-turbo"), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
         response = client.get("/server-info")
 
@@ -49,7 +62,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
 
 
 def test_browser_test_page_is_available() -> None:
-    app = create_app(Settings(), FakeGenerator())
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
         response = client.get("/")
 
@@ -59,7 +72,7 @@ def test_browser_test_page_is_available() -> None:
 
 
 def test_welcome_hero_is_available() -> None:
-    app = create_app(Settings(), FakeGenerator())
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
         response = client.get("/assets/welcome-hero-horizontal.png")
 
@@ -68,7 +81,7 @@ def test_welcome_hero_is_available() -> None:
 
 
 def test_esp32_can_pair_retrieve_and_acknowledge_an_image() -> None:
-    app = create_app(Settings(), FakeGenerator())
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     jpeg = b"\xff\xd8test jpeg\xff\xd9"
     with TestClient(app) as client:
         pairing = client.post("/pairing-codes")
@@ -106,7 +119,7 @@ def test_esp32_can_pair_retrieve_and_acknowledge_an_image() -> None:
 
 
 def test_device_registration_rejects_an_invalid_pairing_code() -> None:
-    app = create_app(Settings(), FakeGenerator())
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
         response = client.post(
             "/devices/register", json={"pairing_code": "000000", "name": "Test display"}

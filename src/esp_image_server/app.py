@@ -21,6 +21,8 @@ from .config import Settings
 from .devices import DeviceError, DeviceManager
 from .generator import DiffusersGenerator
 from .image_processor import to_jpeg
+from .latest_image import LatestImageStore
+from .mdns import MdnsAdvertiser
 from .test_page import TEST_PAGE_HTML
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -55,13 +57,23 @@ def create_app(
     settings: Settings | None = None,
     generator: ImageGenerator | None = None,
     device_manager: DeviceManager | None = None,
+    latest_image_store: LatestImageStore | None = None,
+    enable_mdns: bool = True,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     generator = generator or DiffusersGenerator(settings)
     device_manager = device_manager or DeviceManager()
+    latest_image_store = latest_image_store or LatestImageStore()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        mdns = MdnsAdvertiser(settings.port) if enable_mdns else None
+        if mdns is not None:
+            try:
+                mdns.start()
+                logger.info("Local network address: http://espimageserver.local:%s/", settings.port)
+            except Exception:
+                logger.exception("Could not advertise espimageserver.local")
         logger.info("Browser test page: http://127.0.0.1:%s/", settings.port)
         if settings.host in {"0.0.0.0", "::"}:
             logger.info(
@@ -75,10 +87,15 @@ def create_app(
         logger.info("Image model is ready; device=%s", generator.device)
         if os.getenv("ESP_IMAGE_OPEN_BROWSER") == "1":
             Timer(0.5, lambda: webbrowser.open_new_tab(f"http://127.0.0.1:{settings.port}/")).start()
-        yield
+        try:
+            yield
+        finally:
+            if mdns is not None:
+                mdns.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.10", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.11", lifespan=lifespan)
     app.state.device_manager = device_manager
+    app.state.latest_image_store = latest_image_store
     app.mount(
         "/assets",
         StaticFiles(directory=Path(__file__).with_name("static")),
@@ -126,6 +143,20 @@ def create_app(
     @app.get("/devices")
     def list_devices() -> list[dict[str, object]]:
         return device_manager.list_devices()
+
+    @app.get("/latest.jpg", response_class=Response)
+    def latest_image(if_none_match: str | None = Header(default=None)) -> Response:
+        image = latest_image_store.get()
+        if image is None:
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        etag = f'"{image.image_id}"'
+        if if_none_match == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+        return Response(
+            content=image.jpeg,
+            media_type="image/jpeg",
+            headers={"ETag": etag, "Cache-Control": "no-cache"},
+        )
 
     @app.post("/pairing-codes", status_code=status.HTTP_201_CREATED)
     def create_pairing_code() -> dict[str, object]:
@@ -207,6 +238,7 @@ def create_app(
                 height=output_height,
                 quality=settings.jpeg_quality,
             )
+            latest_image_store.set(jpeg)
         except Exception:
             logger.exception("Image generation failed")
             raise HTTPException(status_code=500, detail="Image generation failed") from None

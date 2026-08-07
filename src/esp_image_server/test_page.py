@@ -15,10 +15,10 @@ TEST_PAGE_HTML = """<!doctype html>
     .brand { display: flex; align-items: center; gap: 16px; }
     .brand img { width: 70px; height: 70px; object-fit: contain; filter: drop-shadow(0 0 14px #38bdf880); }
     h1 { margin: 0 0 6px; } p { color: #cbd5e1; }
-    form, .result, .devices { background: #1f2937; border: 1px solid #374151; border-radius: 14px; padding: 18px; margin-top: 18px; }
-    textarea, select, input { width: 100%; box-sizing: border-box; min-height: 40px; resize: vertical; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: inherit; font: inherit; }
+    form, .result, .delivery { background: #1f2937; border: 1px solid #374151; border-radius: 14px; padding: 18px; margin-top: 18px; }
+    textarea, input { width: 100%; box-sizing: border-box; min-height: 40px; resize: vertical; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: inherit; font: inherit; }
     button, .download { margin-top: 12px; padding: 10px 16px; border: 0; border-radius: 8px; background: #38bdf8; color: #082f49; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-block; }
-    button:disabled { opacity: .6; cursor: wait; } #status, #device-status, #pairing-code { min-height: 1.4em; } #image { display: none; width: 100%; margin-top: 14px; border-radius: 8px; } .download { display: none; background: #a7f3d0; color: #064e3b; } .devices h2 { margin: 0 0 8px; font-size: 1.1rem; } .device-actions { display: flex; gap: 10px; align-items: center; } .device-actions button { margin-top: 0; } .dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; } .dimensions label { font-size: .9rem; } .dimensions small { grid-column: 1 / -1; color: #cbd5e1; } .online { color: #86efac; } .offline { color: #fbbf24; }
+    button:disabled { opacity: .6; cursor: wait; } #status { min-height: 1.4em; } #image { display: none; width: 100%; margin-top: 14px; border-radius: 8px; } .download { display: none; background: #a7f3d0; color: #064e3b; } .delivery h2 { margin: 0 0 8px; font-size: 1.1rem; } .dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; } .dimensions label { font-size: .9rem; } .dimensions small { grid-column: 1 / -1; color: #cbd5e1; }
   </style>
 </head>
 <body>
@@ -28,20 +28,11 @@ TEST_PAGE_HTML = """<!doctype html>
     </section>
     <div class="brand">
       <img src="/assets/test-page-logo.png" alt="ESPImageServer logo">
-      <div><h1>Generate a test image</h1>
-    <p id="health">Checking server status…</p>
-      </div>
+      <div><h1>Generate a test image</h1><p id="health">Checking server status...</p></div>
     </div>
-    <section class="devices">
+    <section class="delivery">
       <h2>ESP32 display</h2>
-      <label for="device">Send generated images to</label>
-      <select id="device"><option value="">No paired displays found</option></select>
-      <div class="device-actions">
-        <button id="refresh-devices" type="button">Refresh displays</button>
-        <button id="create-pairing" type="button">Pair a new ESP32</button>
-      </div>
-      <p id="pairing-code" role="status"></p>
-      <p id="device-status" role="status"></p>
+      <p>Every image you generate becomes the latest image. ESP32 displays on your local network pick it up automatically.</p>
     </section>
     <form id="generate-form">
       <label for="prompt">Describe an image</label>
@@ -57,7 +48,6 @@ TEST_PAGE_HTML = """<!doctype html>
     <section class="result" id="result" hidden>
       <img id="image" alt="Generated image">
       <a id="download" class="download" download="esp-image.jpg">Download JPEG</a>
-      <button id="send-to-display" type="button" disabled>Send to display</button>
     </section>
   </main>
   <script>
@@ -71,14 +61,7 @@ TEST_PAGE_HTML = """<!doctype html>
     const download = document.getElementById('download');
     const width = document.getElementById('width');
     const height = document.getElementById('height');
-    const deviceSelect = document.getElementById('device');
-    const refreshDevices = document.getElementById('refresh-devices');
-    const createPairing = document.getElementById('create-pairing');
-    const pairingCode = document.getElementById('pairing-code');
-    const deviceStatus = document.getElementById('device-status');
-    const sendToDisplay = document.getElementById('send-to-display');
     let currentUrl;
-    let currentImage;
 
     function escapeHtml(value) {
       const element = document.createElement('span');
@@ -93,63 +76,10 @@ TEST_PAGE_HTML = """<!doctype html>
       health.innerHTML = `<strong>AI model: ${escapeHtml(data.model_name)}</strong><br>${escapeHtml(data.model_description)}<br>${escapeHtml(data.processing)}`;
     }).catch(() => health.textContent = 'Image generator information is unavailable.');
 
-    async function loadDevices() {
-      try {
-        const devices = await fetch('/devices').then(response => response.json());
-        const selected = deviceSelect.value;
-        deviceSelect.innerHTML = devices.length
-          ? devices.map(device => `<option value="${device.id}">${escapeHtml(device.name)} — ${device.online ? 'online' : 'offline'} (${device.queued_images} queued)</option>`).join('')
-          : '<option value="">No paired displays found</option>';
-        if ([...deviceSelect.options].some(option => option.value === selected)) deviceSelect.value = selected;
-        deviceStatus.innerHTML = devices.length
-          ? `${devices.length} paired display${devices.length === 1 ? '' : 's'} found.`
-          : 'Pair an ESP32 to send images directly to its screen.';
-      } catch {
-        deviceStatus.textContent = 'Could not load paired displays.';
-      }
-    }
-
-    refreshDevices.addEventListener('click', loadDevices);
-    createPairing.addEventListener('click', async () => {
-      createPairing.disabled = true;
-      try {
-        const pairing = await fetch('/pairing-codes', {method: 'POST'}).then(async response => {
-          if (!response.ok) throw new Error('Could not create a pairing code');
-          return response.json();
-        });
-        pairingCode.innerHTML = `Enter pairing code <strong>${pairing.code}</strong> on the ESP32 within ${Math.floor(pairing.expires_in_seconds / 60)} minutes.`;
-      } catch (error) {
-        pairingCode.textContent = error.message;
-      } finally {
-        createPairing.disabled = false;
-      }
-    });
-
-    sendToDisplay.addEventListener('click', async () => {
-      if (!currentImage || !deviceSelect.value) return;
-      sendToDisplay.disabled = true;
-      deviceStatus.textContent = 'Queueing image for the display...';
-      try {
-        const response = await fetch(`/devices/${deviceSelect.value}/images`, {
-          method: 'POST', headers: {'Content-Type': 'image/jpeg'}, body: currentImage
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Could not queue image');
-        deviceStatus.textContent = `Queued for ${data.device}. The ESP32 will retrieve it shortly.`;
-        loadDevices();
-      } catch (error) {
-        deviceStatus.textContent = error.message;
-      } finally {
-        sendToDisplay.disabled = false;
-      }
-    });
-
-    loadDevices();
-
     form.addEventListener('submit', async event => {
       event.preventDefault();
       submit.disabled = true;
-      status.textContent = 'Generating image… this can take a little while.';
+      status.textContent = 'Generating image... this can take a little while.';
       try {
         const response = await fetch('/generate', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -160,15 +90,13 @@ TEST_PAGE_HTML = """<!doctype html>
           throw new Error(error.detail || `Request failed (${response.status})`);
         }
         if (currentUrl) URL.revokeObjectURL(currentUrl);
-        currentImage = await response.blob();
-        currentUrl = URL.createObjectURL(currentImage);
+        currentUrl = URL.createObjectURL(await response.blob());
         image.src = currentUrl;
         image.style.display = 'block';
         download.href = currentUrl;
         download.style.display = 'inline-block';
-        sendToDisplay.disabled = !deviceSelect.value;
         result.hidden = false;
-        status.textContent = 'Image ready. This is the same JPEG returned to an ESP32.';
+        status.textContent = 'Image ready. Your ESP32 display will pick it up shortly.';
       } catch (error) {
         status.textContent = `Could not generate the image: ${error.message}`;
       } finally {

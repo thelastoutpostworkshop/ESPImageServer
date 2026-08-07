@@ -52,7 +52,7 @@ python -m esp_image_server
 
 Startup logs show the listening address and selected device. The first run downloads the model; later starts use the local Hugging Face cache. Open `http://localhost:8000/docs` for the interactive API documentation.
 
-Open `http://127.0.0.1:8000/` for the browser test page. `0.0.0.0` in Uvicorn's startup message is a network bind address, not a browser URL. It lets ESP32 devices on the LAN reach the server; use this computer's LAN IP address for the ESP32 request.
+Open `http://127.0.0.1:8000/` for the browser test page. `0.0.0.0` in Uvicorn's startup message is a network bind address, not a browser URL. The server also advertises itself on the local network as `espimageserver.local`, so ESP32 devices can use that stable name instead of a changing LAN IP address.
 
 The Start Menu and desktop launchers open this test page automatically after the server is ready. To do the same from another launcher, set `ESP_IMAGE_OPEN_BROWSER=1` before starting the server.
 
@@ -65,18 +65,15 @@ Invoke-WebRequest -Uri http://localhost:8000/generate -Method POST -ContentType 
 
 The response is `Content-Type: image/jpeg` and can be written directly by an ESP32 HTTP client to a decoder or file. `GET /health` reports whether the model is ready and the selected device.
 
-## Send to an ESP32 display
+## Show images on an ESP32 display
 
-The browser test page can pair and send images to ESP32 displays. Click **Pair a new ESP32**, then have the device register with the one-time code it shows. Pairings and queues live only in memory for now, so restart the server to clear them.
+Each generated image automatically becomes the current display image. An ESP32 on the same local network polls:
 
-The ESP32 keeps its returned `id` and `token`, then uses the server computer's LAN IP address:
+```text
+http://espimageserver.local:8000/latest.jpg
+```
 
-1. `POST /devices/register` with `{"pairing_code":"123456","name":"Kitchen display"}` returns the device `id` and secret `token`.
-2. Send `POST /devices/{id}/heartbeat` with header `X-ESPImage-Token: <token>` periodically.
-3. Call `GET /devices/{id}/next-image?wait_seconds=25` with the same header. It waits for an image, then returns JPEG bytes and header `X-ESPImage-Image-ID`.
-4. After the screen successfully displays it, call `POST /devices/{id}/ack` with `{"image_id":"<header value>"}` and the token header.
-
-The server retains an image until it receives the acknowledgement, so the ESP32 can safely retry after a Wi-Fi interruption.
+The endpoint returns `204` until an image has been generated. It supplies an `ETag` with each JPEG; the ESP32 sends that value back as `If-None-Match` and receives `304` when nothing has changed. This keeps setup to Wi-Fi credentials only and avoids repeatedly downloading the same image.
 
 ## Configuration
 
