@@ -56,8 +56,17 @@ try {
     & $venvPython -m pip install --upgrade pip
     if ($LASTEXITCODE -ne 0) { throw 'Unable to update pip.' }
 
-    $torchOutput = & $venvPython -c "import torch; print(torch.version.cuda or '')" 2>$null
-    $torchAvailable = $LASTEXITCODE -eq 0
+    # A new environment correctly returns a non-zero status here because torch is
+    # not installed yet. Do not let PowerShell turn that expected probe into a
+    # terminating error before the install branch below can run.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $torchOutput = & $venvPython -c "import torch; print(torch.version.cuda or '')" 2>$null
+        $torchAvailable = $LASTEXITCODE -eq 0
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $installedCuda = ($torchOutput | Out-String).Trim()
     $hasCuda = [bool]$installedCuda
     if ($UseCuda -and -not $hasCuda) {
@@ -88,6 +97,9 @@ set "ESP_IMAGE_GENERATION_HEIGHT=$GenerationHeight"
     Write-Host "Downloading the selected image model: $ModelId"
     & $venvPython -c "from esp_image_server.config import Settings; from esp_image_server.generator import DiffusersGenerator; g = DiffusersGenerator(Settings.from_env()); g.load()"
     if ($LASTEXITCODE -ne 0) { throw 'Unable to download the selected image model.' }
+} catch {
+    Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
 } finally {
     Stop-Transcript | Out-Null
 }
