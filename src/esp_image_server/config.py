@@ -13,6 +13,13 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
     return value
 
 
+def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    value = float(os.getenv(name, str(default)))
+    if value < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     model_id: str = "stabilityai/sd-turbo"
@@ -21,6 +28,8 @@ class Settings:
     generation_width: int = 512
     generation_height: int = 512
     jpeg_quality: int = 85
+    inference_steps: int = 1
+    guidance_scale: float = 0.0
     host: str = "0.0.0.0"
     port: int = 8000
 
@@ -40,6 +49,8 @@ class Settings:
             generation_width=generation_width,
             generation_height=generation_height,
             jpeg_quality=quality,
+            inference_steps=_env_int("ESP_IMAGE_INFERENCE_STEPS", 1),
+            guidance_scale=_env_float("ESP_IMAGE_GUIDANCE_SCALE", 0.0),
             host=os.getenv("ESP_IMAGE_HOST", cls.host),
             port=_env_int("ESP_IMAGE_PORT", 8000),
         )

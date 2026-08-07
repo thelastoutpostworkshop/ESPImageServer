@@ -1,7 +1,16 @@
 [CmdletBinding()]
 param(
     [switch]$UseCuda,
-    [switch]$DownloadModel
+    [Parameter(Mandatory = $true)]
+    [string]$ModelId,
+    [Parameter(Mandatory = $true)]
+    [int]$InferenceSteps,
+    [Parameter(Mandatory = $true)]
+    [double]$GuidanceScale,
+    [Parameter(Mandatory = $true)]
+    [int]$GenerationWidth,
+    [Parameter(Mandatory = $true)]
+    [int]$GenerationHeight
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,11 +75,19 @@ try {
     & $venvPython -m pip install --editable $projectRoot
     if ($LASTEXITCODE -ne 0) { throw 'Unable to install ESPImageServer dependencies.' }
 
-    if ($DownloadModel) {
-        Write-Host 'Downloading the image model...'
-        & $venvPython -c "from esp_image_server.config import Settings; from esp_image_server.generator import DiffusersGenerator; g = DiffusersGenerator(Settings.from_env()); g.load()"
-        if ($LASTEXITCODE -ne 0) { throw 'Unable to download the image model.' }
-    }
+    $settingsFile = Join-Path $projectRoot 'server_settings.bat'
+    @"
+@echo off
+set "ESP_IMAGE_MODEL=$ModelId"
+set "ESP_IMAGE_INFERENCE_STEPS=$InferenceSteps"
+set "ESP_IMAGE_GUIDANCE_SCALE=$GuidanceScale"
+set "ESP_IMAGE_GENERATION_WIDTH=$GenerationWidth"
+set "ESP_IMAGE_GENERATION_HEIGHT=$GenerationHeight"
+"@ | Set-Content -Path $settingsFile -Encoding ascii
+
+    Write-Host "Downloading the selected image model: $ModelId"
+    & $venvPython -c "from esp_image_server.config import Settings; from esp_image_server.generator import DiffusersGenerator; g = DiffusersGenerator(Settings.from_env()); g.load()"
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to download the selected image model.' }
 } finally {
     Stop-Transcript | Out-Null
 }

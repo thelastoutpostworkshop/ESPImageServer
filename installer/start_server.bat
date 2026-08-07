@@ -2,6 +2,8 @@
 setlocal
 cd /d "%~dp0"
 
+if exist "server_settings.bat" call "server_settings.bat"
+
 if not exist ".venv\Scripts\python.exe" (
     echo ESPImageServer is not installed correctly. Run the installer again.
     pause

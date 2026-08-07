@@ -12,7 +12,7 @@ The default model is [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai
 
 ## Maker installer (Windows)
 
-For a maker-facing installation, build and distribute `ESPImageServer-Setup.exe`. It opens a Windows wizard that lets the user select CPU or NVIDIA CUDA acceleration and decide whether to download the model immediately. The installer provisions Python, PyTorch, and the server without requiring Python knowledge.
+For a maker-facing installation, build and distribute `ESPImageServer-Setup.exe`. It opens a Windows wizard that lets the user select CPU or NVIDIA CUDA acceleration and choose a model. The installer downloads the selected model before it finishes, so the server is ready to use immediately.
 
 To build it as a project developer, install [Inno Setup](https://jrsoftware.org/isinfo.php), then run:
 

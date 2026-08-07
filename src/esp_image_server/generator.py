@@ -59,8 +59,8 @@ class DiffusersGenerator:
         with self._lock:
             result = self._pipeline(
                 prompt=prompt,
-                num_inference_steps=1,
-                guidance_scale=0.0,
+                num_inference_steps=self.settings.inference_steps,
+                guidance_scale=self.settings.guidance_scale,
                 width=self.settings.generation_width,
                 height=self.settings.generation_height,
             )

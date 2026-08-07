@@ -70,12 +70,12 @@ begin
     ComputePage.SelectedValueIndex := 0;
 
   ModelPage := CreateInputOptionPage(ComputePage.ID,
-    'Choose model download timing',
-    'Selected model: {#ModelId}',
-    'This image model is several gigabytes. Download it now to verify setup, or let the first server start download it.',
+    'Choose image model',
+    'The selected model will download during installation.',
+    'SD-Turbo is the fast, display-focused default. SSD-1B takes longer and benefits from an NVIDIA GPU, but provides higher-quality images.',
     True, True);
-  ModelPage.Add('Download the model now');
-  ModelPage.Add('Download the model on first server start');
+  ModelPage.Add('SD-Turbo - fast, 512 x 512, recommended');
+  ModelPage.Add('Segmind SSD-1B - higher quality, slower, NVIDIA GPU recommended');
   ModelPage.SelectedValueIndex := 0;
 end;
 
@@ -83,7 +83,7 @@ function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoType
   MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 var
   ComputeChoice: String;
-  DownloadChoice: String;
+  SelectedModel: String;
 begin
   if ComputePage.SelectedValueIndex = 1 then
     ComputeChoice := 'NVIDIA CUDA acceleration'
@@ -91,15 +91,15 @@ begin
     ComputeChoice := 'CPU compatibility mode';
 
   if ModelPage.SelectedValueIndex = 0 then
-    DownloadChoice := 'Download during installation'
+    SelectedModel := 'stabilityai/sd-turbo (fast, 512 x 512)'
   else
-    DownloadChoice := 'Download on first server start';
+    SelectedModel := 'segmind/SSD-1B (higher quality, 1024 x 1024)';
 
   Result := MemoUserInfoInfo + MemoDirInfo + MemoTypeInfo + MemoComponentsInfo +
     MemoGroupInfo + MemoTasksInfo + NewLine + 'Image generation:' + NewLine +
-    Space + 'Model: {#ModelId}' + NewLine +
+    Space + 'Model: ' + SelectedModel + NewLine +
     Space + 'Hardware: ' + ComputeChoice + NewLine +
-    Space + 'Model download: ' + DownloadChoice;
+    Space + 'Model download: during installation';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -114,7 +114,9 @@ begin
   if ComputePage.SelectedValueIndex = 1 then
     Parameters := Parameters + ' -UseCuda';
   if ModelPage.SelectedValueIndex = 0 then
-    Parameters := Parameters + ' -DownloadModel';
+    Parameters := Parameters + ' -ModelId "stabilityai/sd-turbo" -InferenceSteps 1 -GuidanceScale 0 -GenerationWidth 512 -GenerationHeight 512'
+  else
+    Parameters := Parameters + ' -ModelId "segmind/SSD-1B" -InferenceSteps 20 -GuidanceScale 9 -GenerationWidth 1024 -GenerationHeight 1024';
 
   BootstrapProgress := CreateOutputProgressPage('Installing ESPImageServer',
     'Downloading and configuring the local image-generation environment.');
