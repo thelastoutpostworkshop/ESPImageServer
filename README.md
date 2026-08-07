@@ -10,6 +10,18 @@ The default model is [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai
 - Python 3.10+
 - About 8 GB RAM; an NVIDIA GPU with sufficient VRAM is strongly recommended
 
+## Quick install (Windows)
+
+Install Python 3.10+ from [python.org](https://www.python.org/downloads/windows/) and select **Add Python to PATH** during installation. Then double-click `install.bat` in the project folder. It creates an ignored `.venv` folder, installs the CPU PyTorch build, and installs ESPImageServer.
+
+After it completes, start the server with:
+
+```powershell
+.venv\Scripts\python.exe -m esp_image_server
+```
+
+The CPU build makes the install work everywhere, but it is not practical for regular image generation. If the computer has an NVIDIA GPU, replace it with the CUDA build selected at [pytorch.org](https://pytorch.org/get-started/locally/) before starting the server.
+
 Install a PyTorch build appropriate to the machine first. For NVIDIA CUDA, use the selector at [pytorch.org](https://pytorch.org/get-started/locally/). For a CPU-only proof of concept, this is sufficient:
 
 ```powershell
