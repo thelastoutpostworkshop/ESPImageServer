@@ -24,7 +24,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#AppName}
 
 [Files]
-Source: "..\src\*"; DestDir: "{app}\src"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\src\*"; DestDir: "{app}\src"; Excludes: "__pycache__\*,*.pyc"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion
