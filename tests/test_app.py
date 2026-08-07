@@ -14,7 +14,7 @@ class FakeGenerator:
     def load(self) -> None:
         self.ready = True
 
-    def generate(self, prompt: str) -> Image.Image:
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image:
         assert prompt == "a tiny robot"
         return Image.new("RGB", (64, 64), "blue")
 
@@ -27,6 +27,25 @@ def test_generate_returns_jpeg_binary() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
     assert Image.open(BytesIO(response.content)).size == (20, 10)
+
+
+def test_generate_uses_requested_esp32_image_size() -> None:
+    app = create_app(Settings(), FakeGenerator())
+    with TestClient(app) as client:
+        response = client.post("/generate", json={"prompt": "a tiny robot", "width": 320, "height": 240})
+
+    assert response.status_code == 200
+    assert Image.open(BytesIO(response.content)).size == (320, 240)
+
+
+def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
+    app = create_app(Settings(model_id="stabilityai/sd-turbo"), FakeGenerator())
+    with TestClient(app) as client:
+        response = client.get("/server-info")
+
+    assert response.status_code == 200
+    assert response.json()["model_name"] == "SD-Turbo"
+    assert "cuda" not in response.json()["processing"].lower()
 
 
 def test_browser_test_page_is_available() -> None:

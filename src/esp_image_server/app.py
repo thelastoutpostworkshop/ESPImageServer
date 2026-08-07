@@ -33,11 +33,13 @@ class ImageGenerator(Protocol):
 
     def load(self) -> None: ...
 
-    def generate(self, prompt: str) -> Image.Image: ...
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image: ...
 
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=1_000, description="Text to turn into an image")
+    width: int | None = Field(default=None, ge=64, le=1_024, description="JPEG width for the ESP32")
+    height: int | None = Field(default=None, ge=64, le=1_024, description="JPEG height for the ESP32")
 
 
 class RegisterDeviceRequest(BaseModel):
@@ -75,7 +77,7 @@ def create_app(
             Timer(0.5, lambda: webbrowser.open_new_tab(f"http://127.0.0.1:{settings.port}/")).start()
         yield
 
-    app = FastAPI(title="ESPImageServer", version="0.1.9", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.10", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.mount(
         "/assets",
@@ -90,6 +92,36 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, object]:
         return {"status": "ready" if generator.ready else "loading", "device": generator.device}
+
+    @app.get("/server-info")
+    def server_info() -> dict[str, object]:
+        model_details = {
+            "stabilityai/sd-turbo": (
+                "SD-Turbo",
+                "Fast local AI image model, designed for quick results.",
+            ),
+            "segmind/SSD-1B": (
+                "Segmind SSD-1B",
+                "Higher-quality local AI image model; slower and best with an NVIDIA graphics card.",
+            ),
+        }
+        model_name, model_description = model_details.get(
+            settings.model_id, (settings.model_id, "Local AI image model selected during installation.")
+        )
+        if generator.device == "cuda":
+            processing = "NVIDIA graphics card acceleration — fast image generation."
+        elif generator.device == "cpu":
+            processing = "Computer processor mode — works broadly, but image generation can take longer."
+        else:
+            processing = f"Processing device: {generator.device}"
+        return {
+            "model_name": model_name,
+            "model_id": settings.model_id,
+            "model_description": model_description,
+            "processing": processing,
+            "default_width": settings.output_width,
+            "default_height": settings.output_height,
+        }
 
     @app.get("/devices")
     def list_devices() -> list[dict[str, object]]:
@@ -162,11 +194,17 @@ def create_app(
         if not generator.ready:
             raise HTTPException(status_code=503, detail="Image model is still loading")
         try:
-            image = await run_in_threadpool(generator.generate, request.prompt)
+            output_width = request.width or settings.output_width
+            output_height = request.height or settings.output_height
+            generation_width = max(64, round(output_width / 8) * 8)
+            generation_height = max(64, round(output_height / 8) * 8)
+            image = await run_in_threadpool(
+                generator.generate, request.prompt, generation_width, generation_height
+            )
             jpeg = to_jpeg(
                 image,
-                width=settings.output_width,
-                height=settings.output_height,
+                width=output_width,
+                height=output_height,
                 quality=settings.jpeg_quality,
             )
         except Exception:

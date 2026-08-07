@@ -54,16 +54,18 @@ class DiffusersGenerator:
             pipeline.enable_attention_slicing()
         self._pipeline = pipeline
 
-    def generate(self, prompt: str) -> Image.Image:
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image:
         if self._pipeline is None:
             raise RuntimeError("Image model is not ready")
         # Most local diffusion pipelines are not safe to invoke concurrently.
         with self._lock:
+            width = width or self.settings.generation_width
+            height = height or self.settings.generation_height
             result = self._pipeline(
                 prompt=prompt,
                 num_inference_steps=self.settings.inference_steps,
                 guidance_scale=self.settings.guidance_scale,
-                width=self.settings.generation_width,
-                height=self.settings.generation_height,
+                width=width,
+                height=height,
             )
         return result.images[0]
