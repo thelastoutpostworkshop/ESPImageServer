@@ -47,6 +47,9 @@ var
   ModelPage: TInputOptionWizardPage;
   BootstrapProgress: TOutputProgressWizardPage;
 
+procedure Sleep(Milliseconds: Longword);
+external 'Sleep@kernel32.dll stdcall';
+
 function NvidiaDetected: Boolean;
 var
   ResultCode: Integer;
@@ -105,7 +108,11 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Parameters: String;
-  ResultCode: Integer;
+  ProcessID: Integer;
+  StatusText: AnsiString;
+  ResultText: AnsiString;
+  StatusStep: Integer;
+  Separator: Integer;
 begin
   if CurStep <> ssPostInstall then
     Exit;
@@ -119,13 +126,36 @@ begin
     Parameters := Parameters + ' -ModelId "segmind/SSD-1B" -InferenceSteps 20 -GuidanceScale 9 -GenerationWidth 1024 -GenerationHeight 1024';
 
   BootstrapProgress := CreateOutputProgressPage('Installing ESPImageServer',
-    'Downloading and configuring the local image-generation environment.');
-  BootstrapProgress.SetText('This may take several minutes. Please keep this window open.', '');
+    'Setting up the local image-generation environment.');
+  BootstrapProgress.SetProgress(0, 6);
+  BootstrapProgress.SetText('Preparing installation...', 'This may take several minutes. Please keep this window open.');
   BootstrapProgress.Show;
+  StatusStep := 0;
   try
     if (not Exec('powershell.exe', Parameters, ExpandConstant('{app}'), SW_HIDE,
-        ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
+        ewNoWait, ProcessID)) then
+      RaiseException('Could not start ESPImageServer setup.');
+
+    while not FileExists(ExpandConstant('{app}\installer_result.txt')) do begin
+      if LoadStringFromFile(ExpandConstant('{app}\installer_status.txt'), StatusText) then begin
+        Separator := Pos('|', StatusText);
+        if Separator > 1 then begin
+          StatusStep := StrToInt(Copy(StatusText, 1, Separator - 1));
+          BootstrapProgress.SetProgress(StatusStep, 6);
+          BootstrapProgress.SetText(Copy(StatusText, Separator + 1, Length(StatusText)),
+            'This may take several minutes. Please keep this window open.');
+        end;
+      end;
+      { SetProgress pumps the installer message queue, keeping the progress page responsive. }
+      BootstrapProgress.SetProgress(StatusStep, 6);
+      Sleep(250);
+    end;
+
+    LoadStringFromFile(ExpandConstant('{app}\installer_result.txt'), ResultText);
+    if Trim(ResultText) <> 'success' then
       RaiseException('ESPImageServer setup did not finish. See bootstrap.log in the installation folder.');
+    BootstrapProgress.SetProgress(6, 6);
+    BootstrapProgress.SetText('Installation complete.', 'ESPImageServer is ready to start.');
   finally
     BootstrapProgress.Hide;
   end;

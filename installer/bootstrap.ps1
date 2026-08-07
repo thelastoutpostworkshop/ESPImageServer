@@ -16,7 +16,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $logPath = Join-Path $projectRoot 'bootstrap.log'
+$statusPath = Join-Path $projectRoot 'installer_status.txt'
+$resultPath = Join-Path $projectRoot 'installer_result.txt'
 Start-Transcript -Path $logPath -Append | Out-Null
+
+Remove-Item $statusPath, $resultPath -Force -ErrorAction SilentlyContinue
+
+function Set-InstallStatus([int]$Step, [string]$Message) {
+    Set-Content -Path $statusPath -Value "$Step|$Message" -Encoding ascii
+    Write-Host $Message
+}
 
 function Get-PythonCommand {
     if (Get-Command py -ErrorAction SilentlyContinue) {
@@ -48,11 +57,12 @@ try {
 
     $venvPath = Join-Path $projectRoot '.venv'
     $venvPython = Join-Path $venvPath 'Scripts\python.exe'
+    Set-InstallStatus 1 'Creating the local Python environment...'
     if (-not (Test-Path $venvPython)) {
-        Write-Host 'Creating the local Python environment...'
         Invoke-PythonCommand $pythonCommand @('-m', 'venv', $venvPath)
     }
 
+    Set-InstallStatus 2 'Installing the selected PyTorch build...'
     & $venvPython -m pip install --upgrade pip
     if ($LASTEXITCODE -ne 0) { throw 'Unable to update pip.' }
 
@@ -71,19 +81,18 @@ try {
     $hasCuda = [bool]$installedCuda
     if ($UseCuda -and -not $hasCuda) {
         if ($torchAvailable) { & $venvPython -m pip uninstall -y torch | Out-Null }
-        Write-Host 'Installing CUDA-enabled PyTorch...'
         & $venvPython -m pip install torch --index-url https://download.pytorch.org/whl/cu128
     } elseif (-not $UseCuda -and ($hasCuda -or -not $torchAvailable)) {
         if ($torchAvailable) { & $venvPython -m pip uninstall -y torch | Out-Null }
-        Write-Host 'Installing CPU PyTorch...'
         & $venvPython -m pip install torch --index-url https://download.pytorch.org/whl/cpu
     }
     if ($LASTEXITCODE -ne 0) { throw 'Unable to install PyTorch.' }
 
-    Write-Host 'Installing ESPImageServer...'
+    Set-InstallStatus 3 'Installing ESPImageServer packages...'
     & $venvPython -m pip install --editable $projectRoot
     if ($LASTEXITCODE -ne 0) { throw 'Unable to install ESPImageServer dependencies.' }
 
+    Set-InstallStatus 4 'Saving your server settings...'
     $settingsFile = Join-Path $projectRoot 'server_settings.bat'
     @"
 @echo off
@@ -94,11 +103,15 @@ set "ESP_IMAGE_GENERATION_WIDTH=$GenerationWidth"
 set "ESP_IMAGE_GENERATION_HEIGHT=$GenerationHeight"
 "@ | Set-Content -Path $settingsFile -Encoding ascii
 
-    Write-Host "Downloading the selected image model: $ModelId"
+    Set-InstallStatus 5 "Downloading and preparing $ModelId..."
     & $venvPython -c "from esp_image_server.config import Settings; from esp_image_server.generator import DiffusersGenerator; g = DiffusersGenerator(Settings.from_env()); g.load()"
     if ($LASTEXITCODE -ne 0) { throw 'Unable to download the selected image model.' }
+    Set-InstallStatus 6 'Model is ready. Finishing installation...'
+    Set-Content -Path $resultPath -Value 'success' -Encoding ascii
 } catch {
     Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    Set-InstallStatus 0 'Installation failed. See bootstrap.log for details.'
+    Set-Content -Path $resultPath -Value 'failed' -Encoding ascii
     exit 1
 } finally {
     Stop-Transcript | Out-Null
