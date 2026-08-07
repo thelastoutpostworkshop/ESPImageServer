@@ -9,7 +9,9 @@ TEST_PAGE_HTML = """<!doctype html>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111827; color: #eef2ff; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
-    main { width: min(92vw, 680px); padding: 28px; }
+    main { width: min(92vw, 760px); padding: 28px; }
+    .hero { margin: 0 0 18px; background: #020816; border: 1px solid #164e78; border-radius: 16px; overflow: hidden; display: grid; place-items: center; }
+    .hero img { display: block; width: 100%; max-height: min(62vh, 580px); object-fit: contain; }
     .brand { display: flex; align-items: center; gap: 16px; }
     .brand img { width: 70px; height: 70px; object-fit: contain; filter: drop-shadow(0 0 14px #38bdf880); }
     h1 { margin: 0 0 6px; } p { color: #cbd5e1; }
@@ -21,9 +23,12 @@ TEST_PAGE_HTML = """<!doctype html>
 </head>
 <body>
   <main>
+    <section class="hero" aria-label="ESPImageServer welcome">
+      <img src="/assets/welcome-hero.png" alt="ESPImageServer: local AI images for ESP32 displays">
+    </section>
     <div class="brand">
       <img src="/assets/test-page-logo.png" alt="ESPImageServer logo">
-      <div><h1>ESPImageServer</h1>
+      <div><h1>Generate a test image</h1>
     <p id="health">Checking server status…</p>
       </div>
     </div>
