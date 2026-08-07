@@ -39,7 +39,7 @@ Name: "{autodesktop}\ESPImageServer"; Filename: "{cmd}"; Parameters: "/k ""{app}
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""; Description: "Start ESPImageServer"; Flags: nowait postinstall skipifsilent
+Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""; Description: "Start ESPImageServer and open the browser test page"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var

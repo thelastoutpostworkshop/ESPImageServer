@@ -8,13 +8,14 @@ from typing import Protocol
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 from PIL import Image
 
 from .config import Settings
 from .generator import DiffusersGenerator
 from .image_processor import to_jpeg
+from .test_page import TEST_PAGE_HTML
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -45,6 +46,10 @@ def create_app(settings: Settings | None = None, generator: ImageGenerator | Non
         yield
 
     app = FastAPI(title="ESPImageServer", version="0.1.0", lifespan=lifespan)
+
+    @app.get("/", include_in_schema=False, response_class=HTMLResponse)
+    def test_page() -> HTMLResponse:
+        return HTMLResponse(TEST_PAGE_HTML)
 
     @app.get("/health")
     def health() -> dict[str, object]:

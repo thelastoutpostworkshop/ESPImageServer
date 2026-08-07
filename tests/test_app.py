@@ -27,3 +27,12 @@ def test_generate_returns_jpeg_binary() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
     assert Image.open(BytesIO(response.content)).size == (20, 10)
+
+
+def test_browser_test_page_is_available() -> None:
+    app = create_app(Settings(), FakeGenerator())
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Describe an image" in response.text
