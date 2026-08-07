@@ -54,6 +54,8 @@ Startup logs show the listening address and selected device. The first run downl
 
 Open `http://127.0.0.1:8000/` for the browser test page. `0.0.0.0` in Uvicorn's startup message is a network bind address, not a browser URL. It lets ESP32 devices on the LAN reach the server; use this computer's LAN IP address for the ESP32 request.
 
+The Start Menu and desktop launchers open this test page automatically after the server is ready. To do the same from another launcher, set `ESP_IMAGE_OPEN_BROWSER=1` before starting the server.
+
 ## Generate an image
 
 ```powershell

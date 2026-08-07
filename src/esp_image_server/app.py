@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import logging
+import os
+from threading import Timer
 from typing import Protocol
+import webbrowser
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -51,9 +54,11 @@ def create_app(settings: Settings | None = None, generator: ImageGenerator | Non
             logger.info("Server address: http://%s:%s/", settings.host, settings.port)
         await run_in_threadpool(generator.load)
         logger.info("Image model is ready; device=%s", generator.device)
+        if os.getenv("ESP_IMAGE_OPEN_BROWSER") == "1":
+            Timer(0.5, lambda: webbrowser.open_new_tab(f"http://127.0.0.1:{settings.port}/")).start()
         yield
 
-    app = FastAPI(title="ESPImageServer", version="0.1.3", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.4", lifespan=lifespan)
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)
     def test_page() -> HTMLResponse:
