@@ -10,9 +10,21 @@ The default model is [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai
 - Python 3.10+
 - About 8 GB RAM; an NVIDIA GPU with sufficient VRAM is strongly recommended
 
-## Quick install (Windows)
+## Maker installer (Windows)
 
-Double-click `install.bat` in the project folder. If Python is absent, it installs Python 3.12 for the current Windows user with Windows Package Manager (`winget`), then creates an ignored `.venv` folder, installs the CPU PyTorch build, and installs ESPImageServer. Current Windows 11 installations include `winget`; if it is unavailable, the script provides a direct Python download link.
+For a maker-facing installation, build and distribute `ESPImageServer-Setup.exe`. It opens a Windows wizard that lets the user select CPU or NVIDIA CUDA acceleration and decide whether to download the model immediately. The installer provisions Python, PyTorch, and the server without requiring Python knowledge.
+
+To build it as a project developer, install [Inno Setup](https://jrsoftware.org/isinfo.php), then run:
+
+```powershell
+iscc installer\ESPImageServer.iss
+```
+
+The installer is created at `dist\ESPImageServer-Setup.exe`.
+
+## Developer quick install (Windows)
+
+Double-click `install.bat` in the project folder. If Python is absent, it installs Python 3.12 for the current Windows user with Windows Package Manager (`winget`), then creates an ignored `.venv` folder, installs the CPU PyTorch build, and installs ESPImageServer.
 
 After it completes, start the server with:
 
