@@ -52,7 +52,7 @@ python -m esp_image_server
 
 Startup logs show the listening address and selected device. The first run downloads the model; later starts use the local Hugging Face cache. Open `http://localhost:8000/docs` for the interactive API documentation.
 
-Open `http://localhost:8000/` for the browser test page. It lets a user enter a prompt, view the generated image, and download the exact JPEG returned by the ESP32-facing API.
+Open `http://127.0.0.1:8000/` for the browser test page. `0.0.0.0` in Uvicorn's startup message is a network bind address, not a browser URL. It lets ESP32 devices on the LAN reach the server; use this computer's LAN IP address for the ESP32 request.
 
 ## Generate an image
 

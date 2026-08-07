@@ -40,12 +40,20 @@ def create_app(settings: Settings | None = None, generator: ImageGenerator | Non
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        logger.info("ESPImageServer listening on http://%s:%s", settings.host, settings.port)
+        logger.info("Browser test page: http://127.0.0.1:%s/", settings.port)
+        if settings.host in {"0.0.0.0", "::"}:
+            logger.info(
+                "Network binding: %s:%s (0.0.0.0 is for ESP32/LAN access, not a browser address)",
+                settings.host,
+                settings.port,
+            )
+        else:
+            logger.info("Server address: http://%s:%s/", settings.host, settings.port)
         await run_in_threadpool(generator.load)
         logger.info("Image model is ready; device=%s", generator.device)
         yield
 
-    app = FastAPI(title="ESPImageServer", version="0.1.2", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.3", lifespan=lifespan)
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)
     def test_page() -> HTMLResponse:
