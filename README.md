@@ -12,7 +12,7 @@ The default model is [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai
 
 ## Quick install (Windows)
 
-Install Python 3.10+ from [python.org](https://www.python.org/downloads/windows/) and select **Add Python to PATH** during installation. Then double-click `install.bat` in the project folder. It creates an ignored `.venv` folder, installs the CPU PyTorch build, and installs ESPImageServer.
+Double-click `install.bat` in the project folder. If Python is absent, it installs Python 3.12 for the current Windows user with Windows Package Manager (`winget`), then creates an ignored `.venv` folder, installs the CPU PyTorch build, and installs ESPImageServer. Current Windows 11 installations include `winget`; if it is unavailable, the script provides a direct Python download link.
 
 After it completes, start the server with:
 
