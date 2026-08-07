@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.1"
+#define AppVersion "0.1.2"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.1
+OutputBaseFilename=ESPImageServer-Setup-0.1.2
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -46,6 +46,9 @@ var
   ComputePage: TInputOptionWizardPage;
   ModelPage: TInputOptionWizardPage;
   BootstrapProgress: TOutputProgressWizardPage;
+  BootstrapOutput: TNewMemo;
+  BootstrapCancelButton: TNewButton;
+  BootstrapCancelRequested: Boolean;
 
 procedure Sleep(Milliseconds: Longword);
 external 'Sleep@kernel32.dll stdcall';
@@ -56,6 +59,15 @@ var
 begin
   Result := Exec('nvidia-smi.exe', '--query-gpu=name --format=csv,noheader', '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+procedure BootstrapCancelClick(Sender: TObject);
+begin
+  if MsgBox('Cancel ESPImageServer installation? The partial installation can be repaired by running this installer again.',
+    mbConfirmation, MB_YESNO) = IDYES then begin
+    BootstrapCancelRequested := True;
+    BootstrapCancelButton.Enabled := False;
+  end;
 end;
 
 procedure InitializeWizard;
@@ -111,8 +123,11 @@ var
   ProcessID: Integer;
   StatusText: AnsiString;
   ResultText: AnsiString;
+  LogText: AnsiString;
+  LastLogText: AnsiString;
   StatusStep: Integer;
   Separator: Integer;
+  TaskKillResult: Integer;
 begin
   if CurStep <> ssPostInstall then
     Exit;
@@ -129,14 +144,38 @@ begin
     'Setting up the local image-generation environment.');
   BootstrapProgress.SetProgress(0, 6);
   BootstrapProgress.SetText('Preparing installation...', 'This may take several minutes. Please keep this window open.');
+  BootstrapOutput := TNewMemo.Create(BootstrapProgress);
+  BootstrapOutput.Left := 0;
+  BootstrapOutput.Top := BootstrapProgress.ProgressBar.Top + BootstrapProgress.ProgressBar.Height + ScaleY(12);
+  BootstrapOutput.Width := BootstrapProgress.SurfaceWidth;
+  BootstrapOutput.Height := BootstrapProgress.SurfaceHeight - BootstrapOutput.Top - ScaleY(38);
+  BootstrapOutput.ScrollBars := ssVertical;
+  BootstrapOutput.ReadOnly := True;
+  BootstrapOutput.Text := 'Waiting for setup output...';
+  BootstrapOutput.Parent := BootstrapProgress.Surface;
+  BootstrapCancelButton := TNewButton.Create(BootstrapProgress);
+  BootstrapCancelButton.Caption := 'Cancel installation';
+  BootstrapCancelButton.Top := BootstrapOutput.Top + BootstrapOutput.Height + ScaleY(8);
+  BootstrapCancelButton.Width := WizardForm.CalculateButtonWidth([BootstrapCancelButton.Caption]);
+  BootstrapCancelButton.OnClick := @BootstrapCancelClick;
+  BootstrapCancelButton.Parent := BootstrapProgress.Surface;
+  BootstrapCancelRequested := False;
   BootstrapProgress.Show;
   StatusStep := 0;
+  ResultText := '';
   try
     if (not Exec('powershell.exe', Parameters, ExpandConstant('{app}'), SW_HIDE,
         ewNoWait, ProcessID)) then
       RaiseException('Could not start ESPImageServer setup.');
 
     while not FileExists(ExpandConstant('{app}\installer_result.txt')) do begin
+      if BootstrapCancelRequested then begin
+        BootstrapProgress.SetText('Cancelling installation...', 'Stopping the setup process.');
+        Exec('taskkill.exe', '/PID ' + IntToStr(ProcessID) + ' /T /F', '', SW_HIDE,
+          ewWaitUntilTerminated, TaskKillResult);
+        ResultText := 'cancelled';
+        Break;
+      end;
       if LoadStringFromFile(ExpandConstant('{app}\installer_status.txt'), StatusText) then begin
         Separator := Pos('|', StatusText);
         if Separator > 1 then begin
@@ -146,17 +185,28 @@ begin
             'This may take several minutes. Please keep this window open.');
         end;
       end;
+      if LoadStringFromFile(ExpandConstant('{app}\bootstrap.log'), LogText) and
+          (LogText <> LastLogText) then begin
+        BootstrapOutput.Text := LogText;
+        BootstrapOutput.SelStart := Length(BootstrapOutput.Text);
+        BootstrapOutput.SelLength := 0;
+        LastLogText := LogText;
+      end;
       { SetProgress pumps the installer message queue, keeping the progress page responsive. }
       BootstrapProgress.SetProgress(StatusStep, 6);
       Sleep(250);
     end;
 
-    LoadStringFromFile(ExpandConstant('{app}\installer_result.txt'), ResultText);
+    if ResultText = '' then
+      LoadStringFromFile(ExpandConstant('{app}\installer_result.txt'), ResultText);
+    if ResultText = 'cancelled' then
+      RaiseException('Installation was cancelled. You can run this installer again to repair or complete setup.');
     if Trim(ResultText) <> 'success' then
       RaiseException('ESPImageServer setup did not finish. See bootstrap.log in the installation folder.');
     BootstrapProgress.SetProgress(6, 6);
     BootstrapProgress.SetText('Installation complete.', 'ESPImageServer is ready to start.');
   finally
+    BootstrapCancelButton.Visible := False;
     BootstrapProgress.Hide;
   end;
 end;

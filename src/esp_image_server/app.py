@@ -45,7 +45,7 @@ def create_app(settings: Settings | None = None, generator: ImageGenerator | Non
         logger.info("Image model is ready; device=%s", generator.device)
         yield
 
-    app = FastAPI(title="ESPImageServer", version="0.1.1", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.2", lifespan=lifespan)
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)
     def test_page() -> HTMLResponse:
