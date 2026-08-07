@@ -4,6 +4,7 @@
 #define AppName "ESPImageServer"
 #define AppVersion "0.1.0"
 #define AppPublisher "ESPImageServer"
+#define ModelId "stabilityai/sd-turbo"
 
 [Setup]
 AppId={{18AA2901-70A7-4C30-9C55-6B78F51F6CC0}
@@ -70,12 +71,35 @@ begin
 
   ModelPage := CreateInputOptionPage(ComputePage.ID,
     'Choose model download timing',
-    'The image model is several gigabytes.',
-    'Download it now to verify setup, or let the first server start download it.',
+    'Selected model: {#ModelId}',
+    'This image model is several gigabytes. Download it now to verify setup, or let the first server start download it.',
     True, True);
   ModelPage.Add('Download the model now');
   ModelPage.Add('Download the model on first server start');
   ModelPage.SelectedValueIndex := 0;
+end;
+
+function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
+  MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+var
+  ComputeChoice: String;
+  DownloadChoice: String;
+begin
+  if ComputePage.SelectedValueIndex = 1 then
+    ComputeChoice := 'NVIDIA CUDA acceleration'
+  else
+    ComputeChoice := 'CPU compatibility mode';
+
+  if ModelPage.SelectedValueIndex = 0 then
+    DownloadChoice := 'Download during installation'
+  else
+    DownloadChoice := 'Download on first server start';
+
+  Result := MemoUserInfoInfo + MemoDirInfo + MemoTypeInfo + MemoComponentsInfo +
+    MemoGroupInfo + MemoTasksInfo + NewLine + 'Image generation:' + NewLine +
+    Space + 'Model: {#ModelId}' + NewLine +
+    Space + 'Hardware: ' + ComputeChoice + NewLine +
+    Space + 'Model download: ' + DownloadChoice;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
