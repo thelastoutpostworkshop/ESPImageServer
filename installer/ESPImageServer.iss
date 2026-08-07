@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.4"
+#define AppVersion "0.1.5"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,10 +14,15 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.4
+OutputBaseFilename=ESPImageServer-Setup-0.1.5
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=assets\espimageserver-icon.ico
+WizardImageFile=assets\wizard-sidebar.png
+WizardSmallImageFile=assets\wizard-corner.png
+WizardImageBackColor=#071426
+WizardSmallImageBackColor=#FFFFFF
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible

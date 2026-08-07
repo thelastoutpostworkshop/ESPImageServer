@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import logging
 import os
+from pathlib import Path
 from threading import Timer
 from typing import Protocol
 import webbrowser
@@ -12,6 +13,7 @@ import webbrowser
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from PIL import Image
 
@@ -58,7 +60,12 @@ def create_app(settings: Settings | None = None, generator: ImageGenerator | Non
             Timer(0.5, lambda: webbrowser.open_new_tab(f"http://127.0.0.1:{settings.port}/")).start()
         yield
 
-    app = FastAPI(title="ESPImageServer", version="0.1.4", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.5", lifespan=lifespan)
+    app.mount(
+        "/assets",
+        StaticFiles(directory=Path(__file__).with_name("static")),
+        name="assets",
+    )
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)
     def test_page() -> HTMLResponse:

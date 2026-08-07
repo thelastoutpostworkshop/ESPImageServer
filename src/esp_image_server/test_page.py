@@ -10,6 +10,8 @@ TEST_PAGE_HTML = """<!doctype html>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111827; color: #eef2ff; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
     main { width: min(92vw, 680px); padding: 28px; }
+    .brand { display: flex; align-items: center; gap: 16px; }
+    .brand img { width: 70px; height: 70px; object-fit: contain; filter: drop-shadow(0 0 14px #38bdf880); }
     h1 { margin: 0 0 6px; } p { color: #cbd5e1; }
     form, .result { background: #1f2937; border: 1px solid #374151; border-radius: 14px; padding: 18px; margin-top: 18px; }
     textarea { width: 100%; box-sizing: border-box; min-height: 92px; resize: vertical; padding: 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: inherit; font: inherit; }
@@ -19,8 +21,12 @@ TEST_PAGE_HTML = """<!doctype html>
 </head>
 <body>
   <main>
-    <h1>ESPImageServer</h1>
+    <div class="brand">
+      <img src="/assets/test-page-logo.png" alt="ESPImageServer logo">
+      <div><h1>ESPImageServer</h1>
     <p id="health">Checking server status…</p>
+      </div>
+    </div>
     <form id="generate-form">
       <label for="prompt">Describe an image</label>
       <textarea id="prompt" required maxlength="1000">A cheerful small robot holding a paintbrush, friendly illustration</textarea>
