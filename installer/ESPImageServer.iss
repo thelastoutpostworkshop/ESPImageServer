@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.5"
+#define AppVersion "0.1.6"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.5
+OutputBaseFilename=ESPImageServer-Setup-0.1.6
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -35,10 +35,11 @@ Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start_server.bat"; DestDir: "{app}"; DestName: "Start ESPImageServer.bat"; Flags: ignoreversion
+Source: "assets\espimageserver-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#AppName}\Start ESPImageServer"; Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""
-Name: "{autodesktop}\ESPImageServer"; Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}\Start ESPImageServer"; Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""; IconFilename: "{app}\espimageserver-icon.ico"
+Name: "{autodesktop}\ESPImageServer"; Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""; IconFilename: "{app}\espimageserver-icon.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
