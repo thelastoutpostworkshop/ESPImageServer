@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.6"
+#define AppVersion "0.1.7"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.6
+OutputBaseFilename=ESPImageServer-Setup-0.1.7
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -55,6 +55,7 @@ var
   BootstrapOutput: TNewMemo;
   BootstrapCancelButton: TNewButton;
   BootstrapCancelRequested: Boolean;
+  UninstallCleanupCheck: TNewCheckBox;
 
 procedure Sleep(Milliseconds: Longword);
 external 'Sleep@kernel32.dll stdcall';
@@ -98,6 +99,28 @@ begin
   ModelPage.Add('SD-Turbo - fast, 512 x 512, recommended');
   ModelPage.Add('Segmind SSD-1B - higher quality, slower, NVIDIA GPU recommended');
   ModelPage.SelectedValueIndex := 0;
+end;
+
+procedure InitializeUninstallProgressForm;
+begin
+  UninstallCleanupCheck := TNewCheckBox.Create(UninstallProgressForm);
+  UninstallCleanupCheck.Caption := 'Remove local image models and ESPImageServer Python environment';
+  UninstallCleanupCheck.Checked := False;
+  UninstallCleanupCheck.Left := ScaleX(16);
+  UninstallCleanupCheck.Top := UninstallProgressForm.CancelButton.Top - ScaleY(30);
+  UninstallCleanupCheck.Width := UninstallProgressForm.ClientWidth - ScaleX(32);
+  UninstallCleanupCheck.Parent := UninstallProgressForm;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then begin
+    UninstallCleanupCheck.Enabled := False;
+    if UninstallCleanupCheck.Checked then begin
+      DelTree(ExpandConstant('{app}\.venv'), True, True, True);
+      DelTree(ExpandConstant('{app}\models'), True, True, True);
+    end;
+  end;
 end;
 
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,

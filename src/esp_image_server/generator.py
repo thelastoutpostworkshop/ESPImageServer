@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from threading import Lock
 
 from PIL import Image
@@ -44,9 +45,10 @@ class DiffusersGenerator:
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if self._device == "cuda" else torch.float32
         logger.info("Loading model '%s' on %s", self.settings.model_id, self._device)
-        pipeline = AutoPipelineForText2Image.from_pretrained(
-            self.settings.model_id, torch_dtype=dtype
-        )
+        options = {"torch_dtype": dtype}
+        if model_cache_dir := os.getenv("ESP_IMAGE_MODEL_CACHE"):
+            options["cache_dir"] = model_cache_dir
+        pipeline = AutoPipelineForText2Image.from_pretrained(self.settings.model_id, **options)
         pipeline = pipeline.to(self._device)
         if self._device == "cpu":
             pipeline.enable_attention_slicing()
