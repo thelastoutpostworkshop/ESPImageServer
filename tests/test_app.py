@@ -36,13 +36,13 @@ def test_browser_test_page_is_available() -> None:
 
     assert response.status_code == 200
     assert "Describe an image" in response.text
-    assert "/assets/welcome-hero.png" in response.text
+    assert "/assets/welcome-hero-horizontal.png" in response.text
 
 
 def test_welcome_hero_is_available() -> None:
     app = create_app(Settings(), FakeGenerator())
     with TestClient(app) as client:
-        response = client.get("/assets/welcome-hero.png")
+        response = client.get("/assets/welcome-hero-horizontal.png")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"

@@ -24,7 +24,7 @@ TEST_PAGE_HTML = """<!doctype html>
 <body>
   <main>
     <section class="hero" aria-label="ESPImageServer welcome">
-      <img src="/assets/welcome-hero.png" alt="ESPImageServer: local AI images for ESP32 displays">
+      <img src="/assets/welcome-hero-horizontal.png" alt="ESPImageServer: local AI images for ESP32 displays">
     </section>
     <div class="brand">
       <img src="/assets/test-page-logo.png" alt="ESPImageServer logo">

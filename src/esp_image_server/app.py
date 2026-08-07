@@ -60,7 +60,7 @@ def create_app(settings: Settings | None = None, generator: ImageGenerator | Non
             Timer(0.5, lambda: webbrowser.open_new_tab(f"http://127.0.0.1:{settings.port}/")).start()
         yield
 
-    app = FastAPI(title="ESPImageServer", version="0.1.7", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.8", lifespan=lifespan)
     app.mount(
         "/assets",
         StaticFiles(directory=Path(__file__).with_name("static")),
