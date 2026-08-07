@@ -65,6 +65,19 @@ Invoke-WebRequest -Uri http://localhost:8000/generate -Method POST -ContentType 
 
 The response is `Content-Type: image/jpeg` and can be written directly by an ESP32 HTTP client to a decoder or file. `GET /health` reports whether the model is ready and the selected device.
 
+## Send to an ESP32 display
+
+The browser test page can pair and send images to ESP32 displays. Click **Pair a new ESP32**, then have the device register with the one-time code it shows. Pairings and queues live only in memory for now, so restart the server to clear them.
+
+The ESP32 keeps its returned `id` and `token`, then uses the server computer's LAN IP address:
+
+1. `POST /devices/register` with `{"pairing_code":"123456","name":"Kitchen display"}` returns the device `id` and secret `token`.
+2. Send `POST /devices/{id}/heartbeat` with header `X-ESPImage-Token: <token>` periodically.
+3. Call `GET /devices/{id}/next-image?wait_seconds=25` with the same header. It waits for an image, then returns JPEG bytes and header `X-ESPImage-Image-ID`.
+4. After the screen successfully displays it, call `POST /devices/{id}/ack` with `{"image_id":"<header value>"}` and the token header.
+
+The server retains an image until it receives the acknowledgement, so the ESP32 can safely retry after a Wi-Fi interruption.
+
 ## Configuration
 
 Set these environment variables before starting the server:
@@ -72,6 +85,7 @@ Set these environment variables before starting the server:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `ESP_IMAGE_MODEL` | `stabilityai/sd-turbo` | Any compatible local Diffusers text-to-image model |
+| `ESP_IMAGE_MODEL_CACHE` | Hugging Face default | Model-cache directory; the Windows installer sets this to the app's `models` folder |
 | `ESP_IMAGE_HOST` | `0.0.0.0` | Bind address; use `0.0.0.0` for LAN ESP32 access |
 | `ESP_IMAGE_PORT` | `8000` | HTTP port |
 | `ESP_IMAGE_OUTPUT_WIDTH` | `466` | Returned JPEG width |
