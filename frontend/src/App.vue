@@ -192,8 +192,8 @@ onUnmounted(() => {
                 <v-card class="model-card h-100" :class="{ 'model-card--active': model.active }" border elevation="3">
                   <v-card-item>
                     <template #prepend>
-                      <v-avatar :color="model.hardware.startsWith('NVIDIA') ? 'deep-purple' : 'teal'" variant="tonal" size="48">
-                        <v-icon>{{ model.hardware.startsWith('NVIDIA') ? 'mdi-expansion-card-variant' : 'mdi-laptop' }}</v-icon>
+                      <v-avatar :color="model.hardware.includes('NVIDIA') ? 'deep-purple' : 'teal'" variant="tonal" size="48">
+                        <v-icon>{{ model.hardware.includes('NVIDIA') ? 'mdi-expansion-card-variant' : 'mdi-laptop' }}</v-icon>
                       </v-avatar>
                     </template>
                     <v-card-title>{{ model.name }}</v-card-title>
@@ -201,7 +201,7 @@ onUnmounted(() => {
                   </v-card-item>
                   <v-card-text>
                     <p class="mb-4">{{ model.description }}</p>
-                    <v-alert :color="model.hardware.startsWith('NVIDIA') ? 'deep-purple' : 'teal'" variant="tonal" density="comfortable" class="mb-3">
+                    <v-alert :color="model.hardware.includes('NVIDIA') ? 'deep-purple' : 'teal'" variant="tonal" density="comfortable" class="mb-3">
                       <div class="font-weight-bold">{{ model.hardware }}</div>
                       <div class="text-body-2">{{ model.recommendation }}</div>
                     </v-alert>

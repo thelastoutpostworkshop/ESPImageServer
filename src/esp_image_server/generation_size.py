@@ -7,6 +7,7 @@ MODEL_LONG_EDGES = {
     "stabilityai/sd-turbo": 512,
     "Lykon/dreamshaper-8": 512,
     "segmind/SSD-1B": 1024,
+    "stabilityai/stable-diffusion-xl-base-1.0": 1024,
 }
 
 
