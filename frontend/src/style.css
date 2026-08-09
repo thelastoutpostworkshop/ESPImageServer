@@ -8,6 +8,7 @@ body { margin: 0; background: #111827; }
 .app-container { max-width: 1440px; }
 .generated-image-card .v-img { max-height: calc(100vh - 220px); }
 .preview-placeholder { min-height: 420px; }
+.model-in-use { background: rgba(var(--v-theme-primary), 0.10); }
 .model-list__active { background: rgba(var(--v-theme-success), 0.08); }
 
 @media (max-width: 600px) {
@@ -17,4 +18,5 @@ body { margin: 0; background: #111827; }
   .app-bar .v-chip { margin-right: 4px !important; padding-inline: 8px; }
   .v-card-title { white-space: normal; }
   .preview-placeholder { min-height: 260px; }
+  .model-in-use { align-items: flex-start !important; }
 }

@@ -156,9 +156,6 @@ onUnmounted(() => {
       <v-chip class="mr-2" :color="health?.status === 'ready' ? 'success' : 'warning'" variant="tonal" prepend-icon="mdi-server">
         <span v-if="!mobile">{{ health?.status === 'ready' ? 'Server ready' : 'Server loading' }}</span>
       </v-chip>
-      <v-chip v-if="serverInfo" class="mr-2" color="primary" variant="tonal" prepend-icon="mdi-brain">
-        <span v-if="!mobile">{{ serverInfo.model_name }}</span>
-      </v-chip>
       <v-chip v-if="!mobile" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
         {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
       </v-chip>
@@ -168,7 +165,11 @@ onUnmounted(() => {
       <v-list-item class="py-4" title="ESPImageServer" subtitle="Local AI image generation" />
       <v-divider />
       <v-list nav density="comfortable">
-        <v-list-item prepend-icon="mdi-image-sparkles" title="Generate image" :active="page === 'generate'" @click="page = 'generate'" />
+        <v-list-item title="Generate image" :active="page === 'generate'" @click="page = 'generate'">
+          <template #prepend>
+            <v-avatar :image="logoImageUrl" size="26" />
+          </template>
+        </v-list-item>
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
       </v-list>
@@ -184,6 +185,14 @@ onUnmounted(() => {
         <v-col cols="12" lg="5">
         <v-card class="generation-card">
           <v-card-text>
+            <v-sheet v-if="serverInfo" class="model-in-use d-flex align-center ga-3 pa-3 mb-4" color="primary" rounded="lg">
+              <v-avatar color="primary" variant="tonal" size="40"><v-icon>mdi-brain</v-icon></v-avatar>
+              <div>
+                <div class="text-caption text-medium-emphasis">Model in use</div>
+                <div class="font-weight-bold">{{ serverInfo.model_name }}</div>
+                <div class="text-caption text-medium-emphasis">{{ serverInfo.model_description }}</div>
+              </div>
+            </v-sheet>
             <v-form @submit.prevent="generate">
               <v-textarea
                 v-model="prompt"
