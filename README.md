@@ -71,7 +71,7 @@ The Start Menu and desktop launchers open this test page automatically after the
 
 ## Changing the image model
 
-Open the **Models** item in the web app to select an available model. The app shows whether it is already on the computer. Choosing a new model downloads it if needed, loads it, and remembers the selection for the next server start. The current release includes SD-Turbo (fast, recommended) and Segmind SSD-1B (higher quality, best with NVIDIA graphics).
+Open the **Models** item in the web app to select an available model. The app shows whether it is already on the computer. Choosing a new model downloads it if needed, loads it, and remembers the selection for the next server start. The current release includes SD-Turbo (fast, recommended), DreamShaper 8 (creative and artistic, NVIDIA recommended), and Segmind SSD-1B (higher quality, NVIDIA recommended).
 
 ## Generate an image
 

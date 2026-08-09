@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.23"
+#define AppVersion "0.1.24"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.23
+OutputBaseFilename=ESPImageServer-Setup-0.1.24
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -95,9 +95,10 @@ begin
   ModelPage := CreateInputOptionPage(ComputePage.ID,
     'Choose image model',
     'The selected model will download during installation.',
-    'This installer downloads one model so ESPImageServer is ready immediately. You can download and switch to the other supported model later from the Models page in the web app. SD-Turbo is the fast, display-focused default. SSD-1B takes longer and benefits from an NVIDIA GPU, but provides higher-quality images.',
+    'This installer downloads one model so ESPImageServer is ready immediately. You can download and switch to the other supported models later from the Models page in the web app. SD-Turbo is the fast, display-focused default. DreamShaper 8 creates artistic images and SSD-1B provides more detail; both benefit from an NVIDIA GPU.',
     True, True);
   ModelPage.Add('SD-Turbo - fast, 512 x 512, recommended');
+  ModelPage.Add('DreamShaper 8 - creative artwork, NVIDIA GPU recommended');
   ModelPage.Add('Segmind SSD-1B - higher quality, slower, NVIDIA GPU recommended');
   ModelPage.SelectedValueIndex := 0;
 end;
@@ -137,6 +138,8 @@ begin
 
   if ModelPage.SelectedValueIndex = 0 then
     SelectedModel := 'stabilityai/sd-turbo (fast, 512 x 512)'
+  else if ModelPage.SelectedValueIndex = 1 then
+    SelectedModel := 'Lykon/dreamshaper-8 (creative artwork, 512 x 512)'
   else
     SelectedModel := 'segmind/SSD-1B (higher quality, 1024 x 1024)';
 
@@ -168,6 +171,8 @@ begin
     Parameters := Parameters + ' -UseCuda';
   if ModelPage.SelectedValueIndex = 0 then
     Parameters := Parameters + ' -ModelId "stabilityai/sd-turbo" -InferenceSteps 1 -GuidanceScale 0 -GenerationWidth 512 -GenerationHeight 512'
+  else if ModelPage.SelectedValueIndex = 1 then
+    Parameters := Parameters + ' -ModelId "Lykon/dreamshaper-8" -InferenceSteps 25 -GuidanceScale 7 -GenerationWidth 512 -GenerationHeight 512'
   else
     Parameters := Parameters + ' -ModelId "segmind/SSD-1B" -InferenceSteps 20 -GuidanceScale 9 -GenerationWidth 1024 -GenerationHeight 1024';
 

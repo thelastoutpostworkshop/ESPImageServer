@@ -112,9 +112,20 @@ def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
         selected = client.post("/models/segmind/SSD-1B/select")
 
     assert models.status_code == 200
-    assert len(models.json()) == 2
+    assert len(models.json()) == 3
     assert selected.status_code == 200
     assert store.get() == "segmind/SSD-1B"
+
+
+def test_dreamshaper_uses_an_aspect_matched_sd_1_5_canvas() -> None:
+    generator = FakeGenerator()
+    app = create_app(Settings(model_id="Lykon/dreamshaper-8"), generator, enable_mdns=False)
+    with TestClient(app) as client:
+        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272})
+        response = client.post("/generate", json={"prompt": "a tiny robot"})
+
+    assert response.status_code == 200
+    assert generator.last_size == (512, 288)
 
 
 def test_browser_test_page_is_available() -> None:

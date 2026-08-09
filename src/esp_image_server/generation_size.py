@@ -5,6 +5,7 @@ from __future__ import annotations
 
 MODEL_LONG_EDGES = {
     "stabilityai/sd-turbo": 512,
+    "Lykon/dreamshaper-8": 512,
     "segmind/SSD-1B": 1024,
 }
 
