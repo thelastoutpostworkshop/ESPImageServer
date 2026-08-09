@@ -33,13 +33,21 @@ def test_generate_returns_jpeg_binary() -> None:
     assert Image.open(BytesIO(response.content)).size == (20, 10)
 
 
-def test_generate_uses_requested_esp32_image_size() -> None:
+def test_generate_uses_the_server_default_size_without_an_announced_display() -> None:
     app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
-        response = client.post("/generate", json={"prompt": "a tiny robot", "width": 320, "height": 240})
+        response = client.post("/generate", json={"prompt": "a tiny robot"})
 
     assert response.status_code == 200
-    assert Image.open(BytesIO(response.content)).size == (320, 240)
+    assert Image.open(BytesIO(response.content)).size == (466, 466)
+
+
+def test_generate_rejects_client_selected_dimensions() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        response = client.post("/generate", json={"prompt": "a tiny robot", "width": 320})
+
+    assert response.status_code == 422
 
 
 def test_latest_image_is_available_to_esp32_displays() -> None:
@@ -74,7 +82,8 @@ def test_ssd_1b_uses_a_larger_aspect_matched_generation_canvas() -> None:
     generator = FakeGenerator()
     app = create_app(Settings(model_id="segmind/SSD-1B"), generator, enable_mdns=False)
     with TestClient(app) as client:
-        response = client.post("/generate", json={"prompt": "a tiny robot", "width": 480, "height": 272})
+        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272})
+        response = client.post("/generate", json={"prompt": "a tiny robot"})
 
     assert response.status_code == 200
     assert generator.last_size == (1024, 584)

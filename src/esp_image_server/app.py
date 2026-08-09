@@ -14,7 +14,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image
 
 from .config import Settings
@@ -41,9 +41,8 @@ class ImageGenerator(Protocol):
 
 
 class GenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     prompt: str = Field(min_length=1, max_length=1_000, description="Text to turn into an image")
-    width: int | None = Field(default=None, ge=64, le=1_024, description="JPEG width for the ESP32")
-    height: int | None = Field(default=None, ge=64, le=1_024, description="JPEG height for the ESP32")
 
 
 class DisplayAnnouncement(BaseModel):
@@ -103,7 +102,7 @@ def create_app(
             if mdns is not None:
                 mdns.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.13", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.14", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -274,8 +273,8 @@ def create_app(
             raise HTTPException(status_code=503, detail="Image model is still loading")
         try:
             profile = active_display_store.get()
-            output_width = request.width or (profile.width if profile else settings.output_width)
-            output_height = request.height or (profile.height if profile else settings.output_height)
+            output_width = profile.width if profile else settings.output_width
+            output_height = profile.height if profile else settings.output_height
             generation_width, generation_height = optimal_generation_size(
                 settings.model_id, output_width, output_height
             )

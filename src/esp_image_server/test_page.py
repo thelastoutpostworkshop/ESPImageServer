@@ -16,9 +16,9 @@ TEST_PAGE_HTML = """<!doctype html>
     .brand img { width: 70px; height: 70px; object-fit: contain; filter: drop-shadow(0 0 14px #38bdf880); }
     h1 { margin: 0 0 6px; } p { color: #cbd5e1; }
     form, .result, .delivery { background: #1f2937; border: 1px solid #374151; border-radius: 14px; padding: 18px; margin-top: 18px; }
-    textarea, input { width: 100%; box-sizing: border-box; min-height: 40px; resize: vertical; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: inherit; font: inherit; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 40px; resize: vertical; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: inherit; font: inherit; }
     button, .download { margin-top: 12px; padding: 10px 16px; border: 0; border-radius: 8px; background: #38bdf8; color: #082f49; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-block; }
-    button:disabled { opacity: .6; cursor: wait; } #status { min-height: 1.4em; } #image { display: none; width: 100%; margin-top: 14px; border-radius: 8px; } .download { display: none; background: #a7f3d0; color: #064e3b; } .delivery h2 { margin: 0 0 8px; font-size: 1.1rem; } .dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; } .dimensions label { font-size: .9rem; } .dimensions small { grid-column: 1 / -1; color: #cbd5e1; }
+    button:disabled { opacity: .6; cursor: wait; } #status { min-height: 1.4em; } #image { display: none; width: 100%; margin-top: 14px; border-radius: 8px; } .download { display: none; background: #a7f3d0; color: #064e3b; } .delivery h2 { margin: 0 0 8px; font-size: 1.1rem; }
   </style>
 </head>
 <body>
@@ -37,11 +37,6 @@ TEST_PAGE_HTML = """<!doctype html>
     <form id="generate-form">
       <label for="prompt">Describe an image</label>
       <textarea id="prompt" required maxlength="1000">A cheerful small robot holding a paintbrush, friendly illustration</textarea>
-      <div class="dimensions">
-        <label for="width">ESP32 image width<input id="width" type="number" min="64" max="1024" step="1" value="466" required></label>
-        <label for="height">ESP32 image height<input id="height" type="number" min="64" max="1024" step="1" value="466" required></label>
-        <small>This is the JPEG size sent to your ESP32. Match it to your display resolution.</small>
-      </div>
       <button id="submit" type="submit">Generate image</button>
       <p id="status" role="status"></p>
     </form>
@@ -59,11 +54,8 @@ TEST_PAGE_HTML = """<!doctype html>
     const result = document.getElementById('result');
     const image = document.getElementById('image');
     const download = document.getElementById('download');
-    const width = document.getElementById('width');
-    const height = document.getElementById('height');
     const displayStatus = document.getElementById('display-status');
     let currentUrl;
-    let activeDisplayConnected = false;
 
     function escapeHtml(value) {
       const element = document.createElement('span');
@@ -73,10 +65,6 @@ TEST_PAGE_HTML = """<!doctype html>
 
     fetch('/server-info').then(async response => {
       const data = await response.json();
-      if (!activeDisplayConnected) {
-        width.value = data.default_width;
-        height.value = data.default_height;
-      }
       health.innerHTML = `<strong>AI model: ${escapeHtml(data.model_name)}</strong><br>${escapeHtml(data.model_description)}<br>${escapeHtml(data.processing)}`;
     }).catch(() => health.textContent = 'Image generator information is unavailable.');
 
@@ -84,9 +72,6 @@ TEST_PAGE_HTML = """<!doctype html>
       try {
         const display = await fetch('/display').then(response => response.json());
         if (!display.connected) return;
-        activeDisplayConnected = true;
-        width.value = display.width;
-        height.value = display.height;
         displayStatus.textContent = `${display.name} connected — ${display.width} x ${display.height}. Generated images will fit this screen.`;
       } catch {
         displayStatus.textContent = 'Display information is unavailable. You can set the size manually.';
@@ -103,7 +88,7 @@ TEST_PAGE_HTML = """<!doctype html>
       try {
         const response = await fetch('/generate', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({prompt: prompt.value, width: Number(width.value), height: Number(height.value)})
+          body: JSON.stringify({prompt: prompt.value})
         });
         if (!response.ok) {
           const error = await response.json().catch(() => ({}));

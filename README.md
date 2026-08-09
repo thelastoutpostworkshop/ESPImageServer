@@ -77,7 +77,7 @@ The endpoint returns `204` until an image has been generated. It supplies an `ET
 
 The single ESP32 board announces its name and integrated screen dimensions to `POST /display`. The browser test page then uses that resolution automatically; for example, the JC4827W543 board reports `480x272`.
 
-ESPImageServer generates on an aspect-matched canvas that is appropriate for the selected model, then precisely crops and resizes the JPEG for the reported screen. For a `480x272` display this is `512x288` with SD-Turbo and `1024x584` with SSD-1B.
+ESPImageServer generates on an aspect-matched canvas that is appropriate for the selected model, then precisely crops and resizes the JPEG for the reported screen. For a `480x272` display this is `512x288` with SD-Turbo and `1024x584` with SSD-1B. The browser does not offer manual image-size controls: the connected board is the source of truth.
 
 ## Configuration
 
