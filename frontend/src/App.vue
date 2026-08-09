@@ -5,6 +5,7 @@ const prompt = ref('A cheerful small robot holding a paintbrush, friendly illust
 const serverInfo = ref(null)
 const health = ref(null)
 const display = ref(null)
+const models = ref([])
 const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
@@ -27,6 +28,14 @@ async function loadDisplay() {
   }
 }
 
+async function loadModels() {
+  try {
+    models.value = await fetch('/models').then(response => response.json())
+  } catch {
+    models.value = []
+  }
+}
+
 async function loadServerStatus() {
   try {
     const [info, currentHealth] = await Promise.all([
@@ -37,6 +46,28 @@ async function loadServerStatus() {
     health.value = currentHealth
   } catch {
     health.value = null
+  }
+}
+
+async function selectModel(model) {
+  if (model.active) return
+  generating.value = true
+  error.value = ''
+  status.value = `${model.installed ? 'Loading' : 'Downloading and loading'} ${model.name}. This can take a few minutes.`
+  try {
+    const response = await fetch(`/models/${encodeURIComponent(model.id)}/select`, { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    await Promise.all([loadServerStatus(), loadModels()])
+    status.value = `${model.name} is ready to generate images.`
+    page.value = 'generate'
+  } catch (requestError) {
+    error.value = `Could not change the image model: ${requestError.message}`
+    status.value = ''
+  } finally {
+    generating.value = false
   }
 }
 
@@ -68,9 +99,11 @@ async function generate() {
 onMounted(async () => {
   await loadServerStatus()
   await loadDisplay()
+  await loadModels()
   statusTimer = window.setInterval(() => {
     loadServerStatus()
     loadDisplay()
+    loadModels()
   }, 5000)
 })
 
@@ -102,6 +135,7 @@ onUnmounted(() => {
       <v-divider />
       <v-list nav density="comfortable">
         <v-list-item prepend-icon="mdi-image-sparkles" title="Generate image" :active="page === 'generate'" @click="page = 'generate'" />
+        <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
       </v-list>
       <template #append>
@@ -146,6 +180,26 @@ onUnmounted(() => {
           </v-card-actions>
         </v-card>
         </template>
+
+        <v-card v-else-if="page === 'models'">
+          <v-card-title>Image models</v-card-title>
+          <v-card-text>
+            Choose the model used to generate images. A model downloads once, then remains available on this computer.
+          </v-card-text>
+          <v-list lines="three">
+            <v-list-item v-for="model in models" :key="model.id" :title="model.name" :subtitle="`${model.description} ${model.recommendation}`">
+              <template #prepend>
+                <v-icon :color="model.active ? 'success' : 'primary'">mdi-brain</v-icon>
+              </template>
+              <template #append>
+                <v-chip v-if="model.active" color="success" variant="tonal">In use</v-chip>
+                <v-btn v-else color="primary" size="small" :loading="generating" @click="selectModel(model)">
+                  {{ model.installed ? 'Use model' : 'Download and use' }}
+                </v-btn>
+              </template>
+            </v-list-item>
+          </v-list>
+        </v-card>
 
         <v-card v-else>
           <v-card-title>About ESPImageServer</v-card-title>

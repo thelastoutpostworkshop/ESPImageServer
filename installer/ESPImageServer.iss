@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.20"
+#define AppVersion "0.1.21"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.20
+OutputBaseFilename=ESPImageServer-Setup-0.1.21
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -119,7 +119,7 @@ begin
     UninstallCleanupCheck.Enabled := False;
     if UninstallCleanupCheck.Checked then begin
       DelTree(ExpandConstant('{app}\.venv'), True, True, True);
-      DelTree(ExpandConstant('{app}\models'), True, True, True);
+      DelTree(ExpandConstant('{localappdata}\ESPImageServer\models'), True, True, True);
     end;
   end;
 end;

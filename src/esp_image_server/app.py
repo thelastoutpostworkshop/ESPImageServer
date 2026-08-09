@@ -25,6 +25,8 @@ from .generation_size import optimal_generation_size
 from .image_processor import to_jpeg
 from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser
+from .models import MODELS, get_model, model_is_cached, model_settings
+from .model_settings import ModelSelectionStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -39,6 +41,8 @@ class ImageGenerator(Protocol):
     device: str
 
     def load(self) -> None: ...
+
+    def activate_model(self, settings: Settings) -> None: ...
 
     def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image: ...
 
@@ -69,10 +73,19 @@ def create_app(
     device_manager: DeviceManager | None = None,
     latest_image_store: LatestImageStore | None = None,
     active_display_store: ActiveDisplayStore | None = None,
+    model_selection_store: ModelSelectionStore | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
+    supplied_settings = settings is not None
     settings = settings or Settings.from_env()
-    generator = generator or DiffusersGenerator(settings)
+    model_selection_store = model_selection_store or ModelSelectionStore(settings.model_id)
+    active_model_id = settings.model_id if supplied_settings else model_selection_store.get()
+    try:
+        active_settings = model_settings(settings, active_model_id)
+    except ValueError:
+        active_model_id = settings.model_id
+        active_settings = settings
+    generator = generator or DiffusersGenerator(active_settings)
     device_manager = device_manager or DeviceManager()
     latest_image_store = latest_image_store or LatestImageStore()
     active_display_store = active_display_store or ActiveDisplayStore()
@@ -105,10 +118,11 @@ def create_app(
             if mdns is not None:
                 mdns.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.20", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.21", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
+    app.state.model_selection_store = model_selection_store
     app.mount(
         "/assets",
         StaticFiles(directory=Path(__file__).with_name("static")),
@@ -141,7 +155,7 @@ def create_app(
             ),
         }
         model_name, model_description = model_details.get(
-            settings.model_id, (settings.model_id, "Local AI image model selected during installation.")
+            active_model_id, (active_model_id, "Local AI image model selected during installation.")
         )
         if generator.device == "cuda":
             processing = "NVIDIA graphics card acceleration — fast image generation."
@@ -151,12 +165,46 @@ def create_app(
             processing = f"Processing device: {generator.device}"
         return {
             "model_name": model_name,
-            "model_id": settings.model_id,
+            "model_id": active_model_id,
             "model_description": model_description,
             "processing": processing,
-            "default_width": settings.output_width,
-            "default_height": settings.output_height,
+            "default_width": active_settings.output_width,
+            "default_height": active_settings.output_height,
         }
+
+    @app.get("/models")
+    def list_models() -> list[dict[str, object]]:
+        return [
+            {
+                "id": model.model_id,
+                "name": model.name,
+                "description": model.description,
+                "recommendation": model.recommendation,
+                "active": model.model_id == active_model_id,
+                "installed": model_is_cached(model, active_settings.model_cache_dir),
+            }
+            for model in MODELS
+        ]
+
+    @app.post("/models/{model_id:path}/select")
+    async def select_model(model_id: str) -> dict[str, object]:
+        nonlocal active_model_id, active_settings
+        try:
+            selected_settings = model_settings(settings, model_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="This model is not available in ESPImageServer") from exc
+        if model_id == active_model_id:
+            return {"status": "active", "model_id": model_id}
+        try:
+            await run_in_threadpool(generator.activate_model, selected_settings)
+            model_selection_store.set(model_id)
+        except Exception:
+            logger.exception("Unable to activate image model '%s'", model_id)
+            raise HTTPException(status_code=500, detail="Unable to download or load the selected model") from None
+        active_settings = selected_settings
+        active_model_id = model_id
+        logger.info("Active image model changed to %s", model_id)
+        return {"status": "active", "model_id": model_id}
 
     @app.get("/display")
     def active_display() -> dict[str, object]:
@@ -284,7 +332,7 @@ def create_app(
             output_width = profile.width if profile else settings.output_width
             output_height = profile.height if profile else settings.output_height
             generation_width, generation_height = optimal_generation_size(
-                settings.model_id, output_width, output_height
+                active_model_id, output_width, output_height
             )
             image = await run_in_threadpool(
                 generator.generate, request.prompt, generation_width, generation_height

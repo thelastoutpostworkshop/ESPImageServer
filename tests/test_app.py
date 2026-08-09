@@ -5,6 +5,7 @@ from PIL import Image
 
 from esp_image_server.app import create_app
 from esp_image_server.config import Settings
+from esp_image_server.model_settings import ModelSelectionStore
 
 
 class FakeGenerator:
@@ -16,6 +17,10 @@ class FakeGenerator:
 
     def load(self) -> None:
         self.ready = True
+
+    def activate_model(self, settings: Settings) -> None:
+        self.ready = False
+        self.load()
 
     def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image:
         assert prompt == "a tiny robot"
@@ -97,6 +102,19 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
     assert response.status_code == 200
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
+
+
+def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
+    store = ModelSelectionStore("stabilityai/sd-turbo", tmp_path / "settings.json")
+    app = create_app(Settings(), FakeGenerator(), model_selection_store=store, enable_mdns=False)
+    with TestClient(app) as client:
+        models = client.get("/models")
+        selected = client.post("/models/segmind/SSD-1B/select")
+
+    assert models.status_code == 200
+    assert len(models.json()) == 2
+    assert selected.status_code == 200
+    assert store.get() == "segmind/SSD-1B"
 
 
 def test_browser_test_page_is_available() -> None:

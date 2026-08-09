@@ -12,7 +12,7 @@ The default model is [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai
 
 ## Maker installer (Windows)
 
-For a maker-facing installation, build and distribute `ESPImageServer-Setup.exe`. It opens a Windows wizard that lets the user select CPU or NVIDIA CUDA acceleration and choose a model. The installer downloads the selected model before it finishes, so the server is ready to use immediately.
+For a maker-facing installation, build and distribute `ESPImageServer-Setup.exe`. It opens a Windows wizard that lets the user select CPU or NVIDIA CUDA acceleration and choose a model. The installer downloads the selected model before it finishes, so the server is ready to use immediately. Models are stored in the user's local application data folder, separate from the program files, so installer upgrades preserve them.
 
 To build it as a project developer, install [Inno Setup](https://jrsoftware.org/isinfo.php), then run:
 
@@ -68,6 +68,10 @@ Open `http://127.0.0.1:8000/` for the browser test page. `0.0.0.0` in Uvicorn's 
 On Windows, ESPImageServer advertises the active physical LAN address rather than WSL or Hyper-V virtual-network addresses.
 
 The Start Menu and desktop launchers open this test page automatically after the server is ready. To do the same from another launcher, set `ESP_IMAGE_OPEN_BROWSER=1` before starting the server.
+
+## Changing the image model
+
+Open the **Models** item in the web app to select an available model. The app shows whether it is already on the computer. Choosing a new model downloads it if needed, loads it, and remembers the selection for the next server start. The current release includes SD-Turbo (fast, recommended) and Segmind SSD-1B (higher quality, best with NVIDIA graphics).
 
 ## Generate an image
 

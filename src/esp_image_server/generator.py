@@ -54,6 +54,15 @@ class DiffusersGenerator:
             pipeline.enable_attention_slicing()
         self._pipeline = pipeline
 
+    def activate_model(self, settings: Settings) -> None:
+        """Unload the current pipeline and download/load the selected model."""
+        with self._lock:
+            if self._pipeline is not None and self.settings.model_id == settings.model_id:
+                return
+            self._pipeline = None
+            self.settings = settings
+        self.load()
+
     def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image:
         if self._pipeline is None:
             raise RuntimeError("Image model is not ready")

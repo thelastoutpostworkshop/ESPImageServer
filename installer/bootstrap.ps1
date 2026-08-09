@@ -93,14 +93,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Unable to install ESPImageServer dependencies.' }
 
     Set-InstallStatus 4 'Saving your server settings...'
-    $modelCachePath = Join-Path $projectRoot 'models'
+    $modelCachePath = Join-Path $env:LOCALAPPDATA 'ESPImageServer\models'
     New-Item -ItemType Directory -Force $modelCachePath | Out-Null
     $env:ESP_IMAGE_MODEL_CACHE = $modelCachePath
     $settingsFile = Join-Path $projectRoot 'server_settings.bat'
 @"
 @echo off
 set "ESP_IMAGE_MODEL=$ModelId"
-set "ESP_IMAGE_MODEL_CACHE=%~dp0models"
+set "ESP_IMAGE_MODEL_CACHE=%LOCALAPPDATA%\ESPImageServer\models"
 set "ESP_IMAGE_INFERENCE_STEPS=$InferenceSteps"
 set "ESP_IMAGE_GUIDANCE_SCALE=$GuidanceScale"
 set "ESP_IMAGE_GENERATION_WIDTH=$GenerationWidth"

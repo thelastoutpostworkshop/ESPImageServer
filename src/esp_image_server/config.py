@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -32,6 +33,7 @@ class Settings:
     guidance_scale: float = 0.0
     host: str = "0.0.0.0"
     port: int = 8000
+    model_cache_dir: Path | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -53,4 +55,5 @@ class Settings:
             guidance_scale=_env_float("ESP_IMAGE_GUIDANCE_SCALE", 0.0),
             host=os.getenv("ESP_IMAGE_HOST", cls.host),
             port=_env_int("ESP_IMAGE_PORT", 8000),
+            model_cache_dir=Path(os.environ["ESP_IMAGE_MODEL_CACHE"]) if os.getenv("ESP_IMAGE_MODEL_CACHE") else None,
         )
