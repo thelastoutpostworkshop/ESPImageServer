@@ -8,8 +8,8 @@ const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
 const generating = ref(false)
-const heroImageUrl = '/assets/welcome-hero-horizontal.png'
 const logoImageUrl = '/assets/test-page-logo.png'
+const drawer = ref(true)
 let displayTimer
 
 const displayMessage = computed(() => {
@@ -68,16 +68,32 @@ onUnmounted(() => {
 
 <template>
   <v-app>
+    <v-app-bar color="surface" border elevation="2">
+      <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
+      <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
+      <v-app-bar-title class="font-weight-bold">ESPImageServer</v-app-bar-title>
+      <v-chip color="primary" variant="tonal" prepend-icon="mdi-wifi">Local AI for ESP32</v-chip>
+    </v-app-bar>
+
+    <v-navigation-drawer v-model="drawer" width="272" border>
+      <v-list-item class="py-4" title="ESPImageServer" subtitle="Local AI image generation" />
+      <v-divider />
+      <v-list nav density="comfortable">
+        <v-list-item prepend-icon="mdi-image-sparkles" title="Generate image" href="#generate" />
+        <v-list-item prepend-icon="mdi-monitor-dashboard" title="ESP32 display" href="#display" />
+        <v-list-item prepend-icon="mdi-server" title="Server status" href="#server" />
+      </v-list>
+      <template #append>
+        <div class="pa-4 text-caption text-medium-emphasis">Images stay on your local network.</div>
+      </template>
+    </v-navigation-drawer>
+
     <v-main class="app-shell">
       <v-container class="py-7" style="max-width: 820px">
-        <v-card class="hero mb-6" border elevation="4">
-          <v-img :src="heroImageUrl" alt="ESPImageServer: local AI images for ESP32 displays" cover />
-        </v-card>
-
-        <v-sheet class="d-flex align-center ga-4 mb-6" color="transparent">
+        <v-sheet id="server" class="d-flex align-center ga-4 mb-7" color="transparent">
           <v-avatar :image="logoImageUrl" size="72" />
           <div>
-            <h1 class="text-h4 font-weight-bold">Generate an image</h1>
+            <h1 class="text-h4 font-weight-bold">ESPImageServer</h1>
             <template v-if="serverInfo">
               <div class="text-body-1 font-weight-bold">AI model: {{ serverInfo.model_name }}</div>
               <div class="text-body-2 text-medium-emphasis">{{ serverInfo.model_description }}</div>
@@ -87,7 +103,7 @@ onUnmounted(() => {
           </div>
         </v-sheet>
 
-        <v-card class="mb-5" variant="tonal">
+        <v-card id="display" class="mb-5" variant="tonal">
           <v-card-title class="d-flex align-center ga-2">
             <v-icon icon="mdi-monitor-dashboard" color="primary" />
             ESP32 display
@@ -95,7 +111,7 @@ onUnmounted(() => {
           <v-card-text>{{ displayMessage }}</v-card-text>
         </v-card>
 
-        <v-card>
+        <v-card id="generate">
           <v-card-text>
             <v-form @submit.prevent="generate">
               <v-textarea

@@ -1,4 +1,3 @@
 html, body, #app { min-height: 100%; }
 body { margin: 0; background: #111827; }
 .app-shell { min-height: 100vh; background: #111827; }
-.hero { overflow: hidden; border-color: #164e78 !important; background: #020816; }
