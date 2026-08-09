@@ -118,7 +118,7 @@ def create_app(
             if mdns is not None:
                 mdns.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.22", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.23", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -180,6 +180,8 @@ def create_app(
                 "name": model.name,
                 "description": model.description,
                 "recommendation": model.recommendation,
+                "hardware": model.hardware,
+                "speed": model.speed,
                 "active": model.model_id == active_model_id,
                 "installed": model_is_cached(model, active_settings.model_cache_dir),
             }

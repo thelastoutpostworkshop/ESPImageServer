@@ -1,3 +1,9 @@
 html, body, #app { min-height: 100%; }
 body { margin: 0; background: #111827; }
 .app-shell { min-height: 100vh; background: #111827; }
+
+.model-card { transition: border-color 160ms ease, box-shadow 160ms ease; }
+.model-card--active {
+  border-color: rgb(var(--v-theme-success)) !important;
+  box-shadow: 0 0 0 1px rgb(var(--v-theme-success)) !important;
+}

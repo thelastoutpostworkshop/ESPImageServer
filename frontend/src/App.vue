@@ -182,23 +182,43 @@ onUnmounted(() => {
         </template>
 
         <v-card v-else-if="page === 'models'">
-          <v-card-title>Image models</v-card-title>
-          <v-card-text>
-            Choose the model used to generate images. A model downloads once, then remains available on this computer.
+          <v-card-title class="text-h4 pt-6">Choose an image model</v-card-title>
+          <v-card-text class="text-body-1">
+            Choose how ESPImageServer creates images. Each model downloads once and stays on this computer.
           </v-card-text>
-          <v-list lines="three">
-            <v-list-item v-for="model in models" :key="model.id" :title="model.name" :subtitle="`${model.description} ${model.recommendation}`">
-              <template #prepend>
-                <v-icon :color="model.active ? 'success' : 'primary'">mdi-brain</v-icon>
-              </template>
-              <template #append>
-                <v-chip v-if="model.active" color="success" variant="tonal">In use</v-chip>
-                <v-btn v-else color="primary" size="small" :loading="generating" @click="selectModel(model)">
-                  {{ model.installed ? 'Use model' : 'Download and use' }}
-                </v-btn>
-              </template>
-            </v-list-item>
-          </v-list>
+          <v-card-text class="pt-0">
+            <v-row>
+              <v-col v-for="model in models" :key="model.id" cols="12" md="6">
+                <v-card class="model-card h-100" :class="{ 'model-card--active': model.active }" border elevation="3">
+                  <v-card-item>
+                    <template #prepend>
+                      <v-avatar :color="model.hardware.startsWith('NVIDIA') ? 'deep-purple' : 'teal'" variant="tonal" size="48">
+                        <v-icon>{{ model.hardware.startsWith('NVIDIA') ? 'mdi-expansion-card-variant' : 'mdi-laptop' }}</v-icon>
+                      </v-avatar>
+                    </template>
+                    <v-card-title>{{ model.name }}</v-card-title>
+                    <v-card-subtitle>{{ model.speed }}</v-card-subtitle>
+                  </v-card-item>
+                  <v-card-text>
+                    <p class="mb-4">{{ model.description }}</p>
+                    <v-alert :color="model.hardware.startsWith('NVIDIA') ? 'deep-purple' : 'teal'" variant="tonal" density="comfortable" class="mb-3">
+                      <div class="font-weight-bold">{{ model.hardware }}</div>
+                      <div class="text-body-2">{{ model.recommendation }}</div>
+                    </v-alert>
+                    <v-chip :color="model.installed ? 'success' : 'secondary'" variant="tonal" size="small" :prepend-icon="model.installed ? 'mdi-check-circle' : 'mdi-download'">
+                      {{ model.installed ? 'Downloaded' : 'Download required' }}
+                    </v-chip>
+                  </v-card-text>
+                  <v-card-actions class="px-4 pb-4">
+                    <v-chip v-if="model.active" color="success" variant="flat" prepend-icon="mdi-check">Currently in use</v-chip>
+                    <v-btn v-else color="primary" block :loading="generating" @click="selectModel(model)">
+                      {{ model.installed ? 'Use this model' : 'Download and use' }}
+                    </v-btn>
+                  </v-card-actions>
+                </v-card>
+              </v-col>
+            </v-row>
+          </v-card-text>
         </v-card>
 
         <v-card v-else>
