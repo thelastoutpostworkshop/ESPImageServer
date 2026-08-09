@@ -21,6 +21,7 @@ from .config import Settings
 from .display import ActiveDisplayStore
 from .devices import DeviceError, DeviceManager
 from .generator import DiffusersGenerator
+from .generation_size import optimal_generation_size
 from .image_processor import to_jpeg
 from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser
@@ -102,7 +103,7 @@ def create_app(
             if mdns is not None:
                 mdns.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.12", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.13", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -275,8 +276,9 @@ def create_app(
             profile = active_display_store.get()
             output_width = request.width or (profile.width if profile else settings.output_width)
             output_height = request.height or (profile.height if profile else settings.output_height)
-            generation_width = max(64, round(output_width / 8) * 8)
-            generation_height = max(64, round(output_height / 8) * 8)
+            generation_width, generation_height = optimal_generation_size(
+                settings.model_id, output_width, output_height
+            )
             image = await run_in_threadpool(
                 generator.generate, request.prompt, generation_width, generation_height
             )

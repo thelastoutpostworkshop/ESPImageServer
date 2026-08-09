@@ -11,11 +11,15 @@ class FakeGenerator:
     device = "test"
     ready = False
 
+    def __init__(self) -> None:
+        self.last_size: tuple[int | None, int | None] | None = None
+
     def load(self) -> None:
         self.ready = True
 
     def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image:
         assert prompt == "a tiny robot"
+        self.last_size = (width, height)
         return Image.new("RGB", (64, 64), "blue")
 
 
@@ -52,7 +56,8 @@ def test_latest_image_is_available_to_esp32_displays() -> None:
 
 
 def test_active_esp32_display_sets_the_default_generated_image_size() -> None:
-    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    generator = FakeGenerator()
+    app = create_app(Settings(), generator, enable_mdns=False)
     with TestClient(app) as client:
         assert client.get("/display").json() == {"connected": False}
         announcement = client.post(
@@ -62,6 +67,17 @@ def test_active_esp32_display_sets_the_default_generated_image_size() -> None:
 
     assert announcement.status_code == 201
     assert Image.open(BytesIO(generated.content)).size == (480, 272)
+    assert generator.last_size == (512, 288)
+
+
+def test_ssd_1b_uses_a_larger_aspect_matched_generation_canvas() -> None:
+    generator = FakeGenerator()
+    app = create_app(Settings(model_id="segmind/SSD-1B"), generator, enable_mdns=False)
+    with TestClient(app) as client:
+        response = client.post("/generate", json={"prompt": "a tiny robot", "width": 480, "height": 272})
+
+    assert response.status_code == 200
+    assert generator.last_size == (1024, 584)
 
 
 def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
