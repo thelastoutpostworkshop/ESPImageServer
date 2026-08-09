@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const prompt = ref('A cheerful small robot holding a paintbrush, friendly illustration')
 const serverInfo = ref(null)
+const health = ref(null)
 const display = ref(null)
 const status = ref('')
 const error = ref('')
@@ -10,7 +11,8 @@ const imageUrl = ref('')
 const generating = ref(false)
 const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
-let displayTimer
+const page = ref('generate')
+let statusTimer
 
 const displayMessage = computed(() => {
   if (!display.value?.connected) return 'Waiting for the ESP32 board to report its integrated display...'
@@ -22,6 +24,19 @@ async function loadDisplay() {
     display.value = await fetch('/display').then(response => response.json())
   } catch {
     display.value = null
+  }
+}
+
+async function loadServerStatus() {
+  try {
+    const [info, currentHealth] = await Promise.all([
+      fetch('/server-info').then(response => response.json()),
+      fetch('/health').then(response => response.json())
+    ])
+    serverInfo.value = info
+    health.value = currentHealth
+  } catch {
+    health.value = null
   }
 }
 
@@ -51,17 +66,16 @@ async function generate() {
 }
 
 onMounted(async () => {
-  try {
-    serverInfo.value = await fetch('/server-info').then(response => response.json())
-  } catch {
-    error.value = 'Image generator information is unavailable.'
-  }
+  await loadServerStatus()
   await loadDisplay()
-  displayTimer = window.setInterval(loadDisplay, 5000)
+  statusTimer = window.setInterval(() => {
+    loadServerStatus()
+    loadDisplay()
+  }, 5000)
 })
 
 onUnmounted(() => {
-  window.clearInterval(displayTimer)
+  window.clearInterval(statusTimer)
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
 })
 </script>
@@ -72,16 +86,23 @@ onUnmounted(() => {
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
       <v-app-bar-title class="font-weight-bold">ESPImageServer</v-app-bar-title>
-      <v-chip color="primary" variant="tonal" prepend-icon="mdi-wifi">Local AI for ESP32</v-chip>
+      <v-chip class="mr-2" :color="health?.status === 'ready' ? 'success' : 'warning'" variant="tonal" prepend-icon="mdi-server">
+        {{ health?.status === 'ready' ? 'Server ready' : 'Server loading' }}
+      </v-chip>
+      <v-chip v-if="serverInfo" class="mr-2" color="primary" variant="tonal" prepend-icon="mdi-brain">
+        {{ serverInfo.model_name }}
+      </v-chip>
+      <v-chip :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
+        {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
+      </v-chip>
     </v-app-bar>
 
     <v-navigation-drawer v-model="drawer" width="272" border>
       <v-list-item class="py-4" title="ESPImageServer" subtitle="Local AI image generation" />
       <v-divider />
       <v-list nav density="comfortable">
-        <v-list-item prepend-icon="mdi-image-sparkles" title="Generate image" href="#generate" />
-        <v-list-item prepend-icon="mdi-monitor-dashboard" title="ESP32 display" href="#display" />
-        <v-list-item prepend-icon="mdi-server" title="Server status" href="#server" />
+        <v-list-item prepend-icon="mdi-image-sparkles" title="Generate image" :active="page === 'generate'" @click="page = 'generate'" />
+        <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
       </v-list>
       <template #append>
         <div class="pa-4 text-caption text-medium-emphasis">Images stay on your local network.</div>
@@ -90,28 +111,8 @@ onUnmounted(() => {
 
     <v-main class="app-shell">
       <v-container class="py-7" style="max-width: 820px">
-        <v-sheet id="server" class="d-flex align-center ga-4 mb-7" color="transparent">
-          <v-avatar :image="logoImageUrl" size="72" />
-          <div>
-            <h1 class="text-h4 font-weight-bold">ESPImageServer</h1>
-            <template v-if="serverInfo">
-              <div class="text-body-1 font-weight-bold">AI model: {{ serverInfo.model_name }}</div>
-              <div class="text-body-2 text-medium-emphasis">{{ serverInfo.model_description }}</div>
-              <div class="text-body-2 text-medium-emphasis">{{ serverInfo.processing }}</div>
-            </template>
-            <div v-else class="text-body-2 text-medium-emphasis">Checking image generator...</div>
-          </div>
-        </v-sheet>
-
-        <v-card id="display" class="mb-5" variant="tonal">
-          <v-card-title class="d-flex align-center ga-2">
-            <v-icon icon="mdi-monitor-dashboard" color="primary" />
-            ESP32 display
-          </v-card-title>
-          <v-card-text>{{ displayMessage }}</v-card-text>
-        </v-card>
-
-        <v-card id="generate">
+        <template v-if="page === 'generate'">
+        <v-card>
           <v-card-text>
             <v-form @submit.prevent="generate">
               <v-textarea
@@ -143,6 +144,18 @@ onUnmounted(() => {
               Download JPEG
             </v-btn>
           </v-card-actions>
+        </v-card>
+        </template>
+
+        <v-card v-else>
+          <v-card-title>About ESPImageServer</v-card-title>
+          <v-card-text class="text-body-1">
+            Generate local AI images and show them on a connected ESP32 display. Images remain on your local network.
+          </v-card-text>
+          <v-list density="compact">
+            <v-list-item prepend-icon="mdi-brain" title="Model" :subtitle="serverInfo?.model_description || 'Loading model information...'" />
+            <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display" :subtitle="displayMessage" />
+          </v-list>
         </v-card>
       </v-container>
     </v-main>
