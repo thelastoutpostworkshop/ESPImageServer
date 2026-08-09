@@ -2,6 +2,10 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useDisplay } from 'vuetify'
 
+function createRandomSeed() {
+  return Math.floor(Math.random() * 4_294_967_296)
+}
+
 const prompt = ref('A cheerful small robot holding a paintbrush, friendly illustration')
 const serverInfo = ref(null)
 const health = ref(null)
@@ -14,7 +18,7 @@ const generating = ref(false)
 const generationProgress = ref(0)
 const generationStage = ref('')
 const steps = ref(1)
-const seed = ref('')
+const seed = ref(createRandomSeed())
 const activeModelId = ref('')
 const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
@@ -204,14 +208,14 @@ onUnmounted(() => {
                 rows="4"
               />
               <v-alert type="info" variant="tonal" density="compact" class="mb-4">
-                <strong>Steps</strong> trade speed for detail: more steps take longer. <strong>Seed</strong> lets you repeat a result; leave it blank for a new random image each time.
+                <strong>Steps</strong> trade speed for detail: more steps take longer. <strong>Seed</strong> lets you repeat a result. Use the dice button for a new random seed.
               </v-alert>
-              <v-row dense>
+              <v-row dense class="mb-6">
                 <v-col cols="12" sm="6">
                   <v-text-field v-model.number="steps" label="Generation steps" type="number" :min="models.find(model => model.active)?.minimum_steps" :max="models.find(model => model.active)?.maximum_steps" variant="outlined" density="comfortable" hint="More steps can improve detail, but take longer." persistent-hint />
                 </v-col>
                 <v-col cols="12" sm="6">
-                  <v-text-field v-model="seed" label="Seed (optional)" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint />
+                  <v-text-field v-model="seed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint append-inner-icon="mdi-dice-5" @click:append-inner="seed = createRandomSeed()" />
                 </v-col>
               </v-row>
               <v-btn type="submit" color="primary" :disabled="generating" prepend-icon="mdi-image-plus">

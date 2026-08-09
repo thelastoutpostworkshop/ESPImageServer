@@ -190,6 +190,7 @@ def test_browser_test_page_is_available() -> None:
     assert response.status_code == 200
     assert '<div id="app"></div>' in response.text
     assert "/ui/assets/" in response.text
+    assert response.headers["cache-control"] == "no-store, max-age=0"
 
 
 def test_welcome_hero_is_available() -> None:

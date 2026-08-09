@@ -124,7 +124,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.33", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.34", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -142,7 +142,7 @@ def create_app(
     def test_page() -> Response:
         index = WEB_BUILD / "index.html"
         if index.is_file():
-            return FileResponse(index)
+            return FileResponse(index, headers={"Cache-Control": "no-store, max-age=0"})
         return Response("Frontend build is missing. Run: npm --prefix frontend run build", status_code=503)
 
     @app.get("/health")
