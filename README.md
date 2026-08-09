@@ -54,6 +54,8 @@ Startup logs show the listening address and selected device. The first run downl
 
 Open `http://127.0.0.1:8000/` for the browser test page. `0.0.0.0` in Uvicorn's startup message is a network bind address, not a browser URL. The server also advertises itself on the local network as `espimageserver.local`, so ESP32 devices can use that stable name instead of a changing LAN IP address.
 
+On Windows, ESPImageServer advertises the active physical LAN address rather than WSL or Hyper-V virtual-network addresses.
+
 The Start Menu and desktop launchers open this test page automatically after the server is ready. To do the same from another launcher, set `ESP_IMAGE_OPEN_BROWSER=1` before starting the server.
 
 ## Generate an image

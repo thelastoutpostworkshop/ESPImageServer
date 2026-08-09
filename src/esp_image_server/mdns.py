@@ -7,6 +7,25 @@ import socket
 from zeroconf import ServiceInfo, Zeroconf
 
 
+def active_lan_address() -> str | None:
+    """Return the IPv4 address used by this PC's default network route.
+
+    Windows hosts with WSL or Hyper-V often resolve their hostname to a virtual
+    172.x address first. That address cannot be reached by a physical ESP32.
+    A UDP connect selects the same adapter Windows would use for normal LAN or
+    internet traffic without sending application data.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("1.1.1.1", 80))
+            address = probe.getsockname()[0]
+    except OSError:
+        return None
+    if address.startswith(("127.", "169.254.")):
+        return None
+    return address
+
+
 class MdnsAdvertiser:
     def __init__(self, port: int) -> None:
         self._port = port
@@ -14,18 +33,14 @@ class MdnsAdvertiser:
         self._service: ServiceInfo | None = None
 
     def start(self) -> None:
-        addresses = {
-            address
-            for address in socket.gethostbyname_ex(socket.gethostname())[2]
-            if not address.startswith(("127.", "169.254."))
-        }
-        if not addresses:
+        address = active_lan_address()
+        if address is None:
             return
         hostname = "espimageserver.local."
         self._service = ServiceInfo(
             "_http._tcp.local.",
             "ESPImageServer._http._tcp.local.",
-            addresses=[socket.inet_aton(address) for address in addresses],
+            addresses=[socket.inet_aton(address)],
             port=self._port,
             properties={"path": "/"},
             server=hostname,
