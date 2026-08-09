@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useDisplay } from 'vuetify'
 
 const prompt = ref('A cheerful small robot holding a paintbrush, friendly illustration')
 const serverInfo = ref(null)
@@ -19,6 +20,7 @@ const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
 const page = ref('generate')
 let statusTimer
+const { mobile } = useDisplay()
 
 const displayMessage = computed(() => {
   if (!display.value?.connected) return 'Waiting for the ESP32 board to report its integrated display...'
@@ -146,22 +148,22 @@ onUnmounted(() => {
 
 <template>
   <v-app>
-    <v-app-bar color="surface" border elevation="2">
+    <v-app-bar color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
-      <v-app-bar-title class="font-weight-bold">ESPImageServer</v-app-bar-title>
+      <v-app-bar-title class="font-weight-bold" :class="{ 'app-bar__title--compact': mobile }">ESPImageServer</v-app-bar-title>
       <v-chip class="mr-2" :color="health?.status === 'ready' ? 'success' : 'warning'" variant="tonal" prepend-icon="mdi-server">
-        {{ health?.status === 'ready' ? 'Server ready' : 'Server loading' }}
+        <span v-if="!mobile">{{ health?.status === 'ready' ? 'Server ready' : 'Server loading' }}</span>
       </v-chip>
       <v-chip v-if="serverInfo" class="mr-2" color="primary" variant="tonal" prepend-icon="mdi-brain">
-        {{ serverInfo.model_name }}
+        <span v-if="!mobile">{{ serverInfo.model_name }}</span>
       </v-chip>
-      <v-chip :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
+      <v-chip v-if="!mobile" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
         {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
       </v-chip>
     </v-app-bar>
 
-    <v-navigation-drawer v-model="drawer" width="272" border>
+    <v-navigation-drawer v-model="drawer" width="272" border :temporary="mobile">
       <v-list-item class="py-4" title="ESPImageServer" subtitle="Local AI image generation" />
       <v-divider />
       <v-list nav density="comfortable">
@@ -175,7 +177,7 @@ onUnmounted(() => {
     </v-navigation-drawer>
 
     <v-main class="app-shell">
-      <v-container class="py-7" style="max-width: 820px">
+      <v-container class="app-container py-4 py-sm-7">
         <template v-if="page === 'generate'">
         <v-card>
           <v-card-text>
@@ -234,7 +236,7 @@ onUnmounted(() => {
           <v-card-text class="text-body-1">
             Choose how ESPImageServer creates images. Each model downloads once and stays on this computer.
           </v-card-text>
-          <v-table class="model-table" hover density="comfortable">
+          <v-table v-if="!mobile" class="model-table" hover density="comfortable">
             <thead>
               <tr>
                 <th>Model</th>
@@ -277,6 +279,23 @@ onUnmounted(() => {
               </tr>
             </tbody>
           </v-table>
+          <v-list v-else class="model-list" lines="two">
+            <v-list-item v-for="model in models" :key="model.id" :class="{ 'model-list__active': model.active }">
+              <template #prepend>
+                <v-avatar :color="model.hardware.includes('NVIDIA') ? 'deep-purple' : 'teal'" variant="tonal" size="36">
+                  <v-icon size="20">{{ model.hardware.includes('NVIDIA') ? 'mdi-expansion-card-variant' : 'mdi-laptop' }}</v-icon>
+                </v-avatar>
+              </template>
+              <v-list-item-title class="font-weight-bold">{{ model.name }}</v-list-item-title>
+              <v-list-item-subtitle>{{ model.speed }} · {{ model.hardware }}</v-list-item-subtitle>
+              <template #append>
+                <v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip>
+                <v-btn v-else color="primary" size="small" :loading="generating" @click="selectModel(model)">
+                  {{ model.installed ? 'Use' : 'Get' }}
+                </v-btn>
+              </template>
+            </v-list-item>
+          </v-list>
           <v-card-text class="text-caption text-medium-emphasis pt-3">
             NVIDIA models can still run without a compatible GPU, but generation may be impractically slow.
           </v-card-text>

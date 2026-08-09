@@ -5,3 +5,13 @@ body { margin: 0; background: #111827; }
 .model-table th { white-space: nowrap; }
 .model-table__active { background: rgba(var(--v-theme-success), 0.08); }
 .model-table__description { max-width: 230px; }
+.app-container { max-width: 820px; }
+.model-list__active { background: rgba(var(--v-theme-success), 0.08); }
+
+@media (max-width: 600px) {
+  .app-container { padding-inline: 12px !important; }
+  .app-bar .v-toolbar-title { min-width: 0; flex: 1 1 auto; }
+  .app-bar__title--compact { font-size: 0; }
+  .app-bar .v-chip { margin-right: 4px !important; padding-inline: 8px; }
+  .v-card-title { white-space: normal; }
+}
