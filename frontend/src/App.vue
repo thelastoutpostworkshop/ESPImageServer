@@ -179,7 +179,9 @@ onUnmounted(() => {
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
         <template v-if="page === 'generate'">
-        <v-card>
+        <v-row>
+        <v-col cols="12" :lg="imageUrl ? 5 : 12">
+        <v-card class="generation-card">
           <v-card-text>
             <v-form @submit.prevent="generate">
               <v-textarea
@@ -220,8 +222,10 @@ onUnmounted(() => {
             </v-form>
           </v-card-text>
         </v-card>
+        </v-col>
 
-        <v-card v-if="imageUrl" class="mt-5">
+        <v-col v-if="imageUrl" cols="12" lg="7">
+        <v-card class="generated-image-card h-100">
           <v-img :src="imageUrl" alt="Generated image" />
           <v-card-actions>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
@@ -229,6 +233,8 @@ onUnmounted(() => {
             </v-btn>
           </v-card-actions>
         </v-card>
+        </v-col>
+        </v-row>
         </template>
 
         <v-card v-else-if="page === 'models'">
