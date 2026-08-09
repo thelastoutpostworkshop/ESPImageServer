@@ -67,40 +67,68 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main>
-    <section class="hero" aria-label="ESPImageServer welcome">
-      <img :src="heroImageUrl" alt="ESPImageServer: local AI images for ESP32 displays" />
-    </section>
+  <v-app>
+    <v-main class="app-shell">
+      <v-container class="py-7" style="max-width: 820px">
+        <v-card class="hero mb-6" border elevation="4">
+          <v-img :src="heroImageUrl" alt="ESPImageServer: local AI images for ESP32 displays" cover />
+        </v-card>
 
-    <section class="heading">
-      <img :src="logoImageUrl" alt="ESPImageServer logo" />
-      <div>
-        <h1>Generate an image</h1>
-        <template v-if="serverInfo">
-          <p><strong>AI model: {{ serverInfo.model_name }}</strong></p>
-          <p>{{ serverInfo.model_description }}</p>
-          <p>{{ serverInfo.processing }}</p>
-        </template>
-        <p v-else>Checking image generator...</p>
-      </div>
-    </section>
+        <v-sheet class="d-flex align-center ga-4 mb-6" color="transparent">
+          <v-avatar :image="logoImageUrl" size="72" />
+          <div>
+            <h1 class="text-h4 font-weight-bold">Generate an image</h1>
+            <template v-if="serverInfo">
+              <div class="text-body-1 font-weight-bold">AI model: {{ serverInfo.model_name }}</div>
+              <div class="text-body-2 text-medium-emphasis">{{ serverInfo.model_description }}</div>
+              <div class="text-body-2 text-medium-emphasis">{{ serverInfo.processing }}</div>
+            </template>
+            <div v-else class="text-body-2 text-medium-emphasis">Checking image generator...</div>
+          </div>
+        </v-sheet>
 
-    <section class="card display-card">
-      <h2>ESP32 display</h2>
-      <p>{{ displayMessage }}</p>
-    </section>
+        <v-card class="mb-5" variant="tonal">
+          <v-card-title class="d-flex align-center ga-2">
+            <v-icon icon="mdi-monitor-dashboard" color="primary" />
+            ESP32 display
+          </v-card-title>
+          <v-card-text>{{ displayMessage }}</v-card-text>
+        </v-card>
 
-    <form class="card" @submit.prevent="generate">
-      <label for="prompt">Describe an image</label>
-      <textarea id="prompt" v-model="prompt" maxlength="1000" required />
-      <button :disabled="generating">{{ generating ? 'Generating...' : 'Generate image' }}</button>
-      <p v-if="status" class="success">{{ status }}</p>
-      <p v-if="error" class="error">{{ error }}</p>
-    </form>
+        <v-card>
+          <v-card-text>
+            <v-form @submit.prevent="generate">
+              <v-textarea
+                v-model="prompt"
+                label="Describe an image"
+                maxlength="1000"
+                counter="1000"
+                required
+                variant="outlined"
+                rows="4"
+              />
+              <v-btn type="submit" color="primary" :loading="generating" prepend-icon="mdi-image-plus">
+                Generate image
+              </v-btn>
+              <v-alert v-if="status" class="mt-4" type="success" variant="tonal" density="compact">
+                {{ status }}
+              </v-alert>
+              <v-alert v-if="error" class="mt-4" type="error" variant="tonal" density="compact">
+                {{ error }}
+              </v-alert>
+            </v-form>
+          </v-card-text>
+        </v-card>
 
-    <section v-if="imageUrl" class="card result">
-      <img :src="imageUrl" alt="Generated image" />
-      <a :href="imageUrl" download="esp-image.jpg">Download JPEG</a>
-    </section>
-  </main>
+        <v-card v-if="imageUrl" class="mt-5">
+          <v-img :src="imageUrl" alt="Generated image" />
+          <v-card-actions>
+            <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
+              Download JPEG
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-container>
+    </v-main>
+  </v-app>
 </template>
