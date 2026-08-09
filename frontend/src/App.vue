@@ -10,6 +10,11 @@ const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
 const generating = ref(false)
+const generationProgress = ref(0)
+const generationStage = ref('')
+const steps = ref(1)
+const seed = ref('')
+const activeModelId = ref('')
 const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
 const page = ref('generate')
@@ -31,6 +36,11 @@ async function loadDisplay() {
 async function loadModels() {
   try {
     models.value = await fetch('/models').then(response => response.json())
+    const activeModel = models.value.find(model => model.active)
+    if (activeModel && activeModel.id !== activeModelId.value) {
+      activeModelId.value = activeModel.id
+      steps.value = activeModel.default_steps
+    }
   } catch {
     models.value = []
   }
@@ -74,25 +84,46 @@ async function selectModel(model) {
 async function generate() {
   generating.value = true
   error.value = ''
-  status.value = 'Generating your image. This can take a little while.'
+  status.value = ''
+  generationProgress.value = 0
+  generationStage.value = 'Starting image generation...'
   try {
-    const response = await fetch('/generate', {
+    const response = await fetch('/generation-jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt.value })
+      body: JSON.stringify({
+        prompt: prompt.value,
+        steps: Number(steps.value),
+        seed: seed.value === '' ? null : Number(seed.value)
+      })
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
+    const job = await response.json()
+    let currentJob = job
+    while (currentJob.status !== 'complete' && currentJob.status !== 'failed') {
+      await new Promise(resolve => window.setTimeout(resolve, 350))
+      const statusResponse = await fetch(`/generation-jobs/${job.id}`)
+      if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
+      currentJob = await statusResponse.json()
+      generationProgress.value = currentJob.progress
+      generationStage.value = currentJob.steps ? `${currentJob.stage} (${currentJob.step} of ${currentJob.steps})` : currentJob.stage
+    }
+    if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Image generation failed')
+    const imageResponse = await fetch(`/generation-jobs/${job.id}/image`)
+    if (!imageResponse.ok) throw new Error(`Request failed (${imageResponse.status})`)
     if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
-    imageUrl.value = URL.createObjectURL(await response.blob())
+    imageUrl.value = URL.createObjectURL(await imageResponse.blob())
     status.value = 'Image ready. Your ESP32 display will pick it up shortly.'
   } catch (requestError) {
     error.value = `Could not generate the image: ${requestError.message}`
     status.value = ''
   } finally {
     generating.value = false
+    generationProgress.value = 0
+    generationStage.value = ''
   }
 }
 
@@ -158,9 +189,26 @@ onUnmounted(() => {
                 variant="outlined"
                 rows="4"
               />
-              <v-btn type="submit" color="primary" :loading="generating" prepend-icon="mdi-image-plus">
+              <v-alert type="info" variant="tonal" density="compact" class="mb-4">
+                <strong>Steps</strong> trade speed for detail: more steps take longer. <strong>Seed</strong> lets you repeat a result; leave it blank for a new random image each time.
+              </v-alert>
+              <v-row dense>
+                <v-col cols="12" sm="6">
+                  <v-text-field v-model.number="steps" label="Generation steps" type="number" :min="models.find(model => model.active)?.minimum_steps" :max="models.find(model => model.active)?.maximum_steps" variant="outlined" density="comfortable" hint="More steps can improve detail, but take longer." persistent-hint />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-text-field v-model="seed" label="Seed (optional)" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint />
+                </v-col>
+              </v-row>
+              <v-btn type="submit" color="primary" :disabled="generating" prepend-icon="mdi-image-plus">
                 Generate image
               </v-btn>
+              <div v-if="generating" class="mt-5">
+                <div class="d-flex justify-space-between text-body-2 mb-2">
+                  <span>{{ generationStage }}</span><span>{{ generationProgress }}%</span>
+                </div>
+                <v-progress-linear :model-value="generationProgress" color="primary" height="10" rounded />
+              </div>
               <v-alert v-if="status" class="mt-4" type="success" variant="tonal" density="compact">
                 {{ status }}
               </v-alert>

@@ -1,4 +1,5 @@
 from io import BytesIO
+import time
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -14,6 +15,8 @@ class FakeGenerator:
 
     def __init__(self) -> None:
         self.last_size: tuple[int | None, int | None] | None = None
+        self.last_steps: int | None = None
+        self.last_seed: int | None = None
 
     def load(self) -> None:
         self.ready = True
@@ -22,9 +25,12 @@ class FakeGenerator:
         self.ready = False
         self.load()
 
-    def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image:
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None) -> Image.Image:
         assert prompt == "a tiny robot"
         self.last_size = (width, height)
+        self.last_steps, self.last_seed = inference_steps, seed
+        if progress is not None:
+            progress(1, 1)
         return Image.new("RGB", (64, 64), "blue")
 
 
@@ -36,6 +42,24 @@ def test_generate_returns_jpeg_binary() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
     assert Image.open(BytesIO(response.content)).size == (20, 10)
+
+
+def test_generation_job_reports_progress_and_returns_its_image() -> None:
+    app = create_app(Settings(output_width=20, output_height=10), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        created = client.post("/generation-jobs", json={"prompt": "a tiny robot"})
+        job_id = created.json()["id"]
+        for _ in range(20):
+            job = client.get(f"/generation-jobs/{job_id}").json()
+            if job["status"] == "complete":
+                break
+            time.sleep(0.01)
+        image = client.get(f"/generation-jobs/{job_id}/image")
+
+    assert created.status_code == 202
+    assert job["progress"] == 100
+    assert image.status_code == 200
+    assert Image.open(BytesIO(image.content)).size == (20, 10)
 
 
 def test_generate_uses_the_server_default_size_without_an_announced_display() -> None:
@@ -53,6 +77,16 @@ def test_generate_rejects_client_selected_dimensions() -> None:
         response = client.post("/generate", json={"prompt": "a tiny robot", "width": 320})
 
     assert response.status_code == 422
+
+
+def test_generate_accepts_valid_steps_and_a_seed() -> None:
+    generator = FakeGenerator()
+    app = create_app(Settings(), generator, enable_mdns=False)
+    with TestClient(app) as client:
+        response = client.post("/generate", json={"prompt": "a tiny robot", "steps": 3, "seed": 42})
+
+    assert response.status_code == 200
+    assert (generator.last_steps, generator.last_seed) == (3, 42)
 
 
 def test_latest_image_is_available_to_esp32_displays() -> None:

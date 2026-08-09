@@ -21,6 +21,7 @@ from .config import Settings
 from .display import ActiveDisplayStore
 from .devices import DeviceError, DeviceManager
 from .generator import DiffusersGenerator
+from .generation_jobs import GenerationJobStore
 from .generation_size import optimal_generation_size
 from .image_processor import to_jpeg
 from .latest_image import LatestImageStore
@@ -44,12 +45,14 @@ class ImageGenerator(Protocol):
 
     def activate_model(self, settings: Settings) -> None: ...
 
-    def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image: ...
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None) -> Image.Image: ...
 
 
 class GenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     prompt: str = Field(min_length=1, max_length=1_000, description="Text to turn into an image")
+    steps: int | None = Field(default=None, ge=1, le=100, description="Model inference steps")
+    seed: int | None = Field(default=None, ge=0, le=4_294_967_295, description="Optional repeatable random seed")
 
 
 class DisplayAnnouncement(BaseModel):
@@ -74,6 +77,7 @@ def create_app(
     latest_image_store: LatestImageStore | None = None,
     active_display_store: ActiveDisplayStore | None = None,
     model_selection_store: ModelSelectionStore | None = None,
+    generation_jobs: GenerationJobStore | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
     supplied_settings = settings is not None
@@ -89,6 +93,7 @@ def create_app(
     device_manager = device_manager or DeviceManager()
     latest_image_store = latest_image_store or LatestImageStore()
     active_display_store = active_display_store or ActiveDisplayStore()
+    generation_jobs = generation_jobs or GenerationJobStore()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -117,12 +122,14 @@ def create_app(
         finally:
             if mdns is not None:
                 mdns.close()
+            generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.26", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.28", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
     app.state.model_selection_store = model_selection_store
+    app.state.generation_jobs = generation_jobs
     app.mount(
         "/assets",
         StaticFiles(directory=Path(__file__).with_name("static")),
@@ -164,9 +171,9 @@ def create_app(
         else:
             processing = f"Processing device: {generator.device}"
         return {
-            "model_name": model_name,
+            "model_name": get_model(active_model_id).name,
             "model_id": active_model_id,
-            "model_description": model_description,
+            "model_description": get_model(active_model_id).description,
             "processing": processing,
             "default_width": active_settings.output_width,
             "default_height": active_settings.output_height,
@@ -182,6 +189,9 @@ def create_app(
                 "recommendation": model.recommendation,
                 "hardware": model.hardware,
                 "speed": model.speed,
+                "default_steps": model.inference_steps,
+                "minimum_steps": model.minimum_steps,
+                "maximum_steps": model.maximum_steps,
                 "active": model.model_id == active_model_id,
                 "installed": model_is_cached(model, active_settings.model_cache_dir),
             }
@@ -325,31 +335,62 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "acknowledged"}
 
+    def generate_jpeg(request: GenerateRequest, progress=None) -> bytes:
+        if not generator.ready:
+            raise RuntimeError("Image model is still loading")
+        profile = active_display_store.get()
+        output_width = profile.width if profile else settings.output_width
+        output_height = profile.height if profile else settings.output_height
+        generation_width, generation_height = optimal_generation_size(active_model_id, output_width, output_height)
+        model = get_model(active_model_id)
+        steps = request.steps if request.steps is not None else model.inference_steps
+        if not model.minimum_steps <= steps <= model.maximum_steps:
+            raise ValueError(f"{model.name} supports {model.minimum_steps} to {model.maximum_steps} steps")
+        if progress is not None:
+            progress(0, 0, "Preparing the image model")
+        image = generator.generate(
+            request.prompt, generation_width, generation_height,
+            progress=(lambda step, steps: progress(step, steps, "Generating image")) if progress else None,
+            inference_steps=steps,
+            seed=request.seed,
+        )
+        if progress is not None:
+            progress(1, 1, "Fitting the image to your ESP32 display")
+        jpeg = to_jpeg(image, width=output_width, height=output_height, quality=settings.jpeg_quality)
+        latest_image_store.set(jpeg)
+        return jpeg
+
     @app.post("/generate", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
     async def generate(request: GenerateRequest) -> Response:
-        if not generator.ready:
-            raise HTTPException(status_code=503, detail="Image model is still loading")
         try:
-            profile = active_display_store.get()
-            output_width = profile.width if profile else settings.output_width
-            output_height = profile.height if profile else settings.output_height
-            generation_width, generation_height = optimal_generation_size(
-                active_model_id, output_width, output_height
-            )
-            image = await run_in_threadpool(
-                generator.generate, request.prompt, generation_width, generation_height
-            )
-            jpeg = to_jpeg(
-                image,
-                width=output_width,
-                height=output_height,
-                quality=settings.jpeg_quality,
-            )
-            latest_image_store.set(jpeg)
+            jpeg = await run_in_threadpool(generate_jpeg, request)
         except Exception:
             logger.exception("Image generation failed")
             raise HTTPException(status_code=500, detail="Image generation failed") from None
         return Response(content=jpeg, media_type="image/jpeg")
+
+    @app.post("/generation-jobs", status_code=status.HTTP_202_ACCEPTED)
+    def create_generation_job(request: GenerateRequest) -> dict[str, object]:
+        if not generator.ready:
+            raise HTTPException(status_code=503, detail="Image model is still loading")
+        job = generation_jobs.create(lambda progress: generate_jpeg(request, progress))
+        return job.as_dict()
+
+    @app.get("/generation-jobs/{job_id}")
+    def generation_job(job_id: str) -> dict[str, object]:
+        job = generation_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Generation job not found")
+        return job.as_dict()
+
+    @app.get("/generation-jobs/{job_id}/image", response_class=Response)
+    def generation_job_image(job_id: str) -> Response:
+        job = generation_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Generation job not found")
+        if job.status != "complete" or job.jpeg is None:
+            raise HTTPException(status_code=409, detail="Image is not ready")
+        return Response(content=job.jpeg, media_type="image/jpeg")
 
     return app
 

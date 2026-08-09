@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from threading import Lock
+from typing import Callable
 
 from PIL import Image
 
@@ -63,18 +64,36 @@ class DiffusersGenerator:
             self.settings = settings
         self.load()
 
-    def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> Image.Image:
+    def generate(
+        self, prompt: str, width: int | None = None, height: int | None = None,
+        progress: Callable[[int, int], None] | None = None, inference_steps: int | None = None,
+        seed: int | None = None,
+    ) -> Image.Image:
         if self._pipeline is None:
             raise RuntimeError("Image model is not ready")
         # Most local diffusion pipelines are not safe to invoke concurrently.
         with self._lock:
             width = width or self.settings.generation_width
             height = height or self.settings.generation_height
-            result = self._pipeline(
-                prompt=prompt,
-                num_inference_steps=self.settings.inference_steps,
-                guidance_scale=self.settings.guidance_scale,
-                width=width,
-                height=height,
-            )
+            steps = inference_steps or self.settings.inference_steps
+            if progress is not None:
+                progress(0, steps)
+
+            def on_step_end(_pipeline, step, _timestep, callback_kwargs):
+                if progress is not None:
+                    progress(step + 1, steps)
+                return callback_kwargs
+
+            options = {
+                "prompt": prompt,
+                "num_inference_steps": steps,
+                "guidance_scale": self.settings.guidance_scale,
+                "width": width,
+                "height": height,
+                "callback_on_step_end": on_step_end if progress is not None else None,
+            }
+            if seed is not None:
+                import torch
+                options["generator"] = torch.Generator(device=self._device).manual_seed(seed)
+            result = self._pipeline(**options)
         return result.images[0]
