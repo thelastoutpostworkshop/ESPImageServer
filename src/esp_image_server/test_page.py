@@ -32,7 +32,7 @@ TEST_PAGE_HTML = """<!doctype html>
     </div>
     <section class="delivery">
       <h2>ESP32 display</h2>
-      <p>Every image you generate becomes the latest image. ESP32 displays on your local network pick it up automatically.</p>
+      <p id="display-status">Waiting for the ESP32 board to report its integrated display...</p>
     </section>
     <form id="generate-form">
       <label for="prompt">Describe an image</label>
@@ -61,7 +61,9 @@ TEST_PAGE_HTML = """<!doctype html>
     const download = document.getElementById('download');
     const width = document.getElementById('width');
     const height = document.getElementById('height');
+    const displayStatus = document.getElementById('display-status');
     let currentUrl;
+    let activeDisplayConnected = false;
 
     function escapeHtml(value) {
       const element = document.createElement('span');
@@ -71,10 +73,28 @@ TEST_PAGE_HTML = """<!doctype html>
 
     fetch('/server-info').then(async response => {
       const data = await response.json();
-      width.value = data.default_width;
-      height.value = data.default_height;
+      if (!activeDisplayConnected) {
+        width.value = data.default_width;
+        height.value = data.default_height;
+      }
       health.innerHTML = `<strong>AI model: ${escapeHtml(data.model_name)}</strong><br>${escapeHtml(data.model_description)}<br>${escapeHtml(data.processing)}`;
     }).catch(() => health.textContent = 'Image generator information is unavailable.');
+
+    async function loadDisplay() {
+      try {
+        const display = await fetch('/display').then(response => response.json());
+        if (!display.connected) return;
+        activeDisplayConnected = true;
+        width.value = display.width;
+        height.value = display.height;
+        displayStatus.textContent = `${display.name} connected — ${display.width} x ${display.height}. Generated images will fit this screen.`;
+      } catch {
+        displayStatus.textContent = 'Display information is unavailable. You can set the size manually.';
+      }
+    }
+
+    loadDisplay();
+    setInterval(loadDisplay, 5000);
 
     form.addEventListener('submit', async event => {
       event.preventDefault();

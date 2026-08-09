@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from PIL import Image
 
 from .config import Settings
+from .display import ActiveDisplayStore
 from .devices import DeviceError, DeviceManager
 from .generator import DiffusersGenerator
 from .image_processor import to_jpeg
@@ -44,6 +45,12 @@ class GenerateRequest(BaseModel):
     height: int | None = Field(default=None, ge=64, le=1_024, description="JPEG height for the ESP32")
 
 
+class DisplayAnnouncement(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    width: int = Field(ge=64, le=1_024)
+    height: int = Field(ge=64, le=1_024)
+
+
 class RegisterDeviceRequest(BaseModel):
     pairing_code: str = Field(min_length=6, max_length=6)
     name: str = Field(min_length=1, max_length=64)
@@ -58,12 +65,14 @@ def create_app(
     generator: ImageGenerator | None = None,
     device_manager: DeviceManager | None = None,
     latest_image_store: LatestImageStore | None = None,
+    active_display_store: ActiveDisplayStore | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     generator = generator or DiffusersGenerator(settings)
     device_manager = device_manager or DeviceManager()
     latest_image_store = latest_image_store or LatestImageStore()
+    active_display_store = active_display_store or ActiveDisplayStore()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -93,9 +102,10 @@ def create_app(
             if mdns is not None:
                 mdns.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.11", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.12", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
+    app.state.active_display_store = active_display_store
     app.mount(
         "/assets",
         StaticFiles(directory=Path(__file__).with_name("static")),
@@ -122,6 +132,43 @@ def create_app(
                 "Higher-quality local AI image model; slower and best with an NVIDIA graphics card.",
             ),
         }
+        model_name, model_description = model_details.get(
+            settings.model_id, (settings.model_id, "Local AI image model selected during installation.")
+        )
+        if generator.device == "cuda":
+            processing = "NVIDIA graphics card acceleration — fast image generation."
+        elif generator.device == "cpu":
+            processing = "Computer processor mode — works broadly, but image generation can take longer."
+        else:
+            processing = f"Processing device: {generator.device}"
+        return {
+            "model_name": model_name,
+            "model_id": settings.model_id,
+            "model_description": model_description,
+            "processing": processing,
+            "default_width": settings.output_width,
+            "default_height": settings.output_height,
+        }
+
+    @app.get("/display")
+    def active_display() -> dict[str, object]:
+        profile = active_display_store.get()
+        if profile is None:
+            return {"connected": False}
+        return {
+            "connected": True,
+            "name": profile.name,
+            "width": profile.width,
+            "height": profile.height,
+        }
+
+    @app.post("/display", status_code=status.HTTP_201_CREATED)
+    def announce_display(announcement: DisplayAnnouncement) -> dict[str, object]:
+        profile = active_display_store.set(
+            announcement.name, announcement.width, announcement.height
+        )
+        logger.info("Active display announced: %s (%sx%s)", profile.name, profile.width, profile.height)
+        return {"status": "registered", "name": profile.name, "width": profile.width, "height": profile.height}
         model_name, model_description = model_details.get(
             settings.model_id, (settings.model_id, "Local AI image model selected during installation.")
         )
@@ -225,8 +272,9 @@ def create_app(
         if not generator.ready:
             raise HTTPException(status_code=503, detail="Image model is still loading")
         try:
-            output_width = request.width or settings.output_width
-            output_height = request.height or settings.output_height
+            profile = active_display_store.get()
+            output_width = request.width or (profile.width if profile else settings.output_width)
+            output_height = request.height or (profile.height if profile else settings.output_height)
             generation_width = max(64, round(output_width / 8) * 8)
             generation_height = max(64, round(output_height / 8) * 8)
             image = await run_in_threadpool(

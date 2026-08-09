@@ -51,6 +51,19 @@ def test_latest_image_is_available_to_esp32_displays() -> None:
     assert unchanged.status_code == 304
 
 
+def test_active_esp32_display_sets_the_default_generated_image_size() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        assert client.get("/display").json() == {"connected": False}
+        announcement = client.post(
+            "/display", json={"name": "JC4827W543 display", "width": 480, "height": 272}
+        )
+        generated = client.post("/generate", json={"prompt": "a tiny robot"})
+
+    assert announcement.status_code == 201
+    assert Image.open(BytesIO(generated.content)).size == (480, 272)
+
+
 def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
     app = create_app(Settings(model_id="stabilityai/sd-turbo"), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:

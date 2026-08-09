@@ -75,6 +75,8 @@ http://espimageserver.local:8000/latest.jpg
 
 The endpoint returns `204` until an image has been generated. It supplies an `ETag` with each JPEG; the ESP32 sends that value back as `If-None-Match` and receives `304` when nothing has changed. This keeps setup to Wi-Fi credentials only and avoids repeatedly downloading the same image.
 
+The single ESP32 board announces its name and integrated screen dimensions to `POST /display`. The browser test page then uses that resolution automatically; for example, the JC4827W543 board reports `480x272`.
+
 ## Configuration
 
 Set these environment variables before starting the server:
