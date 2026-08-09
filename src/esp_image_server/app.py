@@ -124,7 +124,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.30", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.31", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -147,7 +147,11 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict[str, object]:
-        return {"status": "ready" if generator.ready else "loading", "device": generator.device}
+        return {
+            "status": "ready" if generator.ready else "loading",
+            "device": generator.device,
+            "generating": generation_jobs.has_active_job(),
+        }
 
     @app.get("/server-info")
     def server_info() -> dict[str, object]:
@@ -201,6 +205,11 @@ def create_app(
     @app.post("/models/{model_id:path}/select")
     async def select_model(model_id: str) -> dict[str, object]:
         nonlocal active_model_id, active_settings
+        if generation_jobs.has_active_job():
+            raise HTTPException(
+                status_code=409,
+                detail="Wait for the current image generation to finish before changing models",
+            )
         try:
             selected_settings = model_settings(settings, model_id)
         except ValueError as exc:

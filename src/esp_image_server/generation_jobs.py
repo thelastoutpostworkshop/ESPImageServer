@@ -47,6 +47,10 @@ class GenerationJobStore:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def has_active_job(self) -> bool:
+        with self._lock:
+            return any(job.status in {"queued", "running"} for job in self._jobs.values())
+
     def close(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
 

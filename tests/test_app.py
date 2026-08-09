@@ -44,6 +44,15 @@ def test_generate_returns_jpeg_binary() -> None:
     assert Image.open(BytesIO(response.content)).size == (20, 10)
 
 
+def test_health_reports_that_no_generation_is_active() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["generating"] is False
+
+
 def test_generation_job_reports_progress_and_returns_its_image() -> None:
     app = create_app(Settings(output_width=20, output_height=10), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:

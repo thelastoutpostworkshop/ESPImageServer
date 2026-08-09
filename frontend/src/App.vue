@@ -21,6 +21,7 @@ const drawer = ref(true)
 const page = ref('generate')
 let statusTimer
 const { mobile } = useDisplay()
+const generationBusy = computed(() => generating.value || health.value?.generating === true)
 
 const displayMessage = computed(() => {
   if (!display.value?.connected) return 'Waiting for the ESP32 board to report its integrated display...'
@@ -62,7 +63,7 @@ async function loadServerStatus() {
 }
 
 async function selectModel(model) {
-  if (model.active) return
+  if (model.active || generationBusy.value) return
   generating.value = true
   error.value = ''
   status.value = `${model.installed ? 'Loading' : 'Downloading and loading'} ${model.name}. This can take a few minutes.`
@@ -242,6 +243,9 @@ onUnmounted(() => {
           <v-card-text class="text-body-1">
             Choose how ESPImageServer creates images. Each model downloads once and stays on this computer.
           </v-card-text>
+          <v-alert v-if="generationBusy" class="mx-4 mb-3" type="info" variant="tonal" density="compact">
+            An image is being generated. Model changes will be available when it finishes.
+          </v-alert>
           <v-table v-if="!mobile" class="model-table" hover density="comfortable">
             <thead>
               <tr>
@@ -278,7 +282,7 @@ onUnmounted(() => {
                   </v-chip>
                 </td>
                 <td class="text-right">
-                  <v-btn v-if="!model.active" color="primary" size="small" :loading="generating" @click="selectModel(model)">
+                  <v-btn v-if="!model.active" color="primary" size="small" :disabled="generationBusy" @click="selectModel(model)">
                     {{ model.installed ? 'Use' : 'Download' }}
                   </v-btn>
                 </td>
@@ -296,7 +300,7 @@ onUnmounted(() => {
               <v-list-item-subtitle>{{ model.speed }} · {{ model.hardware }}</v-list-item-subtitle>
               <template #append>
                 <v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip>
-                <v-btn v-else color="primary" size="small" :loading="generating" @click="selectModel(model)">
+                <v-btn v-else color="primary" size="small" :disabled="generationBusy" @click="selectModel(model)">
                   {{ model.installed ? 'Use' : 'Get' }}
                 </v-btn>
               </template>
