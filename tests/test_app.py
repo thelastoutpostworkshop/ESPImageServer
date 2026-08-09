@@ -105,8 +105,8 @@ def test_browser_test_page_is_available() -> None:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Describe an image" in response.text
-    assert "/assets/welcome-hero-horizontal.png" in response.text
+    assert '<div id="app"></div>' in response.text
+    assert "/ui/assets/" in response.text
 
 
 def test_welcome_hero_is_available() -> None:

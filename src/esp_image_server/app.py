@@ -12,7 +12,7 @@ import webbrowser
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image
@@ -25,10 +25,13 @@ from .generation_size import optimal_generation_size
 from .image_processor import to_jpeg
 from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser
-from .test_page import TEST_PAGE_HTML
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEVELOPMENT_WEB_BUILD = PROJECT_ROOT / "frontend" / "dist"
+INSTALLED_WEB_BUILD = PROJECT_ROOT / "web"
+WEB_BUILD = DEVELOPMENT_WEB_BUILD if DEVELOPMENT_WEB_BUILD.is_dir() else INSTALLED_WEB_BUILD
 
 
 class ImageGenerator(Protocol):
@@ -102,7 +105,7 @@ def create_app(
             if mdns is not None:
                 mdns.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.14", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.16", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -111,10 +114,15 @@ def create_app(
         StaticFiles(directory=Path(__file__).with_name("static")),
         name="assets",
     )
+    if WEB_BUILD.is_dir():
+        app.mount("/ui", StaticFiles(directory=WEB_BUILD), name="ui")
 
-    @app.get("/", include_in_schema=False, response_class=HTMLResponse)
-    def test_page() -> HTMLResponse:
-        return HTMLResponse(TEST_PAGE_HTML)
+    @app.get("/", include_in_schema=False)
+    def test_page() -> Response:
+        index = WEB_BUILD / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        return Response("Frontend build is missing. Run: npm --prefix frontend run build", status_code=503)
 
     @app.get("/health")
     def health() -> dict[str, object]:

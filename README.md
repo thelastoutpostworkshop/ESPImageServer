@@ -44,6 +44,17 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -e ".[dev]"
 ```
 
+## Web interface development
+
+The browser app is a Vue 3 + Vite project in `frontend`. Install its developer dependencies and run it with:
+
+```powershell
+npm --prefix frontend install
+npm --prefix frontend run dev
+```
+
+Keep FastAPI running on port 8000; Vite proxies its API requests there. Before building the Windows installer, create the production frontend bundle with `npm --prefix frontend run build`. The installer includes this bundle, so makers do not need Node.js or npm.
+
 ## Run
 
 ```powershell

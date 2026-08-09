@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.15"
+#define AppVersion "0.1.16"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.15
+OutputBaseFilename=ESPImageServer-Setup-0.1.16
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -31,6 +31,7 @@ UninstallDisplayName={#AppName}
 
 [Files]
 Source: "..\src\*"; DestDir: "{app}\src"; Excludes: "__pycache__\*,*.pyc,*.egg-info\*"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\frontend\dist\*"; DestDir: "{app}\web"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion
