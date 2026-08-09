@@ -181,7 +181,7 @@ onUnmounted(() => {
       <v-container class="app-container py-4 py-sm-7">
         <template v-if="page === 'generate'">
         <v-row>
-        <v-col cols="12" :lg="imageUrl ? 5 : 12">
+        <v-col cols="12" lg="5">
         <v-card class="generation-card">
           <v-card-text>
             <v-form @submit.prevent="generate">
@@ -225,10 +225,19 @@ onUnmounted(() => {
         </v-card>
         </v-col>
 
-        <v-col v-if="imageUrl" cols="12" lg="7">
+        <v-col cols="12" lg="7">
         <v-card class="generated-image-card h-100">
-          <v-img :src="imageUrl" alt="Generated image" />
-          <v-card-actions>
+          <v-img v-if="imageUrl" :src="imageUrl" alt="Generated image" />
+          <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
+            <v-avatar color="primary" variant="tonal" size="64" class="mb-4">
+              <v-icon size="34">mdi-image-outline</v-icon>
+            </v-avatar>
+            <div class="text-h6">Your generated image will appear here</div>
+            <div class="text-body-2 text-medium-emphasis mt-2">
+              Describe an image, choose your settings, then select Generate image.
+            </div>
+          </v-sheet>
+          <v-card-actions v-if="imageUrl">
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
             </v-btn>
