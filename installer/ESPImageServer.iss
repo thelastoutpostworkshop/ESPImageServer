@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.21"
+#define AppVersion "0.1.22"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.21
+OutputBaseFilename=ESPImageServer-Setup-0.1.22
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -95,7 +95,7 @@ begin
   ModelPage := CreateInputOptionPage(ComputePage.ID,
     'Choose image model',
     'The selected model will download during installation.',
-    'SD-Turbo is the fast, display-focused default. SSD-1B takes longer and benefits from an NVIDIA GPU, but provides higher-quality images.',
+    'This installer downloads one model so ESPImageServer is ready immediately. You can download and switch to the other supported model later from the Models page in the web app. SD-Turbo is the fast, display-focused default. SSD-1B takes longer and benefits from an NVIDIA GPU, but provides higher-quality images.',
     True, True);
   ModelPage.Add('SD-Turbo - fast, 512 x 512, recommended');
   ModelPage.Add('Segmind SSD-1B - higher quality, slower, NVIDIA GPU recommended');
@@ -144,7 +144,8 @@ begin
     MemoGroupInfo + MemoTasksInfo + NewLine + 'Image generation:' + NewLine +
     Space + 'Model: ' + SelectedModel + NewLine +
     Space + 'Hardware: ' + ComputeChoice + NewLine +
-    Space + 'Model download: during installation';
+    Space + 'Model download: during installation' + NewLine +
+    Space + 'Other supported models: available later from the web app Models page';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
