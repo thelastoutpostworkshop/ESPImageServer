@@ -1,6 +1,6 @@
 html, body, #app { min-height: 100%; }
-body { margin: 0; background: #111827; }
-.app-shell { min-height: 100vh; background: #111827; }
+body { margin: 0; background: rgb(var(--v-theme-background)); }
+.app-shell { min-height: 100vh; background: rgb(var(--v-theme-background)); }
 
 .model-table th { white-space: nowrap; }
 .model-table__active { background: rgba(var(--v-theme-success), 0.08); }
