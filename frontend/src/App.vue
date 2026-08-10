@@ -32,6 +32,8 @@ const models = ref([])
 const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
+const previewUrl = ref('')
+const previewRotation = ref(0)
 const generating = ref(false)
 const cancelling = ref(false)
 const activeJobId = ref('')
@@ -167,6 +169,40 @@ function chooseRandomSeed() {
   seed.value = createRandomSeed()
 }
 
+async function createOrientedPreview(blob, rotation) {
+  if (rotation === 0 || typeof window.createImageBitmap !== 'function') {
+    return URL.createObjectURL(blob)
+  }
+
+  const source = await window.createImageBitmap(blob)
+  const quarterTurn = rotation === 90 || rotation === 270
+  const canvas = document.createElement('canvas')
+  canvas.width = quarterTurn ? source.height : source.width
+  canvas.height = quarterTurn ? source.width : source.height
+  const context = canvas.getContext('2d')
+  if (!context) {
+    source.close()
+    return URL.createObjectURL(blob)
+  }
+
+  // The server JPEG is already rotated for the physical display. Undo that
+  // transform in the browser so the preview matches the display's orientation.
+  if (rotation === 90) {
+    context.translate(0, canvas.height)
+    context.rotate(-Math.PI / 2)
+  } else if (rotation === 180) {
+    context.translate(canvas.width, canvas.height)
+    context.rotate(Math.PI)
+  } else {
+    context.translate(canvas.width, 0)
+    context.rotate(Math.PI / 2)
+  }
+  context.drawImage(source, 0, 0)
+  source.close()
+  const previewBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92))
+  return URL.createObjectURL(previewBlob || blob)
+}
+
 function useRecommendedSteps() {
   const activeModel = models.value.find(model => model.active)
   if (activeModel) steps.value = activeModel.default_steps
@@ -210,8 +246,13 @@ async function generate() {
     if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Image generation failed')
     const imageResponse = await fetch(`/generation-jobs/${job.id}/image`)
     if (!imageResponse.ok) throw new Error(`Request failed (${imageResponse.status})`)
+    const imageBlob = await imageResponse.blob()
+    const rotationForImage = displayRotation.value
     if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
-    imageUrl.value = URL.createObjectURL(await imageResponse.blob())
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+    imageUrl.value = URL.createObjectURL(imageBlob)
+    previewUrl.value = await createOrientedPreview(imageBlob, rotationForImage)
+    previewRotation.value = rotationForImage
     status.value = 'Image ready. Your ESP32 display will pick it up shortly.'
   } catch (requestError) {
     error.value = `Could not generate the image: ${requestError.message}`
@@ -257,6 +298,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.clearInterval(statusTimer)
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
 })
 </script>
 
@@ -369,7 +411,7 @@ onUnmounted(() => {
 
         <v-col cols="12" lg="7">
         <v-card class="generated-image-card h-100">
-          <v-img v-if="imageUrl" :src="imageUrl" alt="Generated image" />
+          <v-img v-if="previewUrl" :src="previewUrl" alt="Generated image in the selected display orientation" />
           <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
             <v-avatar color="primary" variant="tonal" size="64" class="mb-4">
               <v-icon size="34">mdi-image-outline</v-icon>
@@ -380,6 +422,9 @@ onUnmounted(() => {
             </div>
           </v-sheet>
           <v-card-actions v-if="imageUrl">
+            <v-chip v-if="previewRotation" size="small" variant="tonal" prepend-icon="mdi-rotate-right">
+              Preview: display rotation
+            </v-chip>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
             </v-btn>

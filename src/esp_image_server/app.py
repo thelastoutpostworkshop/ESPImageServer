@@ -131,7 +131,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.42", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.43", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
