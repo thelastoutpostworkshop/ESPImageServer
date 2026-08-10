@@ -19,6 +19,7 @@ from PIL import Image
 
 from .config import Settings
 from .display import ActiveDisplayStore
+from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
 from .generator import DiffusersGenerator
 from .generation_jobs import GenerationCancelled, GenerationJobStore
@@ -61,6 +62,10 @@ class DisplayAnnouncement(BaseModel):
     height: int = Field(ge=64, le=1_024)
 
 
+class DisplaySettingsRequest(BaseModel):
+    rotation: int
+
+
 class RegisterDeviceRequest(BaseModel):
     pairing_code: str = Field(min_length=6, max_length=6)
     name: str = Field(min_length=1, max_length=64)
@@ -76,6 +81,7 @@ def create_app(
     device_manager: DeviceManager | None = None,
     latest_image_store: LatestImageStore | None = None,
     active_display_store: ActiveDisplayStore | None = None,
+    display_settings_store: DisplaySettingsStore | None = None,
     model_selection_store: ModelSelectionStore | None = None,
     generation_jobs: GenerationJobStore | None = None,
     enable_mdns: bool = True,
@@ -93,6 +99,7 @@ def create_app(
     device_manager = device_manager or DeviceManager()
     latest_image_store = latest_image_store or LatestImageStore()
     active_display_store = active_display_store or ActiveDisplayStore()
+    display_settings_store = display_settings_store or DisplaySettingsStore()
     generation_jobs = generation_jobs or GenerationJobStore()
 
     @asynccontextmanager
@@ -124,10 +131,11 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.41", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.42", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
+    app.state.display_settings_store = display_settings_store
     app.state.model_selection_store = model_selection_store
     app.state.generation_jobs = generation_jobs
     app.mount(
@@ -246,6 +254,16 @@ def create_app(
         )
         logger.info("Active display announced: %s (%sx%s)", profile.name, profile.width, profile.height)
         return {"status": "registered", "name": profile.name, "width": profile.width, "height": profile.height}
+
+    @app.get("/display-settings")
+    def get_display_settings() -> dict[str, int]:
+        return {"rotation": display_settings_store.get_rotation()}
+
+    @app.put("/display-settings")
+    def update_display_settings(request: DisplaySettingsRequest) -> dict[str, int]:
+        if request.rotation not in VALID_ROTATIONS:
+            raise HTTPException(status_code=422, detail="Image rotation must be 0, 90, 180, or 270 degrees")
+        return {"rotation": display_settings_store.set_rotation(request.rotation)}
         model_name, model_description = model_details.get(
             settings.model_id, (settings.model_id, "Local AI image model selected during installation.")
         )
@@ -355,7 +373,11 @@ def create_app(
         profile = active_display_store.get()
         output_width = profile.width if profile else settings.output_width
         output_height = profile.height if profile else settings.output_height
-        generation_width, generation_height = optimal_generation_size(active_model_id, output_width, output_height)
+        rotation = display_settings_store.get_rotation()
+        artwork_width, artwork_height = (
+            (output_height, output_width) if rotation in {90, 270} else (output_width, output_height)
+        )
+        generation_width, generation_height = optimal_generation_size(active_model_id, artwork_width, artwork_height)
         model = get_model(active_model_id)
         steps = request.steps if request.steps is not None else model.inference_steps
         if not model.minimum_steps <= steps <= model.maximum_steps:
@@ -372,6 +394,18 @@ def create_app(
         )
         ensure_not_cancelled()
         if progress is not None:
+            if rotation:
+                progress(1, 1, "Rotating image for your ESP32 display")
+            else:
+                progress(1, 1, "Fitting the image to your ESP32 display")
+        if rotation == 90:
+            image = image.transpose(Image.Transpose.ROTATE_270)
+        elif rotation == 180:
+            image = image.transpose(Image.Transpose.ROTATE_180)
+        elif rotation == 270:
+            image = image.transpose(Image.Transpose.ROTATE_90)
+        ensure_not_cancelled()
+        if progress is not None and rotation:
             progress(1, 1, "Fitting the image to your ESP32 display")
         jpeg = to_jpeg(image, width=output_width, height=output_height, quality=settings.jpeg_quality)
         ensure_not_cancelled()

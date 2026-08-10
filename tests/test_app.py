@@ -7,6 +7,7 @@ from PIL import Image
 
 from esp_image_server.app import create_app
 from esp_image_server.config import Settings
+from esp_image_server.display_settings import DisplaySettingsStore
 from esp_image_server.model_settings import ModelSelectionStore
 from esp_image_server.generation_jobs import GenerationCancelled
 
@@ -160,6 +161,20 @@ def test_active_esp32_display_sets_the_default_generated_image_size() -> None:
     assert announcement.status_code == 201
     assert Image.open(BytesIO(generated.content)).size == (480, 272)
     assert generator.last_size == (512, 288)
+
+
+def test_server_side_display_rotation_generates_for_rotated_aspect_ratio(tmp_path) -> None:
+    generator = FakeGenerator()
+    rotation_store = DisplaySettingsStore(tmp_path / "display_settings.json")
+    app = create_app(Settings(), generator, display_settings_store=rotation_store, enable_mdns=False)
+    with TestClient(app) as client:
+        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272})
+        settings = client.put("/display-settings", json={"rotation": 90})
+        generated = client.post("/generate", json={"prompt": "a tiny robot"})
+
+    assert settings.json() == {"rotation": 90}
+    assert generator.last_size == (288, 512)
+    assert Image.open(BytesIO(generated.content)).size == (480, 272)
 
 
 def test_ssd_1b_uses_a_larger_aspect_matched_generation_canvas() -> None:

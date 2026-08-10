@@ -27,6 +27,7 @@ const prompt = ref(savedGenerationSettings.prompt)
 const serverInfo = ref(null)
 const health = ref(null)
 const display = ref(null)
+const displayRotation = ref(0)
 const models = ref([])
 const status = ref('')
 const error = ref('')
@@ -49,6 +50,12 @@ const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
 })))
+const rotationOptions = [
+  { title: 'Normal (0°)', value: 0 },
+  { title: 'Rotate 90° clockwise', value: 90 },
+  { title: 'Rotate 180°', value: 180 },
+  { title: 'Rotate 90° counter-clockwise', value: 270 }
+]
 
 watch([prompt, steps, seed, activeModelId], () => {
   window.localStorage.setItem(generationSettingsKey, JSON.stringify({
@@ -69,6 +76,38 @@ async function loadDisplay() {
     display.value = await fetch('/display').then(response => response.json())
   } catch {
     display.value = null
+  }
+}
+
+async function loadDisplaySettings() {
+  try {
+    const settings = await fetch('/display-settings').then(response => response.json())
+    displayRotation.value = settings.rotation
+  } catch {
+    displayRotation.value = 0
+  }
+}
+
+async function setDisplayRotation(rotation) {
+  const previousRotation = displayRotation.value
+  displayRotation.value = rotation
+  error.value = ''
+  try {
+    const response = await fetch('/display-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rotation })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const settings = await response.json()
+    displayRotation.value = settings.rotation
+    status.value = 'Image rotation saved. It will be used for the next image.'
+  } catch (requestError) {
+    displayRotation.value = previousRotation
+    error.value = `Could not save image rotation: ${requestError.message}`
   }
 }
 
@@ -206,6 +245,7 @@ async function cancelGeneration() {
 onMounted(async () => {
   await loadServerStatus()
   await loadDisplay()
+  await loadDisplaySettings()
   await loadModels()
   statusTimer = window.setInterval(() => {
     loadServerStatus()
@@ -270,6 +310,18 @@ onUnmounted(() => {
                 persistent-hint
                 class="mb-4"
                 @update:model-value="selectModelById"
+              />
+              <v-select
+                :model-value="displayRotation"
+                :items="rotationOptions"
+                label="Image rotation"
+                variant="outlined"
+                density="comfortable"
+                :disabled="generationBusy"
+                hint="Applied by ESPImageServer before the JPEG is sent. Your ESP32 firmware does not need to change."
+                persistent-hint
+                class="mb-4"
+                @update:model-value="setDisplayRotation"
               />
               <v-textarea
                 v-model="prompt"
