@@ -77,9 +77,7 @@ async function loadModels() {
     models.value = await fetch('/models').then(response => response.json())
     const activeModel = models.value.find(model => model.active)
     if (activeModel && activeModel.id !== activeModelId.value) {
-      const modelChanged = activeModelId.value !== ''
       activeModelId.value = activeModel.id
-      if (modelChanged || !savedGenerationSettings.modelId) steps.value = activeModel.default_steps
     }
   } catch {
     models.value = []
@@ -128,6 +126,11 @@ function selectModelById(modelId) {
 
 function chooseRandomSeed() {
   seed.value = createRandomSeed()
+}
+
+function useRecommendedSteps() {
+  const activeModel = models.value.find(model => model.active)
+  if (activeModel) steps.value = activeModel.default_steps
 }
 
 async function generate() {
@@ -282,7 +285,7 @@ onUnmounted(() => {
               </v-alert>
               <v-row dense class="mb-6">
                 <v-col cols="12" sm="6">
-                  <v-text-field v-model.number="steps" label="Generation steps" type="number" :min="models.find(model => model.active)?.minimum_steps" :max="models.find(model => model.active)?.maximum_steps" variant="outlined" density="comfortable" hint="More steps can improve detail, but take longer." persistent-hint />
+                  <v-text-field v-model.number="steps" label="Generation steps" type="number" :min="models.find(model => model.active)?.minimum_steps" :max="models.find(model => model.active)?.maximum_steps" variant="outlined" density="comfortable" hint="More steps can improve detail. Use the reset icon for this model's recommendation." persistent-hint append-inner-icon="mdi-restore" @click:append-inner="useRecommendedSteps" />
                 </v-col>
                 <v-col cols="12" sm="6">
                   <v-text-field v-model="seed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint append-inner-icon="mdi-dice-5" @click:append-inner="chooseRandomSeed" />
