@@ -88,6 +88,11 @@ async function selectModel(model) {
   }
 }
 
+function selectModelById(modelId) {
+  const model = models.value.find(candidate => candidate.id === modelId)
+  if (model) selectModel(model)
+}
+
 async function generate() {
   generating.value = true
   error.value = ''
@@ -189,15 +194,31 @@ onUnmounted(() => {
         <v-col cols="12" lg="5">
         <v-card class="generation-card">
           <v-card-text>
-            <v-sheet v-if="serverInfo" class="model-in-use d-flex align-center ga-3 pa-3 mb-4" color="primary" rounded="lg">
-              <v-avatar color="primary" variant="tonal" size="40"><v-icon>mdi-brain</v-icon></v-avatar>
-              <div>
-                <div class="text-caption text-medium-emphasis">Model in use</div>
-                <div class="font-weight-bold">{{ serverInfo.model_name }}</div>
-                <div class="text-caption text-medium-emphasis">{{ serverInfo.model_description }}</div>
-              </div>
-            </v-sheet>
             <v-form @submit.prevent="generate">
+              <v-select
+                :model-value="activeModelId"
+                :items="models"
+                item-title="name"
+                item-value="id"
+                label="Image model"
+                variant="outlined"
+                density="comfortable"
+                :disabled="generationBusy || models.length === 0"
+                hint="Choose a model for this computer. Models not yet downloaded will download before they are used."
+                persistent-hint
+                class="mb-4"
+                @update:model-value="selectModelById"
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props" :subtitle="`${item.raw.speed} · ${item.raw.hardware}`">
+                    <template #prepend>
+                      <v-icon :color="item.raw.hardware.includes('NVIDIA') ? 'deep-purple' : 'teal'">
+                        {{ item.raw.hardware.includes('NVIDIA') ? 'mdi-expansion-card-variant' : 'mdi-laptop' }}
+                      </v-icon>
+                    </template>
+                  </v-list-item>
+                </template>
+              </v-select>
               <v-textarea
                 v-model="prompt"
                 label="Describe an image"
@@ -261,13 +282,10 @@ onUnmounted(() => {
         </template>
 
         <v-card v-else-if="page === 'models'">
-          <v-card-title class="text-h5 pt-5">Choose an image model</v-card-title>
+          <v-card-title class="text-h5 pt-5">Image models</v-card-title>
           <v-card-text class="text-body-1">
-            Choose how ESPImageServer creates images. Each model downloads once and stays on this computer.
+            Compare the available models. Choose the model to use from the Generate image page; it downloads once and stays on this computer.
           </v-card-text>
-          <v-alert v-if="generationBusy" class="mx-4 mb-3" type="info" variant="tonal" density="compact">
-            An image is being generated. Model changes will be available when it finishes.
-          </v-alert>
           <v-table v-if="!mobile" class="model-table" hover density="comfortable">
             <thead>
               <tr>
@@ -275,7 +293,6 @@ onUnmounted(() => {
                 <th>Best for</th>
                 <th>Hardware</th>
                 <th>Status</th>
-                <th class="text-right">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -303,11 +320,6 @@ onUnmounted(() => {
                     {{ model.installed ? 'Downloaded' : 'Download needed' }}
                   </v-chip>
                 </td>
-                <td class="text-right">
-                  <v-btn v-if="!model.active" color="primary" size="small" :disabled="generationBusy" @click="selectModel(model)">
-                    {{ model.installed ? 'Use' : 'Download' }}
-                  </v-btn>
-                </td>
               </tr>
             </tbody>
           </v-table>
@@ -320,12 +332,7 @@ onUnmounted(() => {
               </template>
               <v-list-item-title class="font-weight-bold">{{ model.name }}</v-list-item-title>
               <v-list-item-subtitle>{{ model.speed }} · {{ model.hardware }}</v-list-item-subtitle>
-              <template #append>
-                <v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip>
-                <v-btn v-else color="primary" size="small" :disabled="generationBusy" @click="selectModel(model)">
-                  {{ model.installed ? 'Use' : 'Get' }}
-                </v-btn>
-              </template>
+              <template #append><v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip></template>
             </v-list-item>
           </v-list>
           <v-card-text class="text-caption text-medium-emphasis pt-3">
