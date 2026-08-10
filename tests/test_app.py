@@ -1,4 +1,5 @@
 from io import BytesIO
+from threading import Event
 import time
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from PIL import Image
 from esp_image_server.app import create_app
 from esp_image_server.config import Settings
 from esp_image_server.model_settings import ModelSelectionStore
+from esp_image_server.generation_jobs import GenerationCancelled
 
 
 class FakeGenerator:
@@ -25,12 +27,28 @@ class FakeGenerator:
         self.ready = False
         self.load()
 
-    def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None) -> Image.Image:
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None, cancelled=None) -> Image.Image:
         assert prompt == "a tiny robot"
         self.last_size = (width, height)
         self.last_steps, self.last_seed = inference_steps, seed
         if progress is not None:
             progress(1, 1)
+        return Image.new("RGB", (64, 64), "blue")
+
+
+class CancellableFakeGenerator(FakeGenerator):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = Event()
+
+    def generate(self, prompt: str, width=None, height=None, progress=None, inference_steps=None, seed=None, cancelled=None) -> Image.Image:
+        self.started.set()
+        for step in range(100):
+            if cancelled is not None and cancelled():
+                raise GenerationCancelled()
+            if progress is not None:
+                progress(step + 1, 100)
+            time.sleep(0.005)
         return Image.new("RGB", (64, 64), "blue")
 
 
@@ -69,6 +87,24 @@ def test_generation_job_reports_progress_and_returns_its_image() -> None:
     assert job["progress"] == 100
     assert image.status_code == 200
     assert Image.open(BytesIO(image.content)).size == (20, 10)
+
+
+def test_generation_job_can_be_cancelled() -> None:
+    generator = CancellableFakeGenerator()
+    app = create_app(Settings(), generator, enable_mdns=False)
+    with TestClient(app) as client:
+        created = client.post("/generation-jobs", json={"prompt": "a tiny robot"})
+        job_id = created.json()["id"]
+        assert generator.started.wait(timeout=1)
+        cancelled = client.delete(f"/generation-jobs/{job_id}")
+        for _ in range(40):
+            job = client.get(f"/generation-jobs/{job_id}").json()
+            if job["status"] == "cancelled":
+                break
+            time.sleep(0.01)
+
+    assert cancelled.status_code == 200
+    assert job["status"] == "cancelled"
 
 
 def test_generate_uses_the_server_default_size_without_an_announced_display() -> None:

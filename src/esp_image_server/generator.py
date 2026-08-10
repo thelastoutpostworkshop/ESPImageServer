@@ -10,6 +10,7 @@ from typing import Callable
 from PIL import Image
 
 from .config import Settings
+from .generation_jobs import GenerationCancelled
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class DiffusersGenerator:
     def generate(
         self, prompt: str, width: int | None = None, height: int | None = None,
         progress: Callable[[int, int], None] | None = None, inference_steps: int | None = None,
-        seed: int | None = None,
+        seed: int | None = None, cancelled: Callable[[], bool] | None = None,
     ) -> Image.Image:
         if self._pipeline is None:
             raise RuntimeError("Image model is not ready")
@@ -79,7 +80,12 @@ class DiffusersGenerator:
             if progress is not None:
                 progress(0, steps)
 
+            if cancelled is not None and cancelled():
+                raise GenerationCancelled()
+
             def on_step_end(_pipeline, step, _timestep, callback_kwargs):
+                if cancelled is not None and cancelled():
+                    raise GenerationCancelled()
                 if progress is not None:
                     progress(step + 1, steps)
                 return callback_kwargs
@@ -90,7 +96,7 @@ class DiffusersGenerator:
                 "guidance_scale": self.settings.guidance_scale,
                 "width": width,
                 "height": height,
-                "callback_on_step_end": on_step_end if progress is not None else None,
+                "callback_on_step_end": on_step_end if progress is not None or cancelled is not None else None,
             }
             if seed is not None:
                 import torch

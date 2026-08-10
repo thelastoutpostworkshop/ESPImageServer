@@ -15,6 +15,8 @@ const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
 const generating = ref(false)
+const cancelling = ref(false)
+const activeJobId = ref('')
 const generationProgress = ref(0)
 const generationStage = ref('')
 const steps = ref(1)
@@ -118,14 +120,19 @@ async function generate() {
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     const job = await response.json()
+    activeJobId.value = job.id
     let currentJob = job
-    while (currentJob.status !== 'complete' && currentJob.status !== 'failed') {
+    while (!['complete', 'failed', 'cancelled'].includes(currentJob.status)) {
       await new Promise(resolve => window.setTimeout(resolve, 350))
       const statusResponse = await fetch(`/generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
       generationProgress.value = currentJob.progress
       generationStage.value = currentJob.steps ? `${currentJob.stage} (${currentJob.step} of ${currentJob.steps})` : currentJob.stage
+    }
+    if (currentJob.status === 'cancelled') {
+      status.value = 'Image generation cancelled.'
+      return
     }
     if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Image generation failed')
     const imageResponse = await fetch(`/generation-jobs/${job.id}/image`)
@@ -138,8 +145,27 @@ async function generate() {
     status.value = ''
   } finally {
     generating.value = false
+    cancelling.value = false
+    activeJobId.value = ''
     generationProgress.value = 0
     generationStage.value = ''
+  }
+}
+
+async function cancelGeneration() {
+  if (!activeJobId.value || cancelling.value) return
+  cancelling.value = true
+  error.value = ''
+  generationStage.value = 'Cancelling image generation...'
+  try {
+    const response = await fetch(`/generation-jobs/${activeJobId.value}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+  } catch (requestError) {
+    cancelling.value = false
+    error.value = `Could not cancel image generation: ${requestError.message}`
   }
 }
 
@@ -233,6 +259,9 @@ onUnmounted(() => {
               </v-row>
               <v-btn type="submit" color="primary" :disabled="generating" prepend-icon="mdi-image-plus">
                 Generate image
+              </v-btn>
+              <v-btn v-if="generating" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
+                Cancel generation
               </v-btn>
               <div v-if="generating" class="mt-5">
                 <div class="d-flex justify-space-between text-body-2 mb-2">

@@ -21,7 +21,7 @@ from .config import Settings
 from .display import ActiveDisplayStore
 from .devices import DeviceError, DeviceManager
 from .generator import DiffusersGenerator
-from .generation_jobs import GenerationJobStore
+from .generation_jobs import GenerationCancelled, GenerationJobStore
 from .generation_size import optimal_generation_size
 from .image_processor import to_jpeg
 from .latest_image import LatestImageStore
@@ -124,7 +124,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.37", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.38", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -344,7 +344,12 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "acknowledged"}
 
-    def generate_jpeg(request: GenerateRequest, progress=None) -> bytes:
+    def generate_jpeg(request: GenerateRequest, progress=None, is_cancelled=None) -> bytes:
+        def ensure_not_cancelled() -> None:
+            if is_cancelled is not None and is_cancelled():
+                raise GenerationCancelled()
+
+        ensure_not_cancelled()
         if not generator.ready:
             raise RuntimeError("Image model is still loading")
         profile = active_display_store.get()
@@ -357,15 +362,19 @@ def create_app(
             raise ValueError(f"{model.name} supports {model.minimum_steps} to {model.maximum_steps} steps")
         if progress is not None:
             progress(0, 0, "Preparing the image model")
+        ensure_not_cancelled()
         image = generator.generate(
             request.prompt, generation_width, generation_height,
             progress=(lambda step, steps: progress(step, steps, "Generating image")) if progress else None,
             inference_steps=steps,
             seed=request.seed,
+            cancelled=is_cancelled,
         )
+        ensure_not_cancelled()
         if progress is not None:
             progress(1, 1, "Fitting the image to your ESP32 display")
         jpeg = to_jpeg(image, width=output_width, height=output_height, quality=settings.jpeg_quality)
+        ensure_not_cancelled()
         latest_image_store.set(jpeg)
         return jpeg
 
@@ -382,12 +391,19 @@ def create_app(
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
         if not generator.ready:
             raise HTTPException(status_code=503, detail="Image model is still loading")
-        job = generation_jobs.create(lambda progress: generate_jpeg(request, progress))
+        job = generation_jobs.create(lambda progress, is_cancelled: generate_jpeg(request, progress, is_cancelled))
         return job.as_dict()
 
     @app.get("/generation-jobs/{job_id}")
     def generation_job(job_id: str) -> dict[str, object]:
         job = generation_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Generation job not found")
+        return job.as_dict()
+
+    @app.delete("/generation-jobs/{job_id}")
+    def cancel_generation_job(job_id: str) -> dict[str, object]:
+        job = generation_jobs.cancel(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Generation job not found")
         return job.as_dict()

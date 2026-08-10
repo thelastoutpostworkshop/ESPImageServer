@@ -9,7 +9,12 @@ from typing import Callable
 from uuid import uuid4
 
 ProgressCallback = Callable[[int, int, str], None]
-GenerationWork = Callable[[ProgressCallback], bytes]
+CancellationCallback = Callable[[], bool]
+GenerationWork = Callable[[ProgressCallback, CancellationCallback], bytes]
+
+
+class GenerationCancelled(Exception):
+    """Raised when a running image job is cancelled by the user."""
 
 
 @dataclass
@@ -21,13 +26,15 @@ class GenerationJob:
     steps: int = 0
     jpeg: bytes | None = None
     error: str | None = None
+    cancel_requested: bool = False
 
     def as_dict(self) -> dict[str, object]:
         progress = 0 if self.steps == 0 else round(self.step * 100 / self.steps)
         if self.status == "complete":
             progress = 100
         return {"id": self.job_id, "status": self.status, "stage": self.stage, "step": self.step,
-                "steps": self.steps, "progress": progress, "error": self.error}
+                "steps": self.steps, "progress": progress, "error": self.error,
+                "cancellable": self.status in {"queued", "running", "cancelling"}}
 
 
 class GenerationJobStore:
@@ -49,19 +56,46 @@ class GenerationJobStore:
 
     def has_active_job(self) -> bool:
         with self._lock:
-            return any(job.status in {"queued", "running"} for job in self._jobs.values())
+            return any(job.status in {"queued", "running", "cancelling"} for job in self._jobs.values())
+
+    def cancel(self, job_id: str) -> GenerationJob | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            if job.status in {"queued", "running", "cancelling"}:
+                job.cancel_requested = True
+                job.status = "cancelling"
+                job.stage = "Cancelling image generation"
+            return job
 
     def close(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _run(self, job_id: str, work: GenerationWork) -> None:
+        def is_cancelled() -> bool:
+            with self._lock:
+                return self._jobs[job_id].cancel_requested
+
         def progress(step: int, steps: int, stage: str) -> None:
             with self._lock:
                 job = self._jobs[job_id]
+                if job.cancel_requested:
+                    raise GenerationCancelled()
                 job.status, job.stage, job.step, job.steps = "running", stage, step, steps
-        progress(0, 0, "Preparing image generation")
+
         try:
-            jpeg = work(progress)
+            if is_cancelled():
+                raise GenerationCancelled()
+            progress(0, 0, "Preparing image generation")
+            jpeg = work(progress, is_cancelled)
+            if is_cancelled():
+                raise GenerationCancelled()
+        except GenerationCancelled:
+            with self._lock:
+                job = self._jobs[job_id]
+                job.status, job.stage, job.error = "cancelled", "Image generation cancelled", None
+            return
         except Exception as exc:
             with self._lock:
                 job = self._jobs[job_id]
