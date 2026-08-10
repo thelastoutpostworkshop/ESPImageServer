@@ -26,6 +26,10 @@ const page = ref('generate')
 let statusTimer
 const { mobile } = useDisplay()
 const generationBusy = computed(() => generating.value || health.value?.generating === true)
+const modelOptions = computed(() => models.value.map(model => ({
+  title: `${model.name} — ${model.speed} (${model.hardware})`,
+  value: model.id
+})))
 
 const displayMessage = computed(() => {
   if (!display.value?.connected) return 'Waiting for the ESP32 board to report its integrated display...'
@@ -197,9 +201,7 @@ onUnmounted(() => {
             <v-form @submit.prevent="generate">
               <v-select
                 :model-value="activeModelId"
-                :items="models"
-                item-title="name"
-                item-value="id"
+                :items="modelOptions"
                 label="Image model"
                 variant="outlined"
                 density="comfortable"
@@ -208,17 +210,7 @@ onUnmounted(() => {
                 persistent-hint
                 class="mb-4"
                 @update:model-value="selectModelById"
-              >
-                <template #item="{ props, item }">
-                  <v-list-item v-bind="props" :subtitle="`${item.raw.speed} · ${item.raw.hardware}`">
-                    <template #prepend>
-                      <v-icon :color="item.raw.hardware.includes('NVIDIA') ? 'deep-purple' : 'teal'">
-                        {{ item.raw.hardware.includes('NVIDIA') ? 'mdi-expansion-card-variant' : 'mdi-laptop' }}
-                      </v-icon>
-                    </template>
-                  </v-list-item>
-                </template>
-              </v-select>
+              />
               <v-textarea
                 v-model="prompt"
                 label="Describe an image"
