@@ -1,12 +1,29 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 
 function createRandomSeed() {
   return Math.floor(Math.random() * 4_294_967_296)
 }
 
-const prompt = ref('A cheerful small robot holding a paintbrush, friendly illustration')
+const generationSettingsKey = 'esp-image-server.generation-settings'
+
+function loadGenerationSettings() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(generationSettingsKey) || '{}')
+    return {
+      prompt: typeof saved.prompt === 'string' ? saved.prompt : 'A cheerful small robot holding a paintbrush, friendly illustration',
+      steps: Number.isInteger(saved.steps) ? saved.steps : 1,
+      seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed(),
+      modelId: typeof saved.modelId === 'string' ? saved.modelId : ''
+    }
+  } catch {
+    return { prompt: 'A cheerful small robot holding a paintbrush, friendly illustration', steps: 1, seed: createRandomSeed(), modelId: '' }
+  }
+}
+
+const savedGenerationSettings = loadGenerationSettings()
+const prompt = ref(savedGenerationSettings.prompt)
 const serverInfo = ref(null)
 const health = ref(null)
 const display = ref(null)
@@ -19,9 +36,9 @@ const cancelling = ref(false)
 const activeJobId = ref('')
 const generationProgress = ref(0)
 const generationStage = ref('')
-const steps = ref(1)
-const seed = ref(createRandomSeed())
-const activeModelId = ref('')
+const steps = ref(savedGenerationSettings.steps)
+const seed = ref(savedGenerationSettings.seed)
+const activeModelId = ref(savedGenerationSettings.modelId)
 const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
 const page = ref('generate')
@@ -32,6 +49,15 @@ const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
 })))
+
+watch([prompt, steps, seed, activeModelId], () => {
+  window.localStorage.setItem(generationSettingsKey, JSON.stringify({
+    prompt: prompt.value,
+    steps: Number(steps.value),
+    seed: seed.value === '' ? null : Number(seed.value),
+    modelId: activeModelId.value
+  }))
+})
 
 const displayMessage = computed(() => {
   if (!display.value?.connected) return 'Waiting for the ESP32 board to report its integrated display...'
@@ -51,8 +77,9 @@ async function loadModels() {
     models.value = await fetch('/models').then(response => response.json())
     const activeModel = models.value.find(model => model.active)
     if (activeModel && activeModel.id !== activeModelId.value) {
+      const modelChanged = activeModelId.value !== ''
       activeModelId.value = activeModel.id
-      steps.value = activeModel.default_steps
+      if (modelChanged || !savedGenerationSettings.modelId) steps.value = activeModel.default_steps
     }
   } catch {
     models.value = []
@@ -97,6 +124,10 @@ async function selectModel(model) {
 function selectModelById(modelId) {
   const model = models.value.find(candidate => candidate.id === modelId)
   if (model) selectModel(model)
+}
+
+function chooseRandomSeed() {
+  seed.value = createRandomSeed()
 }
 
 async function generate() {
@@ -247,14 +278,15 @@ onUnmounted(() => {
                 rows="4"
               />
               <v-alert type="info" variant="tonal" density="compact" class="mb-4">
-                <strong>Steps</strong> trade speed for detail: more steps take longer. <strong>Seed</strong> lets you repeat a result. Use the dice button for a new random seed.
+                <strong>Steps</strong> trade speed for detail: more steps take longer. <strong>Seed</strong> lets you repeat a result. Use Create random seed for a fresh image variation.
               </v-alert>
               <v-row dense class="mb-6">
                 <v-col cols="12" sm="6">
                   <v-text-field v-model.number="steps" label="Generation steps" type="number" :min="models.find(model => model.active)?.minimum_steps" :max="models.find(model => model.active)?.maximum_steps" variant="outlined" density="comfortable" hint="More steps can improve detail, but take longer." persistent-hint />
                 </v-col>
                 <v-col cols="12" sm="6">
-                  <v-text-field v-model="seed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint append-inner-icon="mdi-dice-5" @click:append-inner="seed = createRandomSeed()" />
+                  <v-text-field v-model="seed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint append-inner-icon="mdi-dice-5" @click:append-inner="chooseRandomSeed" />
+                  <v-btn class="mt-1" size="small" variant="text" prepend-icon="mdi-dice-5" @click="chooseRandomSeed">Create random seed</v-btn>
                 </v-col>
               </v-row>
               <v-btn type="submit" color="primary" :disabled="generating" prepend-icon="mdi-image-plus">
