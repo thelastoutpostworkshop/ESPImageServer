@@ -295,7 +295,7 @@ onUnmounted(() => {
               <v-btn type="submit" color="primary" :disabled="generating" prepend-icon="mdi-image-plus">
                 Generate image
               </v-btn>
-              <v-btn v-if="generating" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
+              <v-btn v-if="activeJobId" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
                 Cancel generation
               </v-btn>
               <div v-if="generating" class="mt-5">
