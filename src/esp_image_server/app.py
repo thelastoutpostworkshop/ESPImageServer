@@ -9,6 +9,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import subprocess
 from threading import Timer
 from typing import Protocol
 import webbrowser
@@ -164,7 +165,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.50", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.51", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -345,6 +346,28 @@ def create_app(
         except (AttributeError, OSError) as exc:
             raise HTTPException(status_code=500, detail=f"Could not open the image library folder: {exc}") from exc
         return {"status": "opened", "image_library_location": str(image_library.path)}
+
+    @app.post("/app-settings/image-library/choose")
+    def choose_image_library() -> dict[str, object]:
+        command = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            "$dialog.Description = 'Choose an empty folder for ESPImageServer images'; "
+            "$dialog.SelectedPath = '" + str(image_library.path).replace("'", "''") + "'; "
+            "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { "
+            "[Console]::Out.Write($dialog.SelectedPath) }"
+        )
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-Command", command],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise HTTPException(status_code=500, detail=f"Could not open the folder chooser: {exc}") from exc
+        selected_path = result.stdout.strip()
+        return {"selected": bool(selected_path), "image_library_location": selected_path or str(image_library.path)}
 
     @app.get("/devices")
     def list_devices() -> list[dict[str, object]]:

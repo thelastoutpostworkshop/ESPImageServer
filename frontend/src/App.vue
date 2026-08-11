@@ -46,6 +46,7 @@ const imageLibraryLocation = ref('')
 const jpegQuality = ref(85)
 const settingsSaving = ref(false)
 const openingImageLibrary = ref(false)
+const choosingImageLibrary = ref(false)
 const settingsStatus = ref('')
 const settingsError = ref('')
 const generating = ref(false)
@@ -260,6 +261,24 @@ async function revealImageLibrary() {
     settingsError.value = `Could not open the image library folder: ${requestError.message}`
   } finally {
     openingImageLibrary.value = false
+  }
+}
+
+async function chooseImageLibrary() {
+  choosingImageLibrary.value = true
+  settingsError.value = ''
+  try {
+    const response = await fetch('/app-settings/image-library/choose', { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const selection = await response.json()
+    if (selection.selected) imageLibraryLocation.value = selection.image_library_location
+  } catch (requestError) {
+    settingsError.value = `Could not open the folder chooser: ${requestError.message}`
+  } finally {
+    choosingImageLibrary.value = false
   }
 }
 
@@ -741,11 +760,15 @@ onUnmounted(() => {
                 v-model="imageLibraryLocation"
                 label="Image library location"
                 variant="outlined"
-                hint="Use an absolute folder path. Existing generated images move with the library. Choose an empty destination folder."
+                readonly
+                hint="Existing generated images move with the library. Choose an empty destination folder."
                 persistent-hint
                 prepend-inner-icon="mdi-folder-image"
                 class="mb-7"
               />
+              <v-btn type="button" class="mb-3 mr-2" variant="tonal" prepend-icon="mdi-folder-search" :loading="choosingImageLibrary" @click="chooseImageLibrary">
+                Choose image library folder
+              </v-btn>
               <v-btn type="button" class="mb-6" variant="tonal" prepend-icon="mdi-folder-open" :loading="openingImageLibrary" @click="revealImageLibrary">
                 Open image library folder
               </v-btn>
