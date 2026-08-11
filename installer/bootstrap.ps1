@@ -20,10 +20,26 @@ $statusPath = Join-Path $projectRoot 'installer_status.txt'
 $resultPath = Join-Path $projectRoot 'installer_result.txt'
 
 Remove-Item $statusPath, $resultPath, $logPath -Force -ErrorAction SilentlyContinue
-Set-Content -Path $logPath -Value 'ESPImageServer setup log' -Encoding utf8
+function Write-SharedText([string]$Path, [string]$Text, [bool]$Append = $false) {
+    $mode = if ($Append) { [System.IO.FileMode]::Append } else { [System.IO.FileMode]::Create }
+    $stream = [System.IO.File]::Open($Path, $mode, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+    try {
+        $writer = New-Object System.IO.StreamWriter($stream, (New-Object System.Text.UTF8Encoding($false)))
+        try {
+            $writer.Write($Text)
+            $writer.Flush()
+        } finally {
+            $writer.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+Write-SharedText $logPath "ESPImageServer setup log`r`n"
 
 function Write-InstallLog([string]$Message) {
-    Add-Content -Path $logPath -Value $Message -Encoding utf8
+    Write-SharedText $logPath "$Message`r`n" $true
     Write-Host $Message
 }
 
@@ -35,7 +51,7 @@ function Invoke-LoggedExternal([string]$Command, [string[]]$Arguments) {
 }
 
 function Set-InstallStatus([int]$Step, [string]$Message) {
-    Set-Content -Path $statusPath -Value "$Step|$Message" -Encoding ascii
+    Write-SharedText $statusPath "$Step|$Message"
     Write-InstallLog "[$Step/6] $Message"
 }
 
