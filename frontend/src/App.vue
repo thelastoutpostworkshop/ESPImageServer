@@ -728,7 +728,7 @@ onUnmounted(() => {
                 <td>
                   <v-chip v-if="model.active" color="success" variant="tonal" size="small" prepend-icon="mdi-check-circle">In use</v-chip>
                   <v-chip v-else :color="model.installed ? 'success' : 'secondary'" variant="tonal" size="small" :prepend-icon="model.installed ? 'mdi-check-circle' : 'mdi-download'">
-                    {{ model.installed ? 'Downloaded' : 'Download needed' }}
+                    {{ model.installed ? 'Downloaded' : 'Downloads when selected' }}
                   </v-chip>
                 </td>
               </tr>
