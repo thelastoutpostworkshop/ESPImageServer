@@ -1,6 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron'
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -15,7 +15,49 @@ const appIcon = app.isPackaged
 
 let mainWindow
 let serverProcess
+let saveWindowStateTimer
 const serverLogLines = []
+
+const defaultWindowState = { width: 1440, height: 940, isMaximized: false }
+
+function getWindowStatePath() {
+  return path.join(app.getPath('userData'), 'window-state.json')
+}
+
+function loadWindowState() {
+  try {
+    const saved = JSON.parse(readFileSync(getWindowStatePath(), 'utf8'))
+    if (!Number.isFinite(saved.width) || !Number.isFinite(saved.height)) return defaultWindowState
+    return { ...defaultWindowState, ...saved }
+  } catch {
+    return defaultWindowState
+  }
+}
+
+function savedPositionIsVisible({ x, y, width, height }) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false
+  return screen.getAllDisplays().some(({ workArea }) =>
+    x + width > workArea.x && x < workArea.x + workArea.width &&
+    y + height > workArea.y && y < workArea.y + workArea.height)
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const bounds = mainWindow.getNormalBounds()
+  try {
+    writeFileSync(getWindowStatePath(), JSON.stringify({
+      ...bounds,
+      isMaximized: mainWindow.isMaximized()
+    }), 'utf8')
+  } catch {
+    // Failing to save window state should never prevent the application closing.
+  }
+}
+
+function scheduleWindowStateSave() {
+  clearTimeout(saveWindowStateTimer)
+  saveWindowStateTimer = setTimeout(saveWindowState, 300)
+}
 let splashStatus = { title: 'Starting ESPImageServer', detail: 'Loading the local image-generation service…' }
 
 function updateSplash(title, detail) {
@@ -74,9 +116,10 @@ async function waitForServer() {
 }
 
 async function createWindow() {
+  const windowState = loadWindowState()
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 940,
+    width: Math.max(960, windowState.width),
+    height: Math.max(700, windowState.height),
     minWidth: 960,
     minHeight: 700,
     autoHideMenuBar: true,
@@ -88,9 +131,16 @@ async function createWindow() {
       nodeIntegration: false
     }
   })
+  if (savedPositionIsVisible(windowState)) mainWindow.setPosition(windowState.x, windowState.y)
+  mainWindow.on('resize', scheduleWindowStateSave)
+  mainWindow.on('move', scheduleWindowStateSave)
+  mainWindow.on('maximize', scheduleWindowStateSave)
+  mainWindow.on('unmaximize', scheduleWindowStateSave)
+  mainWindow.on('close', saveWindowState)
   await mainWindow.loadFile(path.join(desktopDirectory, 'splash.html'))
   mainWindow.webContents.send('server-log', serverLogLines)
   mainWindow.show()
+  if (windowState.isMaximized) mainWindow.maximize()
 
   if (!await serverIsAvailable()) startServer()
   else updateSplash('Connecting to ESPImageServer', 'The local image service is already running…')
