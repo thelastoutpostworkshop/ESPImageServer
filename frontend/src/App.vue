@@ -38,6 +38,8 @@ const previewFittedFor = ref(null)
 const metadataPane = ref(false)
 const metadataPanePinned = ref(window.localStorage.getItem(imageLibraryPaneSettingsKey) === 'true')
 const generatedMetadata = ref(null)
+const currentImageSavedToLibrary = ref(false)
+const savingToCreationLibrary = ref(false)
 const recalledMetadata = ref(null)
 const metadataError = ref('')
 const savedImages = ref([])
@@ -413,8 +415,35 @@ async function openSavedImage(savedImage) {
     previewFittedFor.value = display.value?.connected ? display.value : null
     generatedMetadata.value = savedImage.metadata
     recalledMetadata.value = savedImage.metadata
+    currentImageSavedToLibrary.value = true
   } catch (requestError) {
     metadataError.value = `Could not open this saved image: ${requestError.message}`
+  }
+}
+
+async function saveCurrentImageToCreationLibrary() {
+  if (!imageUrl.value || currentImageSavedToLibrary.value || savingToCreationLibrary.value) return
+  savingToCreationLibrary.value = true
+  error.value = ''
+  try {
+    const imageResponse = await fetch(imageUrl.value)
+    if (!imageResponse.ok) throw new Error('Could not read the current image')
+    const response = await fetch('/creation-library/images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: await imageResponse.blob()
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    currentImageSavedToLibrary.value = true
+    await loadSavedImages()
+    status.value = 'Image saved to your Creation Library.'
+  } catch (requestError) {
+    error.value = `Could not save the image to the Creation Library: ${requestError.message}`
+  } finally {
+    savingToCreationLibrary.value = false
   }
 }
 
@@ -497,6 +526,7 @@ async function generate() {
     previewUrl.value = await createDisplayPreview(imageBlob)
     previewFittedFor.value = display.value?.connected ? display.value : null
     generatedMetadata.value = metadata
+    currentImageSavedToLibrary.value = autoSaveImages.value
     await loadSavedImages()
     status.value = autoSaveImages.value
       ? 'Image ready and saved. Your ESP32 display will pick it up shortly.'
@@ -607,7 +637,7 @@ onUnmounted(() => {
       <v-chip v-if="!mobile" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
         {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
       </v-chip>
-      <v-btn icon="mdi-image-text" variant="text" aria-label="Saved image details" @click="openMetadataPane" />
+      <v-btn icon="mdi-image-text" variant="text" aria-label="Open Creation Library" @click="openMetadataPane" />
     </v-app-bar>
 
     <v-navigation-drawer v-model="drawer" width="272" border :temporary="mobile">
@@ -631,25 +661,26 @@ onUnmounted(() => {
     <v-navigation-drawer v-model="metadataPane" location="right" width="380" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
       <div class="d-flex align-center pa-4">
         <div>
-          <div class="text-h6">Saved image details</div>
-          <div class="text-caption text-medium-emphasis">Keep or restore generation settings.</div>
+          <div class="text-h6">Creation Library</div>
+          <div class="text-caption text-medium-emphasis">Browse saved creations and restore their generation settings.</div>
         </div>
         <v-spacer />
         <v-btn :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" @click="toggleMetadataPanePin" />
-        <v-btn icon="mdi-close" variant="text" aria-label="Close saved image details" @click="closeMetadataPane" />
+        <v-btn icon="mdi-close" variant="text" aria-label="Close Creation Library" @click="closeMetadataPane" />
       </div>
       <v-divider />
       <div class="pa-4">
-        <div class="text-subtitle-1 font-weight-bold mb-2">Save current image</div>
-        <p class="text-body-2 text-medium-emphasis mb-3">The downloaded JPEG includes its model, prompt, steps, seed, and rotation.</p>
-        <v-btn v-if="imageUrl" :href="imageUrl" download="esp-image.jpg" color="primary" prepend-icon="mdi-content-save">Save image to computer</v-btn>
+        <div class="text-subtitle-1 font-weight-bold mb-2">Current creation</div>
+        <p class="text-body-2 text-medium-emphasis mb-3">Save the current image with its model, prompt, steps, seed, and rotation.</p>
+        <v-btn v-if="imageUrl && !currentImageSavedToLibrary" color="primary" prepend-icon="mdi-bookmark-plus" :loading="savingToCreationLibrary" @click="saveCurrentImageToCreationLibrary">Save to Creation Library</v-btn>
+        <v-chip v-else-if="imageUrl" color="success" variant="tonal" prepend-icon="mdi-check-circle">Saved to Creation Library</v-chip>
         <v-alert v-else type="info" variant="tonal" density="compact">Generate an image first.</v-alert>
         <div v-if="generatedMetadata" class="text-caption text-medium-emphasis mt-3">
           Ready to save: {{ generatedMetadata.model.name }}, {{ generatedMetadata.steps }} steps, seed {{ generatedMetadata.seed }}.
         </div>
 
         <v-divider class="my-6" />
-        <div class="text-subtitle-1 font-weight-bold mb-2">Past generated images</div>
+        <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
         <div v-if="!savedImagesLoading && savedImages.length" class="saved-image-library">
           <section v-for="group in savedImageGroups" :key="group.modelName" class="saved-image-group">
@@ -725,7 +756,7 @@ onUnmounted(() => {
                 color="primary"
                 :loading="autoSaveSaving"
                 :disabled="generationBusy || autoSaveSaving"
-                hint="When off, images still reach your ESP32 and can be downloaded manually, but are not added to the saved-image library."
+                hint="When off, images still reach your ESP32, but are not added to the Creation Library."
                 persistent-hint
                 class="mb-4"
                 @update:model-value="setAutoSaveImages"
@@ -792,16 +823,16 @@ onUnmounted(() => {
             <v-chip v-if="previewFittedFor" size="small" variant="tonal" prepend-icon="mdi-monitor-dashboard">
               Preview: fitted for {{ previewFittedFor.name }} ({{ previewFittedFor.width }}×{{ previewFittedFor.height }})
             </v-chip>
-            <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-content-save">
-              Save image to computer
+            <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
+              Download JPEG
             </v-btn>
-            <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Saved image details</v-btn>
+            <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
           </v-card-actions>
           <v-alert v-if="imageUrl && !autoSaveImages" type="warning" variant="tonal" class="mx-4 mb-4" density="comfortable" icon="mdi-content-save-alert">
-            <div class="font-weight-medium">This image is not saved in your image library.</div>
-            <div class="text-body-2 mt-1">Automatic saving is off. Save a JPEG with its generation details to keep it on this computer.</div>
+            <div class="font-weight-medium">This image is not saved in your Creation Library.</div>
+            <div class="text-body-2 mt-1">Automatic saving is off. Save this creation to keep its image and generation details in the app.</div>
             <template #append>
-              <v-btn :href="imageUrl" download="esp-image.jpg" color="warning" variant="flat" prepend-icon="mdi-content-save">Save image</v-btn>
+              <v-btn color="warning" variant="flat" prepend-icon="mdi-bookmark-plus" :loading="savingToCreationLibrary" @click="saveCurrentImageToCreationLibrary">Save to Creation Library</v-btn>
             </template>
           </v-alert>
         </v-card>

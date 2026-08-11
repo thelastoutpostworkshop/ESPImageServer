@@ -58,6 +58,21 @@ def embed_jpeg_metadata(jpeg: bytes, metadata: dict[str, object]) -> bytes:
     return jpeg[:2] + comment + jpeg[2:]
 
 
+def extract_jpeg_metadata(jpeg: bytes) -> dict[str, object] | None:
+    """Read ESPImageServer metadata embedded in a JPEG comment segment."""
+    if len(jpeg) < 6 or not jpeg.startswith(b"\xff\xd8\xff\xfe"):
+        return None
+    segment_length = int.from_bytes(jpeg[4:6], "big")
+    payload = jpeg[6:6 + segment_length - 2]
+    if not payload.startswith(JPEG_METADATA_PREFIX):
+        return None
+    try:
+        metadata = json.loads(payload[len(JPEG_METADATA_PREFIX):].decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, TypeError):
+        return None
+    return metadata if isinstance(metadata, dict) else None
+
+
 class ImageGenerator(Protocol):
     ready: bool
     device: str
@@ -168,7 +183,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.74", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.75", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -405,6 +420,16 @@ def create_app(
     @app.get("/saved-images")
     def saved_images() -> list[dict[str, object]]:
         return image_library.list()
+
+    @app.post("/creation-library/images", status_code=status.HTTP_201_CREATED)
+    async def save_image_to_creation_library(request: Request) -> dict[str, object]:
+        if request.headers.get("content-type", "").split(";", 1)[0].lower() != "image/jpeg":
+            raise HTTPException(status_code=415, detail="Expected a JPEG image")
+        jpeg = await request.body()
+        metadata = extract_jpeg_metadata(jpeg)
+        if metadata is None:
+            raise HTTPException(status_code=422, detail="The image does not contain ESPImageServer generation details")
+        return image_library.save(jpeg, metadata)
 
     @app.get("/saved-images/{image_id}/image", response_class=Response)
     def saved_image(image_id: str) -> FileResponse:
