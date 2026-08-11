@@ -64,7 +64,6 @@ const rotationOptions = [
   { title: 'Rotate 180°', value: 180 },
   { title: 'Rotate 90° counter-clockwise', value: 270 }
 ]
-const jpegMetadataPrefix = 'ESPImageServer metadata:'
 
 watch([prompt, steps, seed, activeModelId], () => {
   window.localStorage.setItem(generationSettingsKey, JSON.stringify({
@@ -210,64 +209,6 @@ function buildGenerationMetadata() {
   }
 }
 
-async function embedMetadataInJpeg(imageBlob, metadata) {
-  const imageBytes = new Uint8Array(await imageBlob.arrayBuffer())
-  if (imageBytes.length < 2 || imageBytes[0] !== 0xff || imageBytes[1] !== 0xd8) return imageBlob
-  const payload = new TextEncoder().encode(`${jpegMetadataPrefix}${JSON.stringify(metadata)}`)
-  if (payload.length > 65_533) return imageBlob
-
-  const segment = new Uint8Array(payload.length + 4)
-  segment[0] = 0xff
-  segment[1] = 0xfe
-  const length = payload.length + 2
-  segment[2] = length >> 8
-  segment[3] = length & 0xff
-  segment.set(payload, 4)
-  return new Blob([imageBytes.slice(0, 2), segment, imageBytes.slice(2)], { type: 'image/jpeg' })
-}
-
-function readMetadataFromJpeg(imageBytes) {
-  if (imageBytes.length < 4 || imageBytes[0] !== 0xff || imageBytes[1] !== 0xd8) return null
-  const decoder = new TextDecoder()
-  let position = 2
-  while (position + 4 <= imageBytes.length) {
-    if (imageBytes[position] !== 0xff) break
-    while (imageBytes[position] === 0xff) position += 1
-    const marker = imageBytes[position]
-    position += 1
-    if (marker === 0xda || marker === 0xd9) break
-    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue
-    if (position + 2 > imageBytes.length) break
-    const length = (imageBytes[position] << 8) | imageBytes[position + 1]
-    if (length < 2 || position + length > imageBytes.length) break
-    if (marker === 0xfe) {
-      const comment = decoder.decode(imageBytes.slice(position + 2, position + length))
-      if (comment.startsWith(jpegMetadataPrefix)) {
-        try {
-          return JSON.parse(comment.slice(jpegMetadataPrefix.length))
-        } catch {
-          return null
-        }
-      }
-    }
-    position += length
-  }
-  return null
-}
-
-async function loadSavedImageMetadata(files) {
-  const file = Array.isArray(files) ? files[0] : files
-  recalledMetadata.value = null
-  metadataError.value = ''
-  if (!file) return
-  const metadata = readMetadataFromJpeg(new Uint8Array(await file.arrayBuffer()))
-  if (!metadata?.prompt || !metadata?.model?.id) {
-    metadataError.value = 'No ESPImageServer generation details were found in this JPEG.'
-    return
-  }
-  recalledMetadata.value = metadata
-}
-
 async function useRecalledSettings() {
   const metadata = recalledMetadata.value
   if (!metadata) return
@@ -381,7 +322,7 @@ async function generate() {
     if (!imageResponse.ok) throw new Error(`Request failed (${imageResponse.status})`)
     const rawImageBlob = await imageResponse.blob()
     const metadata = buildGenerationMetadata()
-    const imageBlob = await embedMetadataInJpeg(rawImageBlob, metadata)
+    const imageBlob = rawImageBlob
     const rotationForImage = displayRotation.value
     if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
@@ -492,21 +433,6 @@ onUnmounted(() => {
         </div>
 
         <v-divider class="my-6" />
-        <div class="text-subtitle-1 font-weight-bold mb-2">Recall a saved image</div>
-        <p class="text-body-2 text-medium-emphasis mb-3">Select a JPEG previously saved from ESPImageServer.</p>
-        <v-file-input accept="image/jpeg,.jpg,.jpeg" label="Saved JPEG" variant="outlined" density="comfortable" prepend-icon="mdi-folder-open" @update:model-value="loadSavedImageMetadata" />
-        <v-alert v-if="metadataError" type="warning" variant="tonal" density="compact" class="mb-3">{{ metadataError }}</v-alert>
-        <template v-if="recalledMetadata">
-          <v-list class="metadata-list" density="compact" lines="two">
-            <v-list-item prepend-icon="mdi-brain" title="Model" :subtitle="recalledMetadata.model.name" />
-            <v-list-item prepend-icon="mdi-text" title="Prompt" :subtitle="recalledMetadata.prompt" />
-            <v-list-item prepend-icon="mdi-foot-print" title="Steps" :subtitle="String(recalledMetadata.steps)" />
-            <v-list-item prepend-icon="mdi-dice-5" title="Seed" :subtitle="recalledMetadata.seed === null ? 'Random seed' : String(recalledMetadata.seed)" />
-            <v-list-item prepend-icon="mdi-rotate-right" title="Rotation" :subtitle="`${recalledMetadata.rotation || 0}°`" />
-          </v-list>
-          <v-btn color="primary" block prepend-icon="mdi-restore" :disabled="generationBusy" @click="useRecalledSettings">Use these settings</v-btn>
-        </template>
-
         <v-divider class="my-6" />
         <div class="text-subtitle-1 font-weight-bold mb-2">Past generated images</div>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
@@ -517,6 +443,19 @@ onUnmounted(() => {
           </v-list-item>
         </v-list>
         <div v-else class="text-body-2 text-medium-emphasis">No generated images have been saved yet.</div>
+        <v-alert v-if="metadataError" type="warning" variant="tonal" density="compact" class="mt-3">{{ metadataError }}</v-alert>
+        <template v-if="recalledMetadata">
+          <v-divider class="my-6" />
+          <div class="text-subtitle-1 font-weight-bold mb-2">Selected image settings</div>
+          <v-list class="metadata-list" density="compact" lines="two">
+            <v-list-item prepend-icon="mdi-brain" title="Model" :subtitle="recalledMetadata.model.name" />
+            <v-list-item prepend-icon="mdi-text" title="Prompt" :subtitle="recalledMetadata.prompt" />
+            <v-list-item prepend-icon="mdi-foot-print" title="Steps" :subtitle="String(recalledMetadata.steps)" />
+            <v-list-item prepend-icon="mdi-dice-5" title="Seed" :subtitle="recalledMetadata.seed === null ? 'Random seed' : String(recalledMetadata.seed)" />
+            <v-list-item prepend-icon="mdi-rotate-right" title="Rotation" :subtitle="`${recalledMetadata.rotation || 0}°`" />
+          </v-list>
+          <v-btn color="primary" block prepend-icon="mdi-restore" :disabled="generationBusy" @click="useRecalledSettings">Use these settings</v-btn>
+        </template>
       </div>
     </v-navigation-drawer>
 
