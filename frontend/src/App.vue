@@ -630,6 +630,8 @@ onUnmounted(() => {
                 required
                 variant="outlined"
                 rows="4"
+                auto-grow
+                max-rows="12"
               />
               <v-alert type="info" variant="tonal" density="compact" class="mb-4">
                 <strong>Steps</strong> trade speed for detail: more steps take longer. <strong>Seed</strong> lets you repeat a result. Use Create random seed for a fresh image variation.
