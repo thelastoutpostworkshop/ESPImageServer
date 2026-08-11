@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
+import shutil
 from threading import Lock
 from uuid import uuid4
 
@@ -53,6 +54,28 @@ class ImageLibrary:
                     path = self.path / str(record.get("filename", ""))
                     return path if path.is_file() else None
         return None
+
+    def relocate(self, target: Path) -> Path:
+        """Move the whole library so its index and existing images stay together."""
+        with self._lock:
+            target = target.expanduser().resolve()
+            current = self.path.resolve()
+            if target == current:
+                return self.path
+            if current in target.parents:
+                raise ValueError("The new image library location cannot be inside the current library")
+            if target.exists() and any(target.iterdir()):
+                raise ValueError("Choose an empty folder for the image library")
+            if target.exists():
+                target.rmdir()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if self.path.exists():
+                shutil.move(str(self.path), str(target))
+            else:
+                target.mkdir(parents=True, exist_ok=True)
+            self.path = target
+            self.index_path = self.path / "index.json"
+            return self.path
 
     def _read_index(self) -> list[dict[str, object]]:
         try:

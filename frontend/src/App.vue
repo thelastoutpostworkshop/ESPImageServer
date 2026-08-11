@@ -42,6 +42,11 @@ const recalledMetadata = ref(null)
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
+const imageLibraryLocation = ref('')
+const jpegQuality = ref(85)
+const settingsSaving = ref(false)
+const settingsStatus = ref('')
+const settingsError = ref('')
 const generating = ref(false)
 const cancelling = ref(false)
 const activeJobId = ref('')
@@ -200,6 +205,44 @@ async function loadSavedImages() {
     savedImages.value = []
   } finally {
     savedImagesLoading.value = false
+  }
+}
+
+async function loadAppSettings() {
+  try {
+    const response = await fetch('/app-settings')
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    const settings = await response.json()
+    imageLibraryLocation.value = settings.image_library_location
+    jpegQuality.value = settings.jpeg_quality
+  } catch {
+    // The rest of the app remains usable while settings are unavailable.
+  }
+}
+
+async function saveAppSettings() {
+  settingsSaving.value = true
+  settingsError.value = ''
+  settingsStatus.value = ''
+  try {
+    const response = await fetch('/app-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_library_location: imageLibraryLocation.value, jpeg_quality: Number(jpegQuality.value) })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const settings = await response.json()
+    imageLibraryLocation.value = settings.image_library_location
+    jpegQuality.value = settings.jpeg_quality
+    await loadSavedImages()
+    settingsStatus.value = 'Settings saved. JPEG quality is used for new images.'
+  } catch (requestError) {
+    settingsError.value = `Could not save settings: ${requestError.message}`
+  } finally {
+    settingsSaving.value = false
   }
 }
 
@@ -393,6 +436,7 @@ onMounted(async () => {
   await loadDisplaySettings()
   await loadModels()
   await loadSavedImages()
+  await loadAppSettings()
   if (metadataPanePinned.value && !mobile.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
     loadServerStatus()
@@ -433,6 +477,7 @@ onUnmounted(() => {
           </template>
         </v-list-item>
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
+        <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="page = 'settings'" />
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
       </v-list>
       <template #append>
@@ -660,7 +705,7 @@ onUnmounted(() => {
           </v-card-text>
         </v-card>
 
-        <v-card v-else>
+        <v-card v-else-if="page === 'about'">
           <v-card-title>About ESPImageServer</v-card-title>
           <v-card-text class="text-body-1">
             Generate local AI images and show them on a connected ESP32 display. Images remain on your local network.
@@ -669,6 +714,39 @@ onUnmounted(() => {
             <v-list-item prepend-icon="mdi-brain" title="Model" :subtitle="serverInfo?.model_description || 'Loading model information...'" />
             <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display" :subtitle="displayMessage" />
           </v-list>
+        </v-card>
+
+        <v-card v-else class="settings-card">
+          <v-card-title class="text-h5 pt-5">Settings</v-card-title>
+          <v-card-text>
+            <v-form @submit.prevent="saveAppSettings">
+              <v-text-field
+                v-model="imageLibraryLocation"
+                label="Image library location"
+                variant="outlined"
+                hint="Use an absolute folder path. Existing generated images move with the library. Choose an empty destination folder."
+                persistent-hint
+                prepend-inner-icon="mdi-folder-image"
+                class="mb-7"
+              />
+              <v-slider
+                v-model="jpegQuality"
+                label="JPEG quality"
+                min="40"
+                max="100"
+                step="5"
+                thumb-label
+                color="primary"
+                class="mt-2"
+              />
+              <div class="text-body-2 text-medium-emphasis mb-5">
+                Higher quality produces larger files and can take a little longer for the ESP32 to download. This applies to newly generated images only.
+              </div>
+              <v-btn type="submit" color="primary" :loading="settingsSaving" prepend-icon="mdi-content-save">Save settings</v-btn>
+              <v-alert v-if="settingsStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ settingsStatus }}</v-alert>
+              <v-alert v-if="settingsError" type="error" variant="tonal" density="compact" class="mt-4">{{ settingsError }}</v-alert>
+            </v-form>
+          </v-card-text>
         </v-card>
       </v-container>
     </v-main>

@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image
 
 from .config import Settings
+from .app_settings import AppSettingsStore
 from .display import ActiveDisplayStore
 from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
@@ -84,6 +85,12 @@ class DisplaySettingsRequest(BaseModel):
     rotation: int
 
 
+class AppSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    image_library_location: str | None = Field(default=None, min_length=1)
+    jpeg_quality: int | None = Field(default=None, ge=1, le=100)
+
+
 class RegisterDeviceRequest(BaseModel):
     pairing_code: str = Field(min_length=6, max_length=6)
     name: str = Field(min_length=1, max_length=64)
@@ -102,6 +109,7 @@ def create_app(
     display_settings_store: DisplaySettingsStore | None = None,
     model_selection_store: ModelSelectionStore | None = None,
     image_library: ImageLibrary | None = None,
+    app_settings_store: AppSettingsStore | None = None,
     generation_jobs: GenerationJobStore | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
@@ -120,7 +128,12 @@ def create_app(
     active_display_store = active_display_store or ActiveDisplayStore()
     display_settings_store = display_settings_store or DisplaySettingsStore()
     generation_jobs = generation_jobs or GenerationJobStore()
-    image_library = image_library or ImageLibrary()
+    app_settings_store = app_settings_store or AppSettingsStore()
+    persisted_app_settings = app_settings_store.get()
+    library_location = persisted_app_settings.get("image_library_location")
+    image_library = image_library or ImageLibrary(Path(library_location) if isinstance(library_location, str) else None)
+    jpeg_quality = persisted_app_settings.get("jpeg_quality", settings.jpeg_quality)
+    jpeg_quality = jpeg_quality if isinstance(jpeg_quality, int) and 1 <= jpeg_quality <= 100 else settings.jpeg_quality
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -151,7 +164,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.47", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.48", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -159,6 +172,7 @@ def create_app(
     app.state.model_selection_store = model_selection_store
     app.state.generation_jobs = generation_jobs
     app.state.image_library = image_library
+    app.state.app_settings_store = app_settings_store
     app.mount(
         "/assets",
         StaticFiles(directory=Path(__file__).with_name("static")),
@@ -302,6 +316,26 @@ def create_app(
             "default_width": settings.output_width,
             "default_height": settings.output_height,
         }
+
+    @app.get("/app-settings")
+    def get_app_settings() -> dict[str, object]:
+        return {"image_library_location": str(image_library.path), "jpeg_quality": jpeg_quality}
+
+    @app.put("/app-settings")
+    def update_app_settings(request: AppSettingsRequest) -> dict[str, object]:
+        nonlocal jpeg_quality
+        if request.image_library_location is not None:
+            location = Path(request.image_library_location)
+            if not location.is_absolute():
+                raise HTTPException(status_code=422, detail="Choose an absolute folder path for the image library")
+            try:
+                image_library.relocate(location)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail=f"Could not move the image library: {exc}") from exc
+        if request.jpeg_quality is not None:
+            jpeg_quality = request.jpeg_quality
+        app_settings_store.set({"image_library_location": str(image_library.path), "jpeg_quality": jpeg_quality})
+        return get_app_settings()
 
     @app.get("/devices")
     def list_devices() -> list[dict[str, object]]:
@@ -451,7 +485,7 @@ def create_app(
         ensure_not_cancelled()
         if progress is not None and rotation:
             progress(1, 1, "Fitting the image to your ESP32 display")
-        jpeg = to_jpeg(image, width=output_width, height=output_height, quality=settings.jpeg_quality)
+        jpeg = to_jpeg(image, width=output_width, height=output_height, quality=jpeg_quality)
         metadata = {
             "version": 1,
             "createdAt": datetime.now(UTC).isoformat(),
