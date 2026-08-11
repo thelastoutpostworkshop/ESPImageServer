@@ -90,6 +90,7 @@ class AppSettingsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     image_library_location: str | None = Field(default=None, min_length=1)
     jpeg_quality: int | None = Field(default=None, ge=1, le=100)
+    auto_save_images: bool | None = None
 
 
 class RegisterDeviceRequest(BaseModel):
@@ -135,6 +136,8 @@ def create_app(
     image_library = image_library or ImageLibrary(Path(library_location) if isinstance(library_location, str) else None)
     jpeg_quality = persisted_app_settings.get("jpeg_quality", settings.jpeg_quality)
     jpeg_quality = jpeg_quality if isinstance(jpeg_quality, int) and 1 <= jpeg_quality <= 100 else settings.jpeg_quality
+    auto_save_images = persisted_app_settings.get("auto_save_images", True)
+    auto_save_images = auto_save_images if isinstance(auto_save_images, bool) else True
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -165,7 +168,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.70", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.71", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -322,11 +325,15 @@ def create_app(
 
     @app.get("/app-settings")
     def get_app_settings() -> dict[str, object]:
-        return {"image_library_location": str(image_library.path), "jpeg_quality": jpeg_quality}
+        return {
+            "image_library_location": str(image_library.path),
+            "jpeg_quality": jpeg_quality,
+            "auto_save_images": auto_save_images,
+        }
 
     @app.put("/app-settings")
     def update_app_settings(request: AppSettingsRequest) -> dict[str, object]:
-        nonlocal jpeg_quality
+        nonlocal jpeg_quality, auto_save_images
         if request.image_library_location is not None:
             location = Path(request.image_library_location)
             if not location.is_absolute():
@@ -337,7 +344,13 @@ def create_app(
                 raise HTTPException(status_code=422, detail=f"Could not move the image library: {exc}") from exc
         if request.jpeg_quality is not None:
             jpeg_quality = request.jpeg_quality
-        app_settings_store.set({"image_library_location": str(image_library.path), "jpeg_quality": jpeg_quality})
+        if request.auto_save_images is not None:
+            auto_save_images = request.auto_save_images
+        app_settings_store.set({
+            "image_library_location": str(image_library.path),
+            "jpeg_quality": jpeg_quality,
+            "auto_save_images": auto_save_images,
+        })
         return get_app_settings()
 
     @app.post("/app-settings/image-library/reveal")
@@ -536,7 +549,8 @@ def create_app(
         jpeg = embed_jpeg_metadata(jpeg, metadata)
         ensure_not_cancelled()
         latest_image_store.set(jpeg)
-        image_library.save(jpeg, metadata)
+        if auto_save_images:
+            image_library.save(jpeg, metadata)
         return jpeg
 
     @app.post("/generate", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})

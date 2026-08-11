@@ -44,6 +44,8 @@ const savedImages = ref([])
 const savedImagesLoading = ref(false)
 const imageLibraryLocation = ref('')
 const jpegQuality = ref(85)
+const autoSaveImages = ref(true)
+const autoSaveSaving = ref(false)
 const settingsSaving = ref(false)
 const openingImageLibrary = ref(false)
 const choosingImageLibrary = ref(false)
@@ -227,6 +229,7 @@ async function loadAppSettings() {
     const settings = await response.json()
     imageLibraryLocation.value = settings.image_library_location
     jpegQuality.value = settings.jpeg_quality
+    autoSaveImages.value = settings.auto_save_images !== false
   } catch {
     // The rest of the app remains usable while settings are unavailable.
   }
@@ -240,7 +243,11 @@ async function saveAppSettings() {
     const response = await fetch('/app-settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_library_location: imageLibraryLocation.value, jpeg_quality: Number(jpegQuality.value) })
+      body: JSON.stringify({
+        image_library_location: imageLibraryLocation.value,
+        jpeg_quality: Number(jpegQuality.value),
+        auto_save_images: autoSaveImages.value
+      })
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -249,12 +256,38 @@ async function saveAppSettings() {
     const settings = await response.json()
     imageLibraryLocation.value = settings.image_library_location
     jpegQuality.value = settings.jpeg_quality
+    autoSaveImages.value = settings.auto_save_images !== false
     await loadSavedImages()
     settingsStatus.value = 'Settings saved. JPEG quality is used for new images.'
   } catch (requestError) {
     settingsError.value = `Could not save settings: ${requestError.message}`
   } finally {
     settingsSaving.value = false
+  }
+}
+
+async function setAutoSaveImages(value) {
+  const previousValue = autoSaveImages.value
+  autoSaveImages.value = value
+  autoSaveSaving.value = true
+  error.value = ''
+  try {
+    const response = await fetch('/app-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_save_images: value })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const settings = await response.json()
+    autoSaveImages.value = settings.auto_save_images !== false
+  } catch (requestError) {
+    autoSaveImages.value = previousValue
+    error.value = `Could not update automatic saving: ${requestError.message}`
+  } finally {
+    autoSaveSaving.value = false
   }
 }
 
@@ -447,7 +480,9 @@ async function generate() {
     previewFittedFor.value = display.value?.connected ? display.value : null
     generatedMetadata.value = metadata
     await loadSavedImages()
-    status.value = 'Image ready. Your ESP32 display will pick it up shortly.'
+    status.value = autoSaveImages.value
+      ? 'Image ready and saved. Your ESP32 display will pick it up shortly.'
+      : 'Image ready. Automatic saving is off; your ESP32 display will pick it up shortly.'
   } catch (requestError) {
     error.value = `Could not generate the image: ${requestError.message}`
     status.value = ''
@@ -657,6 +692,17 @@ onUnmounted(() => {
                 persistent-hint
                 class="mb-4"
                 @update:model-value="setDisplayRotation"
+              />
+              <v-switch
+                :model-value="autoSaveImages"
+                label="Save generated images automatically"
+                color="primary"
+                :loading="autoSaveSaving"
+                :disabled="generationBusy || autoSaveSaving"
+                hint="When off, images still reach your ESP32 and can be downloaded manually, but are not added to the saved-image library."
+                persistent-hint
+                class="mb-4"
+                @update:model-value="setAutoSaveImages"
               />
               <v-textarea
                 v-model="prompt"
