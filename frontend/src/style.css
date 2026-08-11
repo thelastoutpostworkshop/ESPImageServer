@@ -10,6 +10,7 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .preview-placeholder { min-height: 420px; }
 .model-in-use { background: rgba(var(--v-theme-primary), 0.10); }
 .model-list__active { background: rgba(var(--v-theme-success), 0.08); }
+.metadata-list .v-list-item-subtitle { white-space: normal; }
 
 @media (max-width: 600px) {
   .app-container { padding-inline: 12px !important; }
