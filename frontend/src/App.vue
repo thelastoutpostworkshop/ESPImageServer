@@ -51,6 +51,9 @@ const settingsStatus = ref('')
 const settingsError = ref('')
 const generating = ref(false)
 const cancelling = ref(false)
+const modelSwitching = ref(false)
+const modelSwitchTarget = ref(null)
+const modelSwitchElapsedSeconds = ref(0)
 const activeJobId = ref('')
 const generationProgress = ref(0)
 const generationStage = ref('')
@@ -61,8 +64,10 @@ const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
 const page = ref('generate')
 let statusTimer
+let modelSwitchTimer
 const { mobile } = useDisplay()
-const generationBusy = computed(() => generating.value || health.value?.generating === true)
+const generationBusy = computed(() => modelSwitching.value || generating.value || health.value?.generating === true)
+const modelSwitchVerb = computed(() => modelSwitchTarget.value?.installed ? 'Loading' : 'Downloading and loading')
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
@@ -168,9 +173,13 @@ async function loadServerStatus() {
 
 async function selectModel(model) {
   if (model.active || generationBusy.value) return
-  generating.value = true
+  modelSwitchTarget.value = model
+  modelSwitchElapsedSeconds.value = 0
+  modelSwitching.value = true
+  clearInterval(modelSwitchTimer)
+  modelSwitchTimer = window.setInterval(() => { modelSwitchElapsedSeconds.value += 1 }, 1000)
   error.value = ''
-  status.value = `${model.installed ? 'Loading' : 'Downloading and loading'} ${model.name}. This can take a few minutes.`
+  status.value = ''
   try {
     const response = await fetch(`/models/${encodeURIComponent(model.id)}/select`, { method: 'POST' })
     if (!response.ok) {
@@ -182,9 +191,10 @@ async function selectModel(model) {
     page.value = 'generate'
   } catch (requestError) {
     error.value = `Could not change the image model: ${requestError.message}`
-    status.value = ''
   } finally {
-    generating.value = false
+    clearInterval(modelSwitchTimer)
+    modelSwitching.value = false
+    modelSwitchTarget.value = null
   }
 }
 
@@ -493,6 +503,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.clearInterval(statusTimer)
+  window.clearInterval(modelSwitchTimer)
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
 })
@@ -500,6 +511,40 @@ onUnmounted(() => {
 
 <template>
   <v-app>
+    <v-dialog :model-value="modelSwitching" persistent max-width="580">
+      <v-card>
+        <v-card-title class="d-flex align-center ga-3 py-5">
+          <v-avatar color="primary" variant="tonal" size="44">
+            <v-icon>{{ modelSwitchTarget?.installed ? 'mdi-brain' : 'mdi-download' }}</v-icon>
+          </v-avatar>
+          <div>
+            <div class="text-h6">{{ modelSwitchVerb }} {{ modelSwitchTarget?.name }}</div>
+            <div class="text-body-2 text-medium-emphasis font-weight-regular">Preparing this model for local image generation</div>
+          </div>
+        </v-card-title>
+        <v-card-text class="pt-0">
+          <v-alert color="info" variant="tonal" density="comfortable" icon="mdi-information-outline" class="mb-5">
+            <template v-if="modelSwitchTarget?.installed">
+              This model is already on your computer. ESPImageServer is loading it into memory.
+            </template>
+            <template v-else>
+              This is a one-time download. The model remains available on this computer once preparation finishes.
+            </template>
+          </v-alert>
+          <v-progress-linear color="primary" indeterminate rounded height="10" class="mb-4" />
+          <div class="d-flex align-center justify-space-between text-body-2">
+            <span>Working locally—this can take several minutes.</span>
+            <span class="text-medium-emphasis">{{ modelSwitchElapsedSeconds }}s</span>
+          </div>
+          <v-list density="compact" class="mt-4 px-0">
+            <v-list-item prepend-icon="mdi-check-circle-outline" title="Model selection saved" />
+            <v-list-item :prepend-icon="modelSwitchTarget?.installed ? 'mdi-memory' : 'mdi-cloud-download-outline'" :title="modelSwitchTarget?.installed ? 'Loading model components' : 'Downloading model files and loading components'" />
+            <v-list-item prepend-icon="mdi-image-auto" title="Image generation will be available when preparation finishes" />
+          </v-list>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
     <v-app-bar color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
