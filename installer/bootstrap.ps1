@@ -95,15 +95,32 @@ try {
     }
     $installedCuda = ($torchOutput | Out-String).Trim()
     $hasCuda = [bool]$installedCuda
-    if ($UseCuda -and -not $hasCuda) {
-        if ($torchAvailable) { Invoke-LoggedExternal $venvPython @('-m', 'pip', 'uninstall', '-y', 'torch') | Out-Null }
-        $torchExitCode = Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', 'torch', '--index-url', 'https://download.pytorch.org/whl/cu128')
-    } elseif (-not $UseCuda -and ($hasCuda -or -not $torchAvailable)) {
-        if ($torchAvailable) { Invoke-LoggedExternal $venvPython @('-m', 'pip', 'uninstall', '-y', 'torch') | Out-Null }
-        $torchExitCode = Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', 'torch', '--index-url', 'https://download.pytorch.org/whl/cpu')
-    }
-    if ((($UseCuda -and -not $hasCuda) -or (-not $UseCuda -and ($hasCuda -or -not $torchAvailable))) -and $torchExitCode -ne 0) {
-        throw 'Unable to install PyTorch.'
+    $torchIndexUrl = if ($UseCuda) { 'https://download.pytorch.org/whl/cu128' } else { 'https://download.pytorch.org/whl/cpu' }
+    $needsTorchInstall = ($UseCuda -and -not $hasCuda) -or (-not $UseCuda -and ($hasCuda -or -not $torchAvailable))
+    if ($needsTorchInstall) {
+        if ($torchAvailable) {
+            Invoke-LoggedExternal $venvPython @('-m', 'pip', 'uninstall', '-y', 'torch', 'torchvision') | Out-Null
+        }
+        $torchExitCode = Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', 'torch', 'torchvision', '--index-url', $torchIndexUrl)
+        if ($torchExitCode -ne 0) {
+            throw 'Unable to install PyTorch and torchvision.'
+        }
+    } else {
+        # Diffusers uses torchvision for image preprocessing. Install it separately
+        # for environments created by earlier installer versions.
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & $venvPython -c 'import torchvision' 2>$null
+            $torchVisionAvailable = $LASTEXITCODE -eq 0
+        } finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        if (-not $torchVisionAvailable) {
+            if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', 'torchvision', '--index-url', $torchIndexUrl)) -ne 0) {
+                throw 'Unable to install torchvision.'
+            }
+        }
     }
 
     Set-InstallStatus 3 'Installing ESPImageServer packages...'
