@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.65"
+#define AppVersion "0.1.66"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.65
+OutputBaseFilename=ESPImageServer-Setup-0.1.66
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -155,12 +155,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   Parameters: String;
   ProcessID: Integer;
-  StatusText: AnsiString;
   ResultText: AnsiString;
-  LogText: AnsiString;
-  LastLogText: AnsiString;
-  StatusStep: Integer;
-  Separator: Integer;
   TaskKillResult: Integer;
 begin
   if CurStep <> ssPostInstall then
@@ -180,8 +175,9 @@ begin
 
   BootstrapProgress := CreateOutputProgressPage('Installing ESPImageServer',
     'Setting up the local image-generation environment.');
-  BootstrapProgress.SetProgress(0, 6);
-  BootstrapProgress.SetText('Preparing installation...', 'This may take several minutes. Please keep this window open.');
+  BootstrapProgress.SetProgress(1, 6);
+  BootstrapProgress.SetText('Installing the local image-generation environment...',
+    'This can take several minutes while PyTorch and the selected model are prepared. Please keep this window open.');
   BootstrapOutput := TNewMemo.Create(BootstrapProgress);
   BootstrapOutput.Left := 0;
   BootstrapOutput.Top := BootstrapProgress.ProgressBar.Top + BootstrapProgress.ProgressBar.Height + ScaleY(12);
@@ -189,7 +185,11 @@ begin
   BootstrapOutput.Height := BootstrapProgress.SurfaceHeight - BootstrapOutput.Top - ScaleY(38);
   BootstrapOutput.ScrollBars := ssVertical;
   BootstrapOutput.ReadOnly := True;
-  BootstrapOutput.Text := 'Waiting for setup output...';
+  BootstrapOutput.Text := 'Installation is in progress.' + #13#10 + #13#10 +
+    '- Creating the local Python environment' + #13#10 +
+    '- Installing PyTorch and ESPImageServer packages' + #13#10 +
+    '- Downloading the selected image model' + #13#10 + #13#10 +
+    'The installer will continue automatically when this is complete.';
   BootstrapOutput.Parent := BootstrapProgress.Surface;
   BootstrapCancelButton := TNewButton.Create(BootstrapProgress);
   BootstrapCancelButton.Caption := 'Cancel installation';
@@ -199,7 +199,6 @@ begin
   BootstrapCancelButton.Parent := BootstrapProgress.Surface;
   BootstrapCancelRequested := False;
   BootstrapProgress.Show;
-  StatusStep := 0;
   ResultText := '';
   try
     { A previous setup result would otherwise make the asynchronous bootstrap
@@ -219,24 +218,8 @@ begin
         ResultText := 'cancelled';
         Break;
       end;
-      if LoadStringFromFile(ExpandConstant('{app}\installer_status.txt'), StatusText) then begin
-        Separator := Pos('|', StatusText);
-        if Separator > 1 then begin
-          StatusStep := StrToInt(Copy(StatusText, 1, Separator - 1));
-          BootstrapProgress.SetProgress(StatusStep, 6);
-          BootstrapProgress.SetText(Copy(StatusText, Separator + 1, Length(StatusText)),
-            'This may take several minutes. Please keep this window open.');
-        end;
-      end;
-      if LoadStringFromFile(ExpandConstant('{app}\bootstrap.log'), LogText) and
-          (LogText <> LastLogText) then begin
-        BootstrapOutput.Text := LogText;
-        BootstrapOutput.SelStart := Length(BootstrapOutput.Text);
-        BootstrapOutput.SelLength := 0;
-        LastLogText := LogText;
-      end;
       { SetProgress pumps the installer message queue, keeping the progress page responsive. }
-      BootstrapProgress.SetProgress(StatusStep, 6);
+      BootstrapProgress.SetProgress(1, 6);
       Sleep(250);
     end;
 
