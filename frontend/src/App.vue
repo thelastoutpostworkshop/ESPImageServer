@@ -34,7 +34,7 @@ const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
 const previewUrl = ref('')
-const previewRotation = ref(0)
+const previewFittedFor = ref(null)
 const metadataPane = ref(false)
 const metadataPanePinned = ref(window.localStorage.getItem(imageLibraryPaneSettingsKey) === 'true')
 const generatedMetadata = ref(null)
@@ -355,12 +355,11 @@ async function openSavedImage(savedImage) {
     const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/image`)
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
     const imageBlob = await response.blob()
-    const rotation = savedImage.metadata?.rotation || 0
     if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
     imageUrl.value = URL.createObjectURL(imageBlob)
-    previewUrl.value = await createOrientedPreview(imageBlob, rotation)
-    previewRotation.value = rotation
+    previewUrl.value = await createDisplayPreview(imageBlob)
+    previewFittedFor.value = display.value?.connected ? display.value : null
     generatedMetadata.value = savedImage.metadata
     recalledMetadata.value = savedImage.metadata
   } catch (requestError) {
@@ -368,35 +367,28 @@ async function openSavedImage(savedImage) {
   }
 }
 
-async function createOrientedPreview(blob, rotation) {
-  if (rotation === 0 || typeof window.createImageBitmap !== 'function') {
+async function createDisplayPreview(blob) {
+  const target = display.value?.connected ? display.value : null
+  if (!target || typeof window.createImageBitmap !== 'function') {
     return URL.createObjectURL(blob)
   }
 
   const source = await window.createImageBitmap(blob)
-  const quarterTurn = rotation === 90 || rotation === 270
   const canvas = document.createElement('canvas')
-  canvas.width = quarterTurn ? source.height : source.width
-  canvas.height = quarterTurn ? source.width : source.height
+  canvas.width = target.width
+  canvas.height = target.height
   const context = canvas.getContext('2d')
   if (!context) {
     source.close()
     return URL.createObjectURL(blob)
   }
 
-  // The server JPEG is already rotated for the physical display. Undo that
-  // transform in the browser so the preview matches the display's orientation.
-  if (rotation === 90) {
-    context.translate(0, canvas.height)
-    context.rotate(-Math.PI / 2)
-  } else if (rotation === 180) {
-    context.translate(canvas.width, canvas.height)
-    context.rotate(Math.PI)
-  } else {
-    context.translate(canvas.width, 0)
-    context.rotate(Math.PI / 2)
-  }
-  context.drawImage(source, 0, 0)
+  // Match ImageOps.fit on the server: fill the current display frame and
+  // center-crop anything outside its aspect ratio.
+  const scale = Math.max(canvas.width / source.width, canvas.height / source.height)
+  const width = source.width * scale
+  const height = source.height * scale
+  context.drawImage(source, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height)
   source.close()
   const previewBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92))
   return URL.createObjectURL(previewBlob || blob)
@@ -448,12 +440,11 @@ async function generate() {
     const rawImageBlob = await imageResponse.blob()
     const metadata = buildGenerationMetadata()
     const imageBlob = rawImageBlob
-    const rotationForImage = displayRotation.value
     if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
     imageUrl.value = URL.createObjectURL(imageBlob)
-    previewUrl.value = await createOrientedPreview(imageBlob, rotationForImage)
-    previewRotation.value = rotationForImage
+    previewUrl.value = await createDisplayPreview(imageBlob)
+    previewFittedFor.value = display.value?.connected ? display.value : null
     generatedMetadata.value = metadata
     await loadSavedImages()
     status.value = 'Image ready. Your ESP32 display will pick it up shortly.'
@@ -715,7 +706,7 @@ onUnmounted(() => {
 
         <v-col cols="12" lg="7">
         <v-card class="generated-image-card h-100">
-          <v-img v-if="previewUrl" :src="previewUrl" alt="Generated image in the selected display orientation" />
+          <v-img v-if="previewUrl" :src="previewUrl" alt="Image fitted to the connected ESP32 display" />
           <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
             <v-avatar color="primary" variant="tonal" size="64" class="mb-4">
               <v-icon size="34">mdi-image-outline</v-icon>
@@ -726,8 +717,8 @@ onUnmounted(() => {
             </div>
           </v-sheet>
           <v-card-actions v-if="imageUrl">
-            <v-chip v-if="previewRotation" size="small" variant="tonal" prepend-icon="mdi-rotate-right">
-              Preview: display rotation
+            <v-chip v-if="previewFittedFor" size="small" variant="tonal" prepend-icon="mdi-monitor-dashboard">
+              Preview: fitted for {{ previewFittedFor.name }} ({{ previewFittedFor.width }}×{{ previewFittedFor.height }})
             </v-chip>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
