@@ -164,7 +164,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.48", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.49", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -336,6 +336,15 @@ def create_app(
             jpeg_quality = request.jpeg_quality
         app_settings_store.set({"image_library_location": str(image_library.path), "jpeg_quality": jpeg_quality})
         return get_app_settings()
+
+    @app.post("/app-settings/image-library/reveal")
+    def reveal_image_library() -> dict[str, str]:
+        image_library.path.mkdir(parents=True, exist_ok=True)
+        try:
+            os.startfile(image_library.path)  # type: ignore[attr-defined]  # Windows Explorer
+        except (AttributeError, OSError) as exc:
+            raise HTTPException(status_code=500, detail=f"Could not open the image library folder: {exc}") from exc
+        return {"status": "opened", "image_library_location": str(image_library.path)}
 
     @app.get("/devices")
     def list_devices() -> list[dict[str, object]]:

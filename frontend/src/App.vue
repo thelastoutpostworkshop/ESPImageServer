@@ -45,6 +45,7 @@ const savedImagesLoading = ref(false)
 const imageLibraryLocation = ref('')
 const jpegQuality = ref(85)
 const settingsSaving = ref(false)
+const openingImageLibrary = ref(false)
 const settingsStatus = ref('')
 const settingsError = ref('')
 const generating = ref(false)
@@ -243,6 +244,22 @@ async function saveAppSettings() {
     settingsError.value = `Could not save settings: ${requestError.message}`
   } finally {
     settingsSaving.value = false
+  }
+}
+
+async function revealImageLibrary() {
+  openingImageLibrary.value = true
+  settingsError.value = ''
+  try {
+    const response = await fetch('/app-settings/image-library/reveal', { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+  } catch (requestError) {
+    settingsError.value = `Could not open the image library folder: ${requestError.message}`
+  } finally {
+    openingImageLibrary.value = false
   }
 }
 
@@ -729,6 +746,9 @@ onUnmounted(() => {
                 prepend-inner-icon="mdi-folder-image"
                 class="mb-7"
               />
+              <v-btn type="button" class="mb-6" variant="tonal" prepend-icon="mdi-folder-open" :loading="openingImageLibrary" @click="revealImageLibrary">
+                Open image library folder
+              </v-btn>
               <v-slider
                 v-model="jpegQuality"
                 label="JPEG quality"
