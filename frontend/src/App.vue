@@ -500,7 +500,7 @@ async function generate() {
     await loadSavedImages()
     status.value = autoSaveImages.value
       ? 'Image ready and saved. Your ESP32 display will pick it up shortly.'
-      : 'Image ready. Automatic saving is off; your ESP32 display will pick it up shortly.'
+      : 'Image ready. Automatic saving is off—use Save image to computer to keep this image.'
   } catch (requestError) {
     error.value = `Could not generate the image: ${requestError.message}`
     status.value = ''
@@ -642,7 +642,7 @@ onUnmounted(() => {
       <div class="pa-4">
         <div class="text-subtitle-1 font-weight-bold mb-2">Save current image</div>
         <p class="text-body-2 text-medium-emphasis mb-3">The downloaded JPEG includes its model, prompt, steps, seed, and rotation.</p>
-        <v-btn v-if="imageUrl" :href="imageUrl" download="esp-image.jpg" color="primary" prepend-icon="mdi-download">Save JPEG with details</v-btn>
+        <v-btn v-if="imageUrl" :href="imageUrl" download="esp-image.jpg" color="primary" prepend-icon="mdi-content-save">Save image to computer</v-btn>
         <v-alert v-else type="info" variant="tonal" density="compact">Generate an image first.</v-alert>
         <div v-if="generatedMetadata" class="text-caption text-medium-emphasis mt-3">
           Ready to save: {{ generatedMetadata.model.name }}, {{ generatedMetadata.steps }} steps, seed {{ generatedMetadata.seed }}.
@@ -792,11 +792,18 @@ onUnmounted(() => {
             <v-chip v-if="previewFittedFor" size="small" variant="tonal" prepend-icon="mdi-monitor-dashboard">
               Preview: fitted for {{ previewFittedFor.name }} ({{ previewFittedFor.width }}×{{ previewFittedFor.height }})
             </v-chip>
-            <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
-              Download JPEG
+            <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-content-save">
+              Save image to computer
             </v-btn>
             <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Saved image details</v-btn>
           </v-card-actions>
+          <v-alert v-if="imageUrl && !autoSaveImages" type="warning" variant="tonal" class="mx-4 mb-4" density="comfortable" icon="mdi-content-save-alert">
+            <div class="font-weight-medium">This image is not saved in your image library.</div>
+            <div class="text-body-2 mt-1">Automatic saving is off. Save a JPEG with its generation details to keep it on this computer.</div>
+            <template #append>
+              <v-btn :href="imageUrl" download="esp-image.jpg" color="warning" variant="flat" prepend-icon="mdi-content-save">Save image</v-btn>
+            </template>
+          </v-alert>
         </v-card>
         </v-col>
         </v-row>
