@@ -103,7 +103,7 @@ const displayMessage = computed(() => {
 
 async function loadDisplay() {
   try {
-    display.value = await fetch('/display').then(response => response.json())
+    display.value = await fetch('/display', { cache: 'no-store' }).then(response => response.json())
   } catch {
     display.value = null
   }

@@ -16,7 +16,7 @@ import webbrowser
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image
@@ -165,7 +165,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.60", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.61", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -272,16 +272,18 @@ def create_app(
         return {"status": "active", "model_id": model_id}
 
     @app.get("/display")
-    def active_display() -> dict[str, object]:
+    def active_display() -> JSONResponse:
         profile = active_display_store.get()
         if profile is None:
-            return {"connected": False}
-        return {
-            "connected": True,
-            "name": profile.name,
-            "width": profile.width,
-            "height": profile.height,
-        }
+            payload: dict[str, object] = {"connected": False}
+        else:
+            payload = {
+                "connected": True,
+                "name": profile.name,
+                "width": profile.width,
+                "height": profile.height,
+            }
+        return JSONResponse(content=payload, headers={"Cache-Control": "no-store, max-age=0"})
 
     @app.post("/display", status_code=status.HTTP_201_CREATED)
     def announce_display(announcement: DisplayAnnouncement) -> dict[str, object]:
