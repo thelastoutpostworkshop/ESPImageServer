@@ -12,14 +12,20 @@ from uuid import uuid4
 
 
 class ImageLibrary:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, index_path: Path | None = None) -> None:
         self.path = path or self._default_path()
-        self.index_path = self.path / "index.json"
+        self.index_path = index_path or self._default_index_path()
+        self.legacy_index_path = self.path / "index.json"
         self._lock = Lock()
+        self._migrate_legacy_index()
 
     @staticmethod
     def _default_path() -> Path:
         return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "images"
+
+    @staticmethod
+    def _default_index_path() -> Path:
+        return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "image_library_index.json"
 
     def save(self, jpeg: bytes, metadata: dict[str, object]) -> dict[str, object]:
         with self._lock:
@@ -74,15 +80,29 @@ class ImageLibrary:
             else:
                 target.mkdir(parents=True, exist_ok=True)
             self.path = target
-            self.index_path = self.path / "index.json"
+            self.legacy_index_path = self.path / "index.json"
             return self.path
 
     def _read_index(self) -> list[dict[str, object]]:
+        for path in (self.index_path, self.legacy_index_path):
+            try:
+                records = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(records, list):
+                    return records
+            except (FileNotFoundError, OSError, ValueError, TypeError):
+                continue
+        return []
+
+    def _migrate_legacy_index(self) -> None:
+        """Move indexes created by older releases out of the image folder."""
+        if self.index_path.is_file() or not self.legacy_index_path.is_file():
+            return
         try:
-            records = json.loads(self.index_path.read_text(encoding="utf-8"))
-            return records if isinstance(records, list) else []
-        except (FileNotFoundError, OSError, ValueError, TypeError):
-            return []
+            self.index_path.parent.mkdir(parents=True, exist_ok=True)
+            self.legacy_index_path.replace(self.index_path)
+        except OSError:
+            # The old index remains usable as a fallback until it can be moved.
+            pass
 
     def _write_index(self, records: list[dict[str, object]]) -> None:
         temporary_path = self.index_path.with_suffix(".tmp")

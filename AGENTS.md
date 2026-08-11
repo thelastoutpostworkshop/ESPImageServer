@@ -13,6 +13,7 @@
 - The app serves `frontend/dist` in development and packages that bundle in the Windows installer.
 - Models are managed through `/models`; model selection is persistent on the server.
 - Image generation uses background jobs at `/generation-jobs`. Jobs support progress polling and `DELETE /generation-jobs/{id}` cancellation.
+- Generated JPEGs are stored in the configured local image library. Its `image_library_index.json` is kept separately in `%LOCALAPPDATA%\ESPImageServer` so the visible image folder contains only user images.
 
 ## ESP32 display contract
 
