@@ -479,7 +479,7 @@ async function generate() {
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
       generationProgress.value = currentJob.progress
-      generationStage.value = currentJob.steps ? `${currentJob.stage} (${currentJob.step} of ${currentJob.steps})` : currentJob.stage
+      generationStage.value = currentJob.steps ? `${currentJob.stage} — Step ${currentJob.step} of ${currentJob.steps}` : currentJob.stage
     }
     if (currentJob.status === 'cancelled') {
       status.value = 'Image generation cancelled.'
