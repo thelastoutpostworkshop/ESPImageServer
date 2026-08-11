@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.68"
+#define AppVersion "0.1.69"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.68
+OutputBaseFilename=ESPImageServer-Setup-0.1.69
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -46,13 +46,6 @@ Name: "{autodesktop}\ESPImageServer"; Filename: "{app}\desktop\ESPImageServer.ex
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
-
-[UninstallDelete]
-Type: files; Name: "{app}\server_settings.bat"
-Type: files; Name: "{app}\bootstrap.log"
-Type: files; Name: "{app}\installer_status.txt"
-Type: files; Name: "{app}\installer_result.txt"
-Type: filesandordirs; Name: "{app}\.venv"
 
 [Run]
 Filename: "{app}\desktop\ESPImageServer.exe"; Description: "Start ESPImageServer"; Flags: nowait postinstall skipifsilent
@@ -117,9 +110,13 @@ var
   ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then begin
-    Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' +
-      ExpandConstant('{app}\cleanup.ps1') + '" -InstallRoot "' + ExpandConstant('{app}') + '"',
-      ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    { Inno Setup silently runs the previous uninstaller during an upgrade.
+      Preserve the virtual environment, models, and user images in that case.
+      A user-initiated uninstall remains a full removal. }
+    if not UninstallSilent then
+      Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' +
+        ExpandConstant('{app}\cleanup.ps1') + '" -InstallRoot "' + ExpandConstant('{app}') + '"',
+        ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 
