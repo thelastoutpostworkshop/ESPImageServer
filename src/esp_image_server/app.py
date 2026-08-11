@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from io import BytesIO
 import json
 import logging
 import os
@@ -150,7 +151,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.46", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.47", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -330,6 +331,18 @@ def create_app(
         if image_path is None:
             raise HTTPException(status_code=404, detail="Saved image not found")
         return FileResponse(image_path, media_type="image/jpeg", filename=image_path.name)
+
+    @app.get("/saved-images/{image_id}/thumbnail", response_class=Response)
+    def saved_image_thumbnail(image_id: str) -> Response:
+        image_path = image_library.find_path(image_id)
+        if image_path is None:
+            raise HTTPException(status_code=404, detail="Saved image not found")
+        with Image.open(image_path) as image:
+            image = image.convert("RGB")
+            image.thumbnail((160, 120), Image.Resampling.LANCZOS)
+            output = BytesIO()
+            image.save(output, format="JPEG", quality=80, optimize=True)
+        return Response(content=output.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
     @app.post("/pairing-codes", status_code=status.HTTP_201_CREATED)
     def create_pairing_code() -> dict[str, object]:

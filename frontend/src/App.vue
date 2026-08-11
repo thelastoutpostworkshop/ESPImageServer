@@ -7,6 +7,7 @@ function createRandomSeed() {
 }
 
 const generationSettingsKey = 'esp-image-server.generation-settings'
+const imageLibraryPaneSettingsKey = 'esp-image-server.image-library-pane-pinned'
 
 function loadGenerationSettings() {
   try {
@@ -35,6 +36,7 @@ const imageUrl = ref('')
 const previewUrl = ref('')
 const previewRotation = ref(0)
 const metadataPane = ref(false)
+const metadataPanePinned = ref(window.localStorage.getItem(imageLibraryPaneSettingsKey) === 'true')
 const generatedMetadata = ref(null)
 const recalledMetadata = ref(null)
 const metadataError = ref('')
@@ -64,6 +66,15 @@ const rotationOptions = [
   { title: 'Rotate 180°', value: 180 },
   { title: 'Rotate 90° counter-clockwise', value: 270 }
 ]
+const savedImageGroups = computed(() => {
+  const groups = new Map()
+  for (const savedImage of savedImages.value) {
+    const modelName = savedImage.metadata?.model?.name || 'Other images'
+    if (!groups.has(modelName)) groups.set(modelName, [])
+    groups.get(modelName).push(savedImage)
+  }
+  return [...groups].map(([modelName, images]) => ({ modelName, images }))
+})
 
 watch([prompt, steps, seed, activeModelId], () => {
   window.localStorage.setItem(generationSettingsKey, JSON.stringify({
@@ -72,6 +83,10 @@ watch([prompt, steps, seed, activeModelId], () => {
     seed: seed.value === '' ? null : Number(seed.value),
     modelId: activeModelId.value
   }))
+})
+
+watch(metadataPanePinned, pinned => {
+  window.localStorage.setItem(imageLibraryPaneSettingsKey, String(pinned))
 })
 
 const displayMessage = computed(() => {
@@ -191,6 +206,17 @@ async function loadSavedImages() {
 async function openMetadataPane() {
   metadataPane.value = true
   await loadSavedImages()
+}
+
+async function toggleMetadataPanePin() {
+  metadataPanePinned.value = !metadataPanePinned.value
+  metadataPane.value = true
+  await loadSavedImages()
+}
+
+function closeMetadataPane() {
+  metadataPanePinned.value = false
+  metadataPane.value = false
 }
 
 function buildGenerationMetadata() {
@@ -367,6 +393,7 @@ onMounted(async () => {
   await loadDisplaySettings()
   await loadModels()
   await loadSavedImages()
+  if (metadataPanePinned.value && !mobile.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
     loadServerStatus()
     loadDisplay()
@@ -413,14 +440,15 @@ onUnmounted(() => {
       </template>
     </v-navigation-drawer>
 
-    <v-navigation-drawer v-model="metadataPane" location="right" width="380" temporary border>
+    <v-navigation-drawer v-model="metadataPane" location="right" width="380" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
       <div class="d-flex align-center pa-4">
         <div>
           <div class="text-h6">Saved image details</div>
           <div class="text-caption text-medium-emphasis">Keep or restore generation settings.</div>
         </div>
         <v-spacer />
-        <v-btn icon="mdi-close" variant="text" aria-label="Close saved image details" @click="metadataPane = false" />
+        <v-btn :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" @click="toggleMetadataPanePin" />
+        <v-btn icon="mdi-close" variant="text" aria-label="Close saved image details" @click="closeMetadataPane" />
       </div>
       <v-divider />
       <div class="pa-4">
@@ -433,16 +461,28 @@ onUnmounted(() => {
         </div>
 
         <v-divider class="my-6" />
-        <v-divider class="my-6" />
         <div class="text-subtitle-1 font-weight-bold mb-2">Past generated images</div>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
-        <v-list v-else-if="savedImages.length" class="saved-image-list" density="compact" lines="two">
+        <div v-if="!savedImagesLoading && savedImages.length" class="saved-image-library">
+          <section v-for="group in savedImageGroups" :key="group.modelName" class="saved-image-group">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
+            <v-row dense>
+              <v-col v-for="savedImage in group.images" :key="savedImage.id" cols="6">
+                <v-card class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)">
+                  <v-img :src="`/saved-images/${encodeURIComponent(savedImage.id)}/thumbnail`" aspect-ratio="1.33" cover />
+                  <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
+                </v-card>
+              </v-col>
+            </v-row>
+          </section>
+        </div>
+        <v-list v-if="false" class="saved-image-list" density="compact" lines="two">
           <v-list-item v-for="savedImage in savedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)">
             <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
             <v-list-item-subtitle>{{ savedImage.metadata?.model?.name || 'ESPImageServer' }} · {{ new Date(savedImage.created_at).toLocaleString() }}</v-list-item-subtitle>
           </v-list-item>
         </v-list>
-        <div v-else class="text-body-2 text-medium-emphasis">No generated images have been saved yet.</div>
+        <div v-if="!savedImagesLoading && !savedImages.length" class="text-body-2 text-medium-emphasis">No generated images have been saved yet.</div>
         <v-alert v-if="metadataError" type="warning" variant="tonal" density="compact" class="mt-3">{{ metadataError }}</v-alert>
         <template v-if="recalledMetadata">
           <v-divider class="my-6" />

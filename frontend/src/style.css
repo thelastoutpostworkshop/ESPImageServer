@@ -11,9 +11,11 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .model-in-use { background: rgba(var(--v-theme-primary), 0.10); }
 .model-list__active { background: rgba(var(--v-theme-success), 0.08); }
 .metadata-list .v-list-item-subtitle { white-space: normal; }
-.saved-image-list { max-height: 360px; overflow-y: auto; }
-.saved-image-list .v-list-item-title,
-.saved-image-list .v-list-item-subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-image-library { max-height: calc(100vh - 350px); overflow-y: auto; padding-right: 4px; }
+.saved-image-group + .saved-image-group { margin-top: 18px; }
+.saved-image-thumbnail { cursor: pointer; overflow: hidden; }
+.saved-image-thumbnail:hover { border-color: rgb(var(--v-theme-primary)); }
+.saved-image-thumbnail__prompt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 @media (max-width: 600px) {
   .app-container { padding-inline: 12px !important; }
