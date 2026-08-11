@@ -11,6 +11,7 @@
 - Backend: FastAPI in `src/esp_image_server`.
 - Web app: Vue 3, Vite, and Vuetify in `frontend`.
 - The app serves `frontend/dist` in development and packages that bundle in the Windows installer.
+- `desktop` contains the Electron shell. It starts and stops the local Python server, provides native folder actions through preload IPC, and loads `http://127.0.0.1:8000` in its window. Keep FastAPI as the LAN endpoint for the ESP32.
 - Models are managed through `/models`; model selection is persistent on the server.
 - Image generation uses background jobs at `/generation-jobs`. Jobs support progress polling and `DELETE /generation-jobs/{id}` cancellation.
 - Generated JPEGs are stored in the configured local image library. Its `image_library_index.json` is kept separately in `%LOCALAPPDATA%\ESPImageServer` so the visible image folder contains only user images.
@@ -46,6 +47,12 @@
 
   ```powershell
   npm --prefix frontend run build
+  ```
+
+- Build the Electron bundle before compiling the installer:
+
+  ```powershell
+  npm --prefix desktop run build
   ```
 
 - Build the installer:

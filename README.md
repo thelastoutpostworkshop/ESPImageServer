@@ -55,6 +55,17 @@ npm --prefix frontend run dev
 
 Keep FastAPI running on port 8000; Vite proxies its API requests there. Before building the Windows installer, create the production frontend bundle with `npm --prefix frontend run build`. The installer includes this bundle, so makers do not need Node.js or npm.
 
+## Windows desktop app
+
+The maker installer includes an Electron desktop window. It starts the local Python image server without a terminal window, provides native Windows folder selection, and keeps the FastAPI server available to ESP32 devices on the local network. The browser interface at `http://127.0.0.1:8000/` remains available for troubleshooting.
+
+To build the desktop bundle during development:
+
+```powershell
+npm --prefix desktop install
+npm --prefix desktop run build
+```
+
 ## Run
 
 ```powershell

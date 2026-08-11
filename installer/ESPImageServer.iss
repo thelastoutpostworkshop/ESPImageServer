@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.51"
+#define AppVersion "0.1.53"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.51
+OutputBaseFilename=ESPImageServer-Setup-0.1.53
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -32,6 +32,7 @@ UninstallDisplayName={#AppName}
 [Files]
 Source: "..\src\*"; DestDir: "{app}\src"; Excludes: "__pycache__\*,*.pyc,*.egg-info\*"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\frontend\dist\*"; DestDir: "{app}\web"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\desktop\release\win-unpacked\*"; DestDir: "{app}\desktop"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion
@@ -39,14 +40,14 @@ Source: "start_server.bat"; DestDir: "{app}"; DestName: "Start ESPImageServer.ba
 Source: "assets\espimageserver-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#AppName}\Start ESPImageServer"; Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""; IconFilename: "{app}\espimageserver-icon.ico"
-Name: "{autodesktop}\ESPImageServer"; Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""; IconFilename: "{app}\espimageserver-icon.ico"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}\ESPImageServer"; Filename: "{app}\desktop\ESPImageServer.exe"; IconFilename: "{app}\espimageserver-icon.ico"
+Name: "{autodesktop}\ESPImageServer"; Filename: "{app}\desktop\ESPImageServer.exe"; IconFilename: "{app}\espimageserver-icon.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{cmd}"; Parameters: "/k ""{app}\Start ESPImageServer.bat"""; Description: "Start ESPImageServer and open the browser test page"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\desktop\ESPImageServer.exe"; Description: "Start ESPImageServer"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var

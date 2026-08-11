@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ESPImageServer</title>
+    <style>body{margin:0;display:grid;min-height:100vh;place-items:center;background:#121212;color:#fff;font:18px Segoe UI,sans-serif}.card{width:min(520px,86vw);text-align:center}.spinner{width:34px;height:34px;border:4px solid #29445c;border-top-color:#29b6f6;border-radius:50%;margin:0 auto 18px;animation:spin 1s linear infinite}p{color:#c5c9d1;line-height:1.5}@keyframes spin{to{transform:rotate(360deg)}}</style>
+  </head>
+  <body><div class="card"><div class="spinner"></div><strong id="title">Starting ESPImageServer</strong><p id="detail">Loading the local image-generation service…</p></div><script>window.espImageServerDesktop?.onServerStatus(update=>{document.getElementById('title').textContent=update.title;document.getElementById('detail').textContent=update.detail})</script></body>
+</html>

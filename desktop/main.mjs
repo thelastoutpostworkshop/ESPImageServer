@@ -1,0 +1,122 @@
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
+const projectRoot = app.isPackaged
+  ? path.resolve(process.resourcesPath, '..', '..')
+  : path.resolve(desktopDirectory, '..')
+const pythonPath = path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+const appIcon = app.isPackaged
+  ? path.join(projectRoot, 'espimageserver-icon.ico')
+  : path.join(projectRoot, 'installer', 'assets', 'espimageserver-icon.ico')
+
+let mainWindow
+let serverProcess
+
+function updateSplash(title, detail) {
+  mainWindow?.webContents.send('server-status', { title, detail })
+}
+
+async function serverIsAvailable() {
+  try {
+    const response = await fetch('http://127.0.0.1:8000/health')
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+function startServer() {
+  if (serverProcess || !existsSync(pythonPath)) return
+  updateSplash('Starting local image service', 'Preparing the ESPImageServer Python environment…')
+  serverProcess = spawn(pythonPath, ['-m', 'esp_image_server'], {
+    cwd: projectRoot,
+    env: { ...process.env, ESP_IMAGE_OPEN_BROWSER: '0' },
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+  const trackServerOutput = data => {
+    const line = data.toString()
+    if (line.includes('Loading weights')) {
+      updateSplash('Loading AI model weights', 'This can take a few minutes, especially on the first desktop start.')
+    } else if (line.includes('Loading pipeline components')) {
+      updateSplash('Preparing image-generation components', 'Almost ready…')
+    } else if (line.includes('Image model is ready')) {
+      updateSplash('AI model ready', 'Starting the ESPImageServer workspace…')
+    }
+  }
+  serverProcess.stdout.on('data', trackServerOutput)
+  serverProcess.stderr.on('data', trackServerOutput)
+  serverProcess.once('exit', () => { serverProcess = undefined })
+}
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    if (await serverIsAvailable()) return true
+    await new Promise(resolve => setTimeout(resolve, 1_000))
+  }
+  return false
+}
+
+async function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 940,
+    minWidth: 960,
+    minHeight: 700,
+    autoHideMenuBar: true,
+    show: false,
+    icon: appIcon,
+    webPreferences: {
+      preload: path.join(desktopDirectory, 'preload.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+  await mainWindow.loadFile(path.join(desktopDirectory, 'splash.html'))
+  mainWindow.show()
+
+  if (!await serverIsAvailable()) startServer()
+  else updateSplash('Connecting to ESPImageServer', 'The local image service is already running…')
+  updateSplash('Waiting for ESPImageServer', 'The AI model is being prepared for local image generation…')
+  if (await waitForServer()) {
+    updateSplash('Ready', 'Opening the workspace…')
+    await mainWindow.loadURL('http://127.0.0.1:8000/#generate')
+  } else {
+    await dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'ESPImageServer could not start',
+      message: 'The local image server did not become ready.',
+      detail: 'Run the installer again to repair ESPImageServer, then try opening the app again.'
+    })
+  }
+}
+
+ipcMain.handle('choose-image-library', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose an empty folder for ESPImageServer images',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
+ipcMain.handle('reveal-image-library', async (_, libraryPath) => shell.openPath(libraryPath))
+
+if (!app.requestSingleInstanceLock()) app.quit()
+else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+  app.whenReady().then(createWindow)
+  app.on('window-all-closed', () => app.quit())
+  app.on('before-quit', () => {
+    if (serverProcess) serverProcess.kill()
+  })
+}

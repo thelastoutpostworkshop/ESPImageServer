@@ -252,10 +252,15 @@ async function revealImageLibrary() {
   openingImageLibrary.value = true
   settingsError.value = ''
   try {
-    const response = await fetch('/app-settings/image-library/reveal', { method: 'POST' })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.detail || `Request failed (${response.status})`)
+    if (window.espImageServerDesktop?.revealImageLibrary) {
+      const failure = await window.espImageServerDesktop.revealImageLibrary(imageLibraryLocation.value)
+      if (failure) throw new Error(failure)
+    } else {
+      const response = await fetch('/app-settings/image-library/reveal', { method: 'POST' })
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.detail || `Request failed (${response.status})`)
+      }
     }
   } catch (requestError) {
     settingsError.value = `Could not open the image library folder: ${requestError.message}`
@@ -268,13 +273,18 @@ async function chooseImageLibrary() {
   choosingImageLibrary.value = true
   settingsError.value = ''
   try {
-    const response = await fetch('/app-settings/image-library/choose', { method: 'POST' })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.detail || `Request failed (${response.status})`)
+    if (window.espImageServerDesktop?.chooseImageLibrary) {
+      const selectedPath = await window.espImageServerDesktop.chooseImageLibrary()
+      if (selectedPath) imageLibraryLocation.value = selectedPath
+    } else {
+      const response = await fetch('/app-settings/image-library/choose', { method: 'POST' })
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.detail || `Request failed (${response.status})`)
+      }
+      const selection = await response.json()
+      if (selection.selected) imageLibraryLocation.value = selection.image_library_location
     }
-    const selection = await response.json()
-    if (selection.selected) imageLibraryLocation.value = selection.image_library_location
   } catch (requestError) {
     settingsError.value = `Could not open the folder chooser: ${requestError.message}`
   } finally {

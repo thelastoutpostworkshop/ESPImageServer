@@ -1,0 +1,33 @@
+{
+  "name": "esp-image-server-desktop",
+  "description": "ESPImageServer desktop application",
+  "author": "ESPImageServer",
+  "private": true,
+  "version": "0.1.53",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "build": "npm --prefix ../frontend run build && electron-builder --win --x64 --dir"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.espimageserver.desktop",
+    "productName": "ESPImageServer",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.mjs",
+      "preload.mjs",
+      "splash.html",
+      "package.json"
+    ],
+    "win": {
+      "target": "dir",
+      "icon": "../installer/assets/espimageserver-icon.ico"
+    }
+  }
+}
