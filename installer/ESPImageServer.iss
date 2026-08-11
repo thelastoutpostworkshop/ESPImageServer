@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.56"
+#define AppVersion "0.1.57"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.56
+OutputBaseFilename=ESPImageServer-Setup-0.1.57
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -36,6 +36,7 @@ Source: "..\desktop\release\win-unpacked\*"; DestDir: "{app}\desktop"; Flags: re
 Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "cleanup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start_server.bat"; DestDir: "{app}"; DestName: "Start ESPImageServer.bat"; Flags: ignoreversion
 Source: "assets\espimageserver-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -45,6 +46,13 @@ Name: "{autodesktop}\ESPImageServer"; Filename: "{app}\desktop\ESPImageServer.ex
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+
+[UninstallDelete]
+Type: files; Name: "{app}\server_settings.bat"
+Type: files; Name: "{app}\bootstrap.log"
+Type: files; Name: "{app}\installer_status.txt"
+Type: files; Name: "{app}\installer_result.txt"
+Type: filesandordirs; Name: "{app}\.venv"
 
 [Run]
 Filename: "{app}\desktop\ESPImageServer.exe"; Description: "Start ESPImageServer"; Flags: nowait postinstall skipifsilent
@@ -57,7 +65,6 @@ var
   BootstrapOutput: TNewMemo;
   BootstrapCancelButton: TNewButton;
   BootstrapCancelRequested: Boolean;
-  UninstallCleanupCheck: TNewCheckBox;
 
 procedure Sleep(Milliseconds: Longword);
 external 'Sleep@kernel32.dll stdcall';
@@ -105,25 +112,14 @@ begin
   ModelPage.SelectedValueIndex := 0;
 end;
 
-procedure InitializeUninstallProgressForm;
-begin
-  UninstallCleanupCheck := TNewCheckBox.Create(UninstallProgressForm);
-  UninstallCleanupCheck.Caption := 'Remove local image models and ESPImageServer Python environment';
-  UninstallCleanupCheck.Checked := False;
-  UninstallCleanupCheck.Left := ScaleX(16);
-  UninstallCleanupCheck.Top := UninstallProgressForm.CancelButton.Top - ScaleY(30);
-  UninstallCleanupCheck.Width := UninstallProgressForm.ClientWidth - ScaleX(32);
-  UninstallCleanupCheck.Parent := UninstallProgressForm;
-end;
-
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then begin
-    UninstallCleanupCheck.Enabled := False;
-    if UninstallCleanupCheck.Checked then begin
-      DelTree(ExpandConstant('{app}\.venv'), True, True, True);
-      DelTree(ExpandConstant('{localappdata}\ESPImageServer\models'), True, True, True);
-    end;
+    Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' +
+      ExpandConstant('{app}\cleanup.ps1') + '" -InstallRoot "' + ExpandConstant('{app}') + '"',
+      ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 
