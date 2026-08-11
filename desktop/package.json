@@ -3,7 +3,7 @@
   "description": "ESPImageServer desktop application",
   "author": "ESPImageServer",
   "private": true,
-  "version": "0.1.54",
+  "version": "0.1.56",
   "type": "module",
   "main": "main.mjs",
   "scripts": {
@@ -21,7 +21,7 @@
     },
     "files": [
       "main.mjs",
-      "preload.mjs",
+      "preload.cjs",
       "splash.html",
       "package.json"
     ],

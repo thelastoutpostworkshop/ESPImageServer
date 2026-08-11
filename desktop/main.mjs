@@ -15,9 +15,20 @@ const appIcon = app.isPackaged
 
 let mainWindow
 let serverProcess
+const serverLogLines = []
+let splashStatus = { title: 'Starting ESPImageServer', detail: 'Loading the local image-generation service…' }
 
 function updateSplash(title, detail) {
-  mainWindow?.webContents.send('server-status', { title, detail })
+  splashStatus = { title, detail }
+  mainWindow?.webContents.send('server-status', splashStatus)
+}
+
+function appendServerLog(data) {
+  const lines = data.toString().replaceAll('\r', '\n').split('\n').filter(Boolean)
+  if (!lines.length) return
+  serverLogLines.push(...lines)
+  if (serverLogLines.length > 120) serverLogLines.splice(0, serverLogLines.length - 120)
+  mainWindow?.webContents.send('server-log', lines)
 }
 
 async function serverIsAvailable() {
@@ -32,13 +43,14 @@ async function serverIsAvailable() {
 function startServer() {
   if (serverProcess || !existsSync(pythonPath)) return
   updateSplash('Starting local image service', 'Preparing the ESPImageServer Python environment…')
-  serverProcess = spawn(pythonPath, ['-m', 'esp_image_server'], {
+  serverProcess = spawn(pythonPath, ['-u', '-m', 'esp_image_server'], {
     cwd: projectRoot,
     env: { ...process.env, ESP_IMAGE_OPEN_BROWSER: '0' },
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe']
   })
   const trackServerOutput = data => {
+    appendServerLog(data)
     const line = data.toString()
     if (line.includes('Loading weights')) {
       updateSplash('Loading AI model weights', 'This can take a few minutes, especially on the first desktop start.')
@@ -71,13 +83,13 @@ async function createWindow() {
     show: false,
     icon: appIcon,
     webPreferences: {
-      preload: path.join(desktopDirectory, 'preload.mjs'),
+      preload: path.join(desktopDirectory, 'preload.cjs'),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true
+      nodeIntegration: false
     }
   })
   await mainWindow.loadFile(path.join(desktopDirectory, 'splash.html'))
+  mainWindow.webContents.send('server-log', serverLogLines)
   mainWindow.show()
 
   if (!await serverIsAvailable()) startServer()
@@ -105,6 +117,7 @@ ipcMain.handle('choose-image-library', async () => {
 })
 
 ipcMain.handle('reveal-image-library', async (_, libraryPath) => shell.openPath(libraryPath))
+ipcMain.handle('startup-state', () => ({ status: splashStatus, lines: serverLogLines }))
 
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
