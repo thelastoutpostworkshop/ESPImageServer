@@ -44,10 +44,21 @@ function Write-InstallLog([string]$Message) {
 }
 
 function Invoke-LoggedExternal([string]$Command, [string[]]$Arguments) {
-    & $Command @Arguments 2>&1 | ForEach-Object {
-        Write-InstallLog $_.ToString()
+    # Some Python libraries write warnings to stderr even when their command
+    # succeeds. Treat those as log output and use the process exit code to
+    # determine whether the installer should fail.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $exitCode = 1
+    try {
+        & $Command @Arguments 2>&1 | ForEach-Object {
+            Write-InstallLog $_.ToString()
+        }
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
     }
-    return $LASTEXITCODE
+    return $exitCode
 }
 
 function Set-InstallStatus([int]$Step, [string]$Message) {

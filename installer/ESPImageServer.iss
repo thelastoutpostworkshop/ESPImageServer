@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.63"
+#define AppVersion "0.1.65"
 #define AppPublisher "ESPImageServer"
 #define ModelId "stabilityai/sd-turbo"
 
@@ -14,7 +14,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.63
+OutputBaseFilename=ESPImageServer-Setup-0.1.65
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -202,6 +202,11 @@ begin
   StatusStep := 0;
   ResultText := '';
   try
+    { A previous setup result would otherwise make the asynchronous bootstrap
+      appear complete before the new PowerShell process has started. }
+    DeleteFile(ExpandConstant('{app}\installer_result.txt'));
+    DeleteFile(ExpandConstant('{app}\installer_status.txt'));
+    DeleteFile(ExpandConstant('{app}\bootstrap.log'));
     if (not Exec('powershell.exe', Parameters, ExpandConstant('{app}'), SW_HIDE,
         ewNoWait, ProcessID)) then
       RaiseException('Could not start ESPImageServer setup.');
