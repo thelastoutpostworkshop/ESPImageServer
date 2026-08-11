@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+import json
 import logging
 import os
 from pathlib import Path
@@ -25,6 +27,7 @@ from .generator import DiffusersGenerator
 from .generation_jobs import GenerationCancelled, GenerationJobStore
 from .generation_size import optimal_generation_size
 from .image_processor import to_jpeg
+from .image_library import ImageLibrary
 from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser
 from .models import MODELS, get_model, model_is_cached, model_settings
@@ -36,6 +39,20 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEVELOPMENT_WEB_BUILD = PROJECT_ROOT / "frontend" / "dist"
 INSTALLED_WEB_BUILD = PROJECT_ROOT / "web"
 WEB_BUILD = DEVELOPMENT_WEB_BUILD if DEVELOPMENT_WEB_BUILD.is_dir() else INSTALLED_WEB_BUILD
+JPEG_METADATA_PREFIX = b"ESPImageServer metadata:"
+
+
+def embed_jpeg_metadata(jpeg: bytes, metadata: dict[str, object]) -> bytes:
+    """Store portable ESPImageServer settings in a standard JPEG comment segment."""
+    if not jpeg.startswith(b"\xff\xd8"):
+        return jpeg
+    payload = JPEG_METADATA_PREFIX + json.dumps(metadata, separators=(",", ":")).encode("utf-8")
+    if len(payload) > 65_533:
+        logger.warning("Image metadata is too large to embed in JPEG; saving library index only")
+        return jpeg
+    segment_length = len(payload) + 2
+    comment = b"\xff\xfe" + segment_length.to_bytes(2, "big") + payload
+    return jpeg[:2] + comment + jpeg[2:]
 
 
 class ImageGenerator(Protocol):
@@ -83,6 +100,7 @@ def create_app(
     active_display_store: ActiveDisplayStore | None = None,
     display_settings_store: DisplaySettingsStore | None = None,
     model_selection_store: ModelSelectionStore | None = None,
+    image_library: ImageLibrary | None = None,
     generation_jobs: GenerationJobStore | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
@@ -101,6 +119,7 @@ def create_app(
     active_display_store = active_display_store or ActiveDisplayStore()
     display_settings_store = display_settings_store or DisplaySettingsStore()
     generation_jobs = generation_jobs or GenerationJobStore()
+    image_library = image_library or ImageLibrary()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -131,13 +150,14 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.44", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.45", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
     app.state.display_settings_store = display_settings_store
     app.state.model_selection_store = model_selection_store
     app.state.generation_jobs = generation_jobs
+    app.state.image_library = image_library
     app.mount(
         "/assets",
         StaticFiles(directory=Path(__file__).with_name("static")),
@@ -300,6 +320,17 @@ def create_app(
             headers={"ETag": etag, "Cache-Control": "no-cache"},
         )
 
+    @app.get("/saved-images")
+    def saved_images() -> list[dict[str, object]]:
+        return image_library.list()
+
+    @app.get("/saved-images/{image_id}/image", response_class=Response)
+    def saved_image(image_id: str) -> FileResponse:
+        image_path = image_library.find_path(image_id)
+        if image_path is None:
+            raise HTTPException(status_code=404, detail="Saved image not found")
+        return FileResponse(image_path, media_type="image/jpeg", filename=image_path.name)
+
     @app.post("/pairing-codes", status_code=status.HTTP_201_CREATED)
     def create_pairing_code() -> dict[str, object]:
         code, expires_in_seconds = device_manager.create_pairing_code()
@@ -408,8 +439,23 @@ def create_app(
         if progress is not None and rotation:
             progress(1, 1, "Fitting the image to your ESP32 display")
         jpeg = to_jpeg(image, width=output_width, height=output_height, quality=settings.jpeg_quality)
+        metadata = {
+            "version": 1,
+            "createdAt": datetime.now(UTC).isoformat(),
+            "model": {"id": active_model_id, "name": model.name},
+            "prompt": request.prompt,
+            "steps": steps,
+            "seed": request.seed,
+            "rotation": rotation,
+            "display": (
+                {"name": profile.name, "width": profile.width, "height": profile.height}
+                if profile is not None else None
+            ),
+        }
+        jpeg = embed_jpeg_metadata(jpeg, metadata)
         ensure_not_cancelled()
         latest_image_store.set(jpeg)
+        image_library.save(jpeg, metadata)
         return jpeg
 
     @app.post("/generate", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})

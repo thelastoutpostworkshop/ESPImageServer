@@ -38,6 +38,8 @@ const metadataPane = ref(false)
 const generatedMetadata = ref(null)
 const recalledMetadata = ref(null)
 const metadataError = ref('')
+const savedImages = ref([])
+const savedImagesLoading = ref(false)
 const generating = ref(false)
 const cancelling = ref(false)
 const activeJobId = ref('')
@@ -174,6 +176,24 @@ function chooseRandomSeed() {
   seed.value = createRandomSeed()
 }
 
+async function loadSavedImages() {
+  savedImagesLoading.value = true
+  try {
+    const response = await fetch('/saved-images')
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    savedImages.value = await response.json()
+  } catch {
+    savedImages.value = []
+  } finally {
+    savedImagesLoading.value = false
+  }
+}
+
+async function openMetadataPane() {
+  metadataPane.value = true
+  await loadSavedImages()
+}
+
 function buildGenerationMetadata() {
   const activeModel = models.value.find(model => model.active)
   return {
@@ -263,6 +283,25 @@ async function useRecalledSettings() {
   metadataPane.value = false
 }
 
+async function openSavedImage(savedImage) {
+  metadataError.value = ''
+  try {
+    const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/image`)
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    const imageBlob = await response.blob()
+    const rotation = savedImage.metadata?.rotation || 0
+    if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+    imageUrl.value = URL.createObjectURL(imageBlob)
+    previewUrl.value = await createOrientedPreview(imageBlob, rotation)
+    previewRotation.value = rotation
+    generatedMetadata.value = savedImage.metadata
+    recalledMetadata.value = savedImage.metadata
+  } catch (requestError) {
+    metadataError.value = `Could not open this saved image: ${requestError.message}`
+  }
+}
+
 async function createOrientedPreview(blob, rotation) {
   if (rotation === 0 || typeof window.createImageBitmap !== 'function') {
     return URL.createObjectURL(blob)
@@ -350,6 +389,7 @@ async function generate() {
     previewUrl.value = await createOrientedPreview(imageBlob, rotationForImage)
     previewRotation.value = rotationForImage
     generatedMetadata.value = metadata
+    await loadSavedImages()
     status.value = 'Image ready. Your ESP32 display will pick it up shortly.'
   } catch (requestError) {
     error.value = `Could not generate the image: ${requestError.message}`
@@ -385,6 +425,7 @@ onMounted(async () => {
   await loadDisplay()
   await loadDisplaySettings()
   await loadModels()
+  await loadSavedImages()
   statusTimer = window.setInterval(() => {
     loadServerStatus()
     loadDisplay()
@@ -411,7 +452,7 @@ onUnmounted(() => {
       <v-chip v-if="!mobile" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
         {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
       </v-chip>
-      <v-btn icon="mdi-image-text" variant="text" aria-label="Saved image details" @click="metadataPane = true" />
+      <v-btn icon="mdi-image-text" variant="text" aria-label="Saved image details" @click="openMetadataPane" />
     </v-app-bar>
 
     <v-navigation-drawer v-model="drawer" width="272" border :temporary="mobile">
@@ -465,6 +506,17 @@ onUnmounted(() => {
           </v-list>
           <v-btn color="primary" block prepend-icon="mdi-restore" :disabled="generationBusy" @click="useRecalledSettings">Use these settings</v-btn>
         </template>
+
+        <v-divider class="my-6" />
+        <div class="text-subtitle-1 font-weight-bold mb-2">Past generated images</div>
+        <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
+        <v-list v-else-if="savedImages.length" class="saved-image-list" density="compact" lines="two">
+          <v-list-item v-for="savedImage in savedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)">
+            <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
+            <v-list-item-subtitle>{{ savedImage.metadata?.model?.name || 'ESPImageServer' }} · {{ new Date(savedImage.created_at).toLocaleString() }}</v-list-item-subtitle>
+          </v-list-item>
+        </v-list>
+        <div v-else class="text-body-2 text-medium-emphasis">No generated images have been saved yet.</div>
       </div>
     </v-navigation-drawer>
 
@@ -563,7 +615,7 @@ onUnmounted(() => {
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
             </v-btn>
-            <v-btn variant="text" prepend-icon="mdi-image-text" @click="metadataPane = true">Saved image details</v-btn>
+            <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Saved image details</v-btn>
           </v-card-actions>
         </v-card>
         </v-col>
