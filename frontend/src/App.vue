@@ -67,9 +67,11 @@ const drawer = ref(true)
 const page = ref('generate')
 let statusTimer
 let modelSwitchTimer
+let modelSwitchAbortController
 const { mobile } = useDisplay()
 const generationBusy = computed(() => modelSwitching.value || generating.value || health.value?.generating === true)
-const modelSwitchVerb = computed(() => modelSwitchTarget.value?.installed ? 'Loading' : 'Downloading and loading')
+const modelSwitchNeedsDownload = computed(() => modelSwitchTarget.value?.installed === false)
+const modelSwitchVerb = computed(() => modelSwitchNeedsDownload.value ? 'Downloading and loading' : 'Loading')
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
@@ -175,6 +177,8 @@ async function loadServerStatus() {
 
 async function selectModel(model) {
   if (model.active || generationBusy.value) return
+  const abortController = new AbortController()
+  modelSwitchAbortController = abortController
   modelSwitchTarget.value = model
   modelSwitchElapsedSeconds.value = 0
   modelSwitching.value = true
@@ -183,7 +187,10 @@ async function selectModel(model) {
   error.value = ''
   status.value = ''
   try {
-    const response = await fetch(`/models/${encodeURIComponent(model.id)}/select`, { method: 'POST' })
+    const response = await fetch(`/models/${encodeURIComponent(model.id)}/select`, {
+      method: 'POST',
+      signal: abortController.signal
+    })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
@@ -192,12 +199,23 @@ async function selectModel(model) {
     status.value = `${model.name} is ready to generate images.`
     page.value = 'generate'
   } catch (requestError) {
-    error.value = `Could not change the image model: ${requestError.message}`
+    if (requestError.name === 'AbortError') {
+      status.value = `Stopped waiting for ${model.name}. If preparation had already started, ESPImageServer will finish it safely in the background.`
+    } else {
+      error.value = `Could not change the image model: ${requestError.message}`
+    }
   } finally {
-    clearInterval(modelSwitchTimer)
-    modelSwitching.value = false
-    modelSwitchTarget.value = null
+    if (modelSwitchAbortController === abortController) {
+      clearInterval(modelSwitchTimer)
+      modelSwitchAbortController = undefined
+      modelSwitching.value = false
+      modelSwitchTarget.value = null
+    }
   }
+}
+
+function cancelModelSwitch() {
+  modelSwitchAbortController?.abort()
 }
 
 function selectModelById(modelId) {
@@ -530,6 +548,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.clearInterval(statusTimer)
   window.clearInterval(modelSwitchTimer)
+  modelSwitchAbortController?.abort()
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
 })
@@ -541,7 +560,7 @@ onUnmounted(() => {
       <v-card>
         <v-card-title class="d-flex align-center ga-3 py-5">
           <v-avatar color="primary" variant="tonal" size="44">
-            <v-icon>{{ modelSwitchTarget?.installed ? 'mdi-brain' : 'mdi-download' }}</v-icon>
+            <v-icon>{{ modelSwitchNeedsDownload ? 'mdi-download' : 'mdi-brain' }}</v-icon>
           </v-avatar>
           <div>
             <div class="text-h6">{{ modelSwitchVerb }} {{ modelSwitchTarget?.name }}</div>
@@ -550,8 +569,8 @@ onUnmounted(() => {
         </v-card-title>
         <v-card-text class="pt-0">
           <v-alert color="info" variant="tonal" density="comfortable" icon="mdi-information-outline" class="mb-5">
-            <template v-if="modelSwitchTarget?.installed">
-              This model is already on your computer. ESPImageServer is loading it into memory.
+            <template v-if="!modelSwitchNeedsDownload">
+              This model is already downloaded. No download is needed; ESPImageServer is only loading it into memory.
             </template>
             <template v-else>
               This is a one-time download. The model remains available on this computer once preparation finishes.
@@ -563,10 +582,17 @@ onUnmounted(() => {
             <span class="text-medium-emphasis">{{ modelSwitchElapsedSeconds }}s</span>
           </div>
           <v-list density="compact" class="mt-4 px-0">
-            <v-list-item prepend-icon="mdi-check-circle-outline" title="Model selection saved" />
-            <v-list-item :prepend-icon="modelSwitchTarget?.installed ? 'mdi-memory' : 'mdi-cloud-download-outline'" :title="modelSwitchTarget?.installed ? 'Loading model components' : 'Downloading model files and loading components'" />
+            <v-list-item v-if="modelSwitchNeedsDownload" prepend-icon="mdi-cloud-download-outline" title="Downloading model files to this computer" />
+            <v-list-item :prepend-icon="modelSwitchNeedsDownload ? 'mdi-memory' : 'mdi-check-circle-outline'" :title="modelSwitchNeedsDownload ? 'Loading downloaded model components' : 'Loading model components into memory'" />
             <v-list-item prepend-icon="mdi-image-auto" title="Image generation will be available when preparation finishes" />
           </v-list>
+        </v-card-text>
+        <v-card-actions class="px-6 pb-5">
+          <v-spacer />
+          <v-btn variant="text" prepend-icon="mdi-close" @click="cancelModelSwitch">Cancel</v-btn>
+        </v-card-actions>
+        <v-card-text class="pt-0 text-caption text-medium-emphasis">
+          Cancel stops waiting in this window. If preparation has already started, it may finish safely in the background.
         </v-card-text>
       </v-card>
     </v-dialog>
