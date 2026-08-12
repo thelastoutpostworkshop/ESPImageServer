@@ -16,6 +16,7 @@ const appIcon = app.isPackaged
 let mainWindow
 let serverProcess
 let saveWindowStateTimer
+let isQuitting = false
 const serverLogLines = []
 
 const defaultWindowState = { width: 1440, height: 940, isMaximized: false }
@@ -60,9 +61,14 @@ function scheduleWindowStateSave() {
 }
 let splashStatus = { title: 'Starting ESPImageServer', detail: 'Loading the local image-generation service…' }
 
+function sendToWindow(channel, payload) {
+  if (isQuitting || !mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
+  mainWindow.webContents.send(channel, payload)
+}
+
 function updateSplash(title, detail) {
   splashStatus = { title, detail }
-  mainWindow?.webContents.send('server-status', splashStatus)
+  sendToWindow('server-status', splashStatus)
 }
 
 function appendServerLog(data) {
@@ -70,7 +76,7 @@ function appendServerLog(data) {
   if (!lines.length) return
   serverLogLines.push(...lines)
   if (serverLogLines.length > 120) serverLogLines.splice(0, serverLogLines.length - 120)
-  mainWindow?.webContents.send('server-log', lines)
+  sendToWindow('server-log', lines)
 }
 
 async function serverIsAvailable() {
@@ -138,7 +144,7 @@ async function createWindow() {
   mainWindow.on('unmaximize', scheduleWindowStateSave)
   mainWindow.on('close', saveWindowState)
   await mainWindow.loadFile(path.join(desktopDirectory, 'splash.html'))
-  mainWindow.webContents.send('server-log', serverLogLines)
+  sendToWindow('server-log', serverLogLines)
   mainWindow.show()
   if (windowState.isMaximized) mainWindow.maximize()
 
@@ -180,6 +186,8 @@ else {
   app.whenReady().then(createWindow)
   app.on('window-all-closed', () => app.quit())
   app.on('before-quit', () => {
+    isQuitting = true
+    clearTimeout(saveWindowStateTimer)
     if (serverProcess) serverProcess.kill()
   })
 }
