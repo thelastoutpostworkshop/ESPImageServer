@@ -29,6 +29,8 @@ const prompt = ref(savedGenerationSettings.prompt)
 const serverInfo = ref(null)
 const health = ref(null)
 const display = ref(null)
+const displayConnectedSnackbar = ref(false)
+const displayConnectedMessage = ref('')
 const displayRotation = ref(0)
 const models = ref([])
 const status = ref('')
@@ -131,7 +133,14 @@ const displayMessage = computed(() => {
 
 async function loadDisplay() {
   try {
-    display.value = await fetch('/display', { cache: 'no-store' }).then(response => response.json())
+    const nextDisplay = await fetch('/display', { cache: 'no-store' }).then(response => response.json())
+    const previousKey = display.value?.connected ? `${display.value.name}:${display.value.width}x${display.value.height}` : ''
+    const nextKey = nextDisplay?.connected ? `${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}` : ''
+    display.value = nextDisplay
+    if (nextKey && nextKey !== previousKey) {
+      displayConnectedMessage.value = `${nextDisplay.name} connected (${nextDisplay.width} × ${nextDisplay.height}).`
+      displayConnectedSnackbar.value = true
+    }
   } catch {
     display.value = null
   }
@@ -693,6 +702,16 @@ onUnmounted(() => {
         </v-card-text>
       </v-card>
     </v-dialog>
+
+    <v-snackbar v-model="displayConnectedSnackbar" color="success" location="top" timeout="5000">
+      <div class="d-flex align-center ga-2">
+        <v-icon icon="mdi-monitor-check" />
+        <span>{{ displayConnectedMessage }}</span>
+      </div>
+      <template #actions>
+        <v-btn variant="text" @click="displayConnectedSnackbar = false">Close</v-btn>
+      </template>
+    </v-snackbar>
 
     <v-app-bar color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
