@@ -161,6 +161,7 @@ def create_app(
     display_settings_store = display_settings_store or DisplaySettingsStore()
     generation_jobs = generation_jobs or GenerationJobStore()
     display_command_store = display_command_store or DisplayCommandStore()
+    sd_thumbnail_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
     persisted_app_settings = app_settings_store.get()
     library_location = persisted_app_settings.get("image_library_location")
@@ -199,7 +200,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.93", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.94", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -341,19 +342,46 @@ def create_app(
 
     @app.post("/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
     def save_latest_to_display_sd_card() -> dict[str, object]:
-        if latest_image_store.get() is None:
+        latest_image = latest_image_store.get()
+        if latest_image is None:
             raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
-        return display_command_store.queue_save()
+        command = display_command_store.queue_save()
+        write_sd_thumbnail(str(command["filename"]), latest_image.jpeg)
+        return command
 
     @app.post("/display-commands/save-saved-image/{image_id}", status_code=status.HTTP_202_ACCEPTED)
     def save_creation_library_image_to_display_sd_card(image_id: str) -> dict[str, object]:
-        if image_library.find_path(image_id) is None:
+        image_path = image_library.find_path(image_id)
+        if image_path is None:
             raise HTTPException(status_code=404, detail="Saved image not found")
-        return display_command_store.queue_save(image_id)
+        command = display_command_store.queue_save(image_id)
+        write_sd_thumbnail(str(command["filename"]), image_path.read_bytes())
+        return command
+
+    def write_sd_thumbnail(filename: str, jpeg: bytes) -> None:
+        """Keep the server copy paired with the thumbnail written to the SD card."""
+        thumbnail_path = sd_thumbnail_path / Path(filename).name
+        thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(BytesIO(jpeg)) as source:
+            thumbnail_path.write_bytes(to_jpeg(source, width=160, height=120, quality=70))
 
     @app.get("/display-sd-card")
     def get_display_sd_card() -> dict[str, object]:
-        return display_command_store.sd_card_report()
+        report = display_command_store.sd_card_report()
+        files = report.get("files", [])
+        if isinstance(files, list):
+            report["files"] = [
+                {**file, "thumbnail_available": (sd_thumbnail_path / Path(str(file.get("name", ""))).name).is_file()}
+                for file in files if isinstance(file, dict)
+            ]
+        return report
+
+    @app.get("/display-sd-card/thumbnails/{filename}", response_class=Response)
+    def get_display_sd_card_thumbnail(filename: str) -> Response:
+        thumbnail_path = sd_thumbnail_path / Path(filename).name
+        if not thumbnail_path.is_file():
+            raise HTTPException(status_code=404, detail="SD card thumbnail not available")
+        return FileResponse(thumbnail_path, media_type="image/jpeg")
 
     @app.post("/display-sd-card/report", status_code=status.HTTP_204_NO_CONTENT)
     def report_display_sd_card(report: DisplaySDCardReport) -> Response:

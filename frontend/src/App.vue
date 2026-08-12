@@ -1157,7 +1157,13 @@ onUnmounted(() => {
               <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="loadDisplaySdCard">Refresh</v-btn>
             </div>
             <v-list lines="two" border rounded>
-              <v-list-item v-for="file in displaySdCard.files || []" :key="file.name" prepend-icon="mdi-file-image">
+              <v-list-item v-for="file in displaySdCard.files || []" :key="file.name">
+                <template #prepend>
+                  <v-avatar v-if="file.thumbnail_available" rounded="sm" size="44">
+                    <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(file.name)}`" cover />
+                  </v-avatar>
+                  <v-icon v-else>mdi-file-image</v-icon>
+                </template>
                 <v-list-item-title>{{ file.name }}</v-list-item-title>
                 <v-list-item-subtitle>{{ Math.round((file.size || 0) / 1024) }} KB</v-list-item-subtitle>
                 <template #append>

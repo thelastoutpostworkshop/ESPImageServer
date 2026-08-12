@@ -14,7 +14,13 @@ class DisplayCommandStore:
         self._completed: dict[str, dict[str, object]] = {}
 
     def queue_save(self, image_id: str | None = None) -> dict[str, object]:
-        return self.queue("save_saved_image" if image_id else "save_latest", image_id=image_id)
+        command = self.queue("save_saved_image" if image_id else "save_latest", image_id=image_id)
+        filename = str(command["filename"])
+        command["thumbnail_url"] = f"/display-sd-card/thumbnails/{filename}"
+        with self._lock:
+            self._pending = dict(command)
+            self._completed[str(command["id"])] = dict(command)
+        return command
 
     def queue(self, command_type: str, **values: object) -> dict[str, object]:
         with self._lock:
