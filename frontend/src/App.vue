@@ -69,6 +69,8 @@ const savingToDisplaySdCard = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardLoading = ref(false)
 const displayingSdCardFile = ref('')
+const sdCardSnackbar = ref(false)
+const sdCardSnackbarMessage = ref('')
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
@@ -273,6 +275,11 @@ function formatFileSize(bytes) {
     : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function showSDCardSnackbar(message) {
+  sdCardSnackbarMessage.value = message
+  sdCardSnackbar.value = true
+}
+
 async function loadSavedImages() {
   savedImagesLoading.value = true
   try {
@@ -322,7 +329,7 @@ async function sendDisplaySdCardCommand(endpoint, method = 'POST') {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
-    status.value = 'Request sent to the display. Refreshing its SD card details shortly.'
+    showSDCardSnackbar('Request sent to the display.')
     window.setTimeout(loadDisplaySdCard, 3500)
   } catch (requestError) {
     error.value = `Could not update the display SD card: ${requestError.message}`
@@ -347,12 +354,12 @@ async function showSDCardFileOnDisplay(filename) {
       if (!commandResponse.ok) throw new Error(`Could not check display status (${commandResponse.status})`)
       const result = await commandResponse.json()
       if (result.status === 'complete') {
-        status.value = 'Image is now showing on the display.'
+        showSDCardSnackbar('Image is now showing on the display.')
         return
       }
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not show this image')
     }
-    status.value = 'The display is still processing the image.'
+    showSDCardSnackbar('The display is still processing the image.')
   } catch (requestError) {
     error.value = `Could not show image on the display: ${requestError.message}`
   } finally {
@@ -844,6 +851,12 @@ onUnmounted(() => {
         <v-btn variant="text" @click="displayConnectedSnackbar = false">Close</v-btn>
       </template>
     </v-snackbar>
+    <v-snackbar v-model="sdCardSnackbar" color="success" location="bottom" timeout="3500">
+      <div class="d-flex align-center ga-2">
+        <v-icon icon="mdi-check-circle" />
+        <span>{{ sdCardSnackbarMessage }}</span>
+      </div>
+    </v-snackbar>
 
     <v-app-bar color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
@@ -1191,12 +1204,17 @@ onUnmounted(() => {
         </v-card>
 
         <v-card v-else-if="page === 'sd-card'">
-          <v-card-title class="text-h5 pt-5">Display SD Card</v-card-title>
+          <v-card-title class="d-flex align-center text-h5 pt-5">
+            Display SD Card
+            <v-spacer />
+            <v-chip v-if="displaySdCard.available" color="success" size="small" variant="tonal" prepend-icon="mdi-sd">
+              Card ready · {{ displaySdCard.files?.length || 0 }} images
+            </v-chip>
+          </v-card-title>
           <v-card-text>
-            <v-alert :type="displaySdCard.available ? 'success' : 'warning'" variant="tonal" density="compact" class="mb-4">
-              {{ displaySdCard.available ? `Card ready · ${displaySdCard.files?.length || 0} saved images` : 'Waiting for the display to report its SD card.' }}
+            <v-alert v-if="!displaySdCard.available" type="warning" variant="tonal" density="compact" class="mb-4">
+              Waiting for the display to report its SD card.
             </v-alert>
-            <v-alert v-if="status" type="success" variant="tonal" density="compact" class="mb-4">{{ status }}</v-alert>
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
             <div class="d-flex flex-wrap ga-2 mb-4">
               <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="loadDisplaySdCard">Refresh</v-btn>
