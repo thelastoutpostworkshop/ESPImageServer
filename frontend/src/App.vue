@@ -76,7 +76,13 @@ let modelSwitchAbortController
 const { mobile } = useDisplay()
 const generationBusy = computed(() => modelSwitching.value || generating.value || health.value?.generating === true)
 const modelSwitchNeedsDownload = computed(() => modelSwitchTarget.value?.installed === false)
-const modelSwitchVerb = computed(() => modelSwitchNeedsDownload.value ? 'Downloading and loading' : 'Loading')
+const modelSwitchTitle = computed(() => modelSwitchNeedsDownload.value ? 'Downloading and loading' : 'Loading')
+const modelSwitchSubtitle = computed(() => modelSwitchNeedsDownload.value
+  ? 'Downloading the model for the first time, then preparing it for image generation'
+  : 'This downloaded model is being prepared for local image generation')
+const modelSwitchProgressText = computed(() => modelSwitchNeedsDownload.value
+  ? 'Downloading and preparing locally—this can take several minutes.'
+  : 'Loading locally—this can take a moment.')
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
@@ -616,8 +622,8 @@ onUnmounted(() => {
             <v-icon>{{ modelSwitchNeedsDownload ? 'mdi-download' : 'mdi-brain' }}</v-icon>
           </v-avatar>
           <div>
-            <div class="text-h6">{{ modelSwitchVerb }} {{ modelSwitchTarget?.name }}</div>
-            <div class="text-body-2 text-medium-emphasis font-weight-regular">Preparing this model for local image generation</div>
+            <div class="text-h6">{{ modelSwitchTitle }} {{ modelSwitchTarget?.name }}</div>
+            <div class="text-body-2 text-medium-emphasis font-weight-regular">{{ modelSwitchSubtitle }}</div>
           </div>
         </v-card-title>
         <v-card-text class="pt-0">
@@ -631,7 +637,7 @@ onUnmounted(() => {
           </v-alert>
           <v-progress-linear color="primary" indeterminate rounded height="10" class="mb-4" />
           <div class="d-flex align-center justify-space-between text-body-2">
-            <span>Working locally—this can take several minutes.</span>
+            <span>{{ modelSwitchProgressText }}</span>
             <span class="text-medium-emphasis">{{ modelSwitchElapsedSeconds }}s</span>
           </div>
           <v-list density="compact" class="mt-4 px-0">

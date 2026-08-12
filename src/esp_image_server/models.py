@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import os
 from pathlib import Path
 
 from .config import Settings
@@ -47,7 +48,18 @@ def model_settings(settings: Settings, model_id: str) -> Settings:
 
 
 def model_is_cached(model: ModelDefinition, cache_dir: Path | None) -> bool:
+    """Return whether a model is available locally without another download.
+
+    Installed builds set ``ESP_IMAGE_MODEL_CACHE`` explicitly. Development and
+    manually run copies use Hugging Face's normal cache, so check that location
+    too rather than always describing an already-downloaded model as new.
+    """
     if cache_dir is None:
-        return False
+        hub_cache = os.getenv("HUGGINGFACE_HUB_CACHE") or os.getenv("HF_HUB_CACHE")
+        if hub_cache:
+            cache_dir = Path(hub_cache)
+        else:
+            hf_home = Path(os.getenv("HF_HOME", Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache")) / "huggingface"))
+            cache_dir = hf_home / "hub"
     repo_dir = "models--" + model.model_id.replace("/", "--")
     return (cache_dir / repo_dir / "snapshots").is_dir() or (cache_dir / "hub" / repo_dir / "snapshots").is_dir()
