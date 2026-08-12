@@ -41,6 +41,9 @@ const generatedMetadata = ref(null)
 const currentImageSavedToLibrary = ref(false)
 const savingToCreationLibrary = ref(false)
 const recalledMetadata = ref(null)
+const savedImageContextMenu = ref(false)
+const savedImageContextMenuPosition = ref([0, 0])
+const contextMenuSavedImage = ref(null)
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
@@ -388,18 +391,38 @@ function buildGenerationMetadata() {
 }
 
 async function useRecalledSettings() {
-  const metadata = recalledMetadata.value
+  await useSavedImageSettings(recalledMetadata.value, 'all')
+}
+
+function openSavedImageContextMenu(event, savedImage) {
+  event.preventDefault()
+  contextMenuSavedImage.value = savedImage
+  savedImageContextMenuPosition.value = [event.clientX, event.clientY]
+  savedImageContextMenu.value = false
+  window.requestAnimationFrame(() => {
+    savedImageContextMenu.value = true
+  })
+}
+
+async function useSavedImageSettings(metadata, setting) {
   if (!metadata) return
-  prompt.value = metadata.prompt
-  steps.value = metadata.steps
-  seed.value = metadata.seed ?? createRandomSeed()
-  if (rotationOptions.some(option => option.value === metadata.rotation)) {
+  savedImageContextMenu.value = false
+
+  if (setting === 'prompt' || setting === 'all') prompt.value = metadata.prompt
+  if (setting === 'steps' || setting === 'all') steps.value = metadata.steps
+  if (setting === 'seed' || setting === 'all') seed.value = metadata.seed ?? createRandomSeed()
+  if ((setting === 'rotation' || setting === 'all') && rotationOptions.some(option => option.value === metadata.rotation)) {
     await setDisplayRotation(metadata.rotation)
   }
-  if (metadata.model.id !== activeModelId.value) selectModelById(metadata.model.id)
-  status.value = 'Saved image settings restored to the generator.'
+  if (setting === 'model' || setting === 'all') {
+    const modelId = metadata.model?.id
+    if (modelId && modelId !== activeModelId.value) selectModelById(modelId)
+  }
+
+  const settingLabel = setting === 'all' ? 'Saved image settings' : `Saved image ${setting}`
+  status.value = `${settingLabel} restored to the generator.`
   page.value = 'generate'
-  metadataPane.value = false
+  if (!metadataPanePinned.value) metadataPane.value = false
 }
 
 async function openSavedImage(savedImage) {
@@ -687,7 +710,7 @@ onUnmounted(() => {
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
             <v-row dense>
               <v-col v-for="savedImage in group.images" :key="savedImage.id" cols="6">
-                <v-card class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)">
+                <v-card class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
                   <v-img :src="`/saved-images/${encodeURIComponent(savedImage.id)}/thumbnail`" aspect-ratio="1.33" cover />
                   <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
                 </v-card>
@@ -717,6 +740,24 @@ onUnmounted(() => {
         </template>
       </div>
     </v-navigation-drawer>
+
+    <v-menu
+      v-model="savedImageContextMenu"
+      :target="savedImageContextMenuPosition"
+      location="bottom start"
+      :close-on-content-click="true"
+    >
+      <v-list min-width="220" density="comfortable">
+        <v-list-subheader>Reuse generation settings</v-list-subheader>
+        <v-list-item prepend-icon="mdi-text" title="Use prompt" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'prompt')" />
+        <v-list-item prepend-icon="mdi-dice-5" title="Use seed" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'seed')" />
+        <v-list-item prepend-icon="mdi-foot-print" title="Use steps" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'steps')" />
+        <v-list-item prepend-icon="mdi-brain" title="Use model" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'model')" />
+        <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
+        <v-divider class="my-1" />
+        <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
+      </v-list>
+    </v-menu>
 
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
