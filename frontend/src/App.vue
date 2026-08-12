@@ -8,6 +8,7 @@ function createRandomSeed() {
 
 const generationSettingsKey = 'esp-image-server.generation-settings'
 const imageLibraryPaneSettingsKey = 'esp-image-server.image-library-pane-pinned'
+const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 
 function loadGenerationSettings() {
   try {
@@ -37,6 +38,7 @@ const previewUrl = ref('')
 const previewFittedFor = ref(null)
 const metadataPane = ref(false)
 const metadataPanePinned = ref(window.localStorage.getItem(imageLibraryPaneSettingsKey) === 'true')
+const imageLibraryView = ref(window.localStorage.getItem(imageLibraryViewSettingsKey) === 'list' ? 'list' : 'thumbnails')
 const generatedMetadata = ref(null)
 const currentImageSavedToLibrary = ref(false)
 const savingToCreationLibrary = ref(false)
@@ -116,6 +118,10 @@ watch([prompt, steps, seed, activeModelId], () => {
 
 watch(metadataPanePinned, pinned => {
   window.localStorage.setItem(imageLibraryPaneSettingsKey, String(pinned))
+})
+
+watch(imageLibraryView, view => {
+  window.localStorage.setItem(imageLibraryViewSettingsKey, view)
 })
 
 const displayMessage = computed(() => {
@@ -410,6 +416,10 @@ function openSavedImageContextMenu(event, savedImage) {
   window.requestAnimationFrame(() => {
     savedImageContextMenu.value = true
   })
+}
+
+function toggleImageLibraryView() {
+  imageLibraryView.value = imageLibraryView.value === 'thumbnails' ? 'list' : 'thumbnails'
 }
 
 async function useSavedImageSettings(metadata, setting) {
@@ -722,6 +732,13 @@ onUnmounted(() => {
           <div class="text-caption text-medium-emphasis">Browse saved creations and restore their generation settings.</div>
         </div>
         <v-spacer />
+        <v-btn
+          :icon="imageLibraryView === 'thumbnails' ? 'mdi-format-list-bulleted' : 'mdi-view-grid'"
+          variant="text"
+          :aria-label="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
+          :title="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
+          @click="toggleImageLibraryView"
+        />
         <v-btn :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" @click="toggleMetadataPanePin" />
         <v-btn icon="mdi-close" variant="text" aria-label="Close Creation Library" @click="closeMetadataPane" />
       </div>
@@ -729,7 +746,7 @@ onUnmounted(() => {
       <div class="pa-4">
         <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
-        <div v-if="!savedImagesLoading && savedImages.length" class="saved-image-library">
+        <div v-if="!savedImagesLoading && savedImages.length && imageLibraryView === 'thumbnails'" class="saved-image-library">
           <section v-for="group in savedImageGroups" :key="group.modelName" class="saved-image-group">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
             <v-row dense>
@@ -742,8 +759,8 @@ onUnmounted(() => {
             </v-row>
           </section>
         </div>
-        <v-list v-if="false" class="saved-image-list" density="compact" lines="two">
-          <v-list-item v-for="savedImage in savedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)">
+        <v-list v-if="!savedImagesLoading && savedImages.length && imageLibraryView === 'list'" class="saved-image-library saved-image-list" density="compact" lines="two">
+          <v-list-item v-for="savedImage in savedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
             <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
             <v-list-item-subtitle>{{ savedImage.metadata?.model?.name || 'ESPImageServer' }} · {{ new Date(savedImage.created_at).toLocaleString() }}</v-list-item-subtitle>
           </v-list-item>
