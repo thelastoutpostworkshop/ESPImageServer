@@ -716,15 +716,18 @@ onUnmounted(() => {
     <v-app-bar color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
-      <v-app-bar-title class="font-weight-bold" :class="{ 'app-bar__title--compact': mobile }">ESPImageServer</v-app-bar-title>
-      <v-chip v-if="serverInfo?.version && !mobile" class="mr-2" variant="text" size="small">v{{ serverInfo.version }}</v-chip>
+      <div class="app-bar__brand mr-4">
+        <span class="font-weight-bold">ESPImageServer</span>
+        <span v-if="serverInfo?.version" class="text-caption text-medium-emphasis">v{{ serverInfo.version }}</span>
+      </div>
       <v-chip class="mr-2" :color="health?.status === 'ready' ? 'success' : 'warning'" variant="tonal" prepend-icon="mdi-server">
-        <span v-if="!mobile">{{ health?.status === 'ready' ? 'Server ready' : 'Server loading' }}</span>
+        {{ health?.status === 'ready' ? 'Server ready' : 'Server loading' }}
       </v-chip>
-      <v-chip v-if="!mobile" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
+      <v-chip :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
         {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
       </v-chip>
-      <v-btn icon="mdi-image-text" variant="text" aria-label="Open Creation Library" @click="openMetadataPane" />
+      <v-spacer />
+      <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
     </v-app-bar>
 
     <v-navigation-drawer v-model="drawer" width="272" border :temporary="mobile">

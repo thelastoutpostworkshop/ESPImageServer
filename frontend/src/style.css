@@ -18,11 +18,10 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .saved-image-thumbnail__prompt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .model-switch-dialog__heading { min-width: 0; }
 .model-switch-dialog__heading > div { overflow-wrap: anywhere; }
+.app-bar__brand { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 
 @media (max-width: 600px) {
   .app-container { padding-inline: 12px !important; }
-  .app-bar .v-toolbar-title { min-width: 0; flex: 1 1 auto; }
-  .app-bar__title--compact { font-size: 0; }
   .app-bar .v-chip { margin-right: 4px !important; padding-inline: 8px; }
   .v-card-title { white-space: normal; }
   .preview-placeholder { min-height: 260px; }
