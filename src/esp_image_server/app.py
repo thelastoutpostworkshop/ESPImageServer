@@ -123,6 +123,14 @@ class DisplayCommandAcknowledgement(BaseModel):
     detail: str = Field(default="", max_length=200)
 
 
+class DisplaySDCardReport(BaseModel):
+    available: bool
+    mode: str = Field(pattern="^(live_images|sd_card)$")
+    total_bytes: int = Field(ge=0)
+    used_bytes: int = Field(ge=0)
+    files: list[dict[str, object]] = Field(default_factory=list)
+
+
 def create_app(
     settings: Settings | None = None,
     generator: ImageGenerator | None = None,
@@ -191,7 +199,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.87", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.88", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -342,6 +350,33 @@ def create_app(
         if image_library.find_path(image_id) is None:
             raise HTTPException(status_code=404, detail="Saved image not found")
         return display_command_store.queue_save(image_id)
+
+    @app.get("/display-sd-card")
+    def get_display_sd_card() -> dict[str, object]:
+        return display_command_store.sd_card_report()
+
+    @app.post("/display-sd-card/report", status_code=status.HTTP_204_NO_CONTENT)
+    def report_display_sd_card(report: DisplaySDCardReport) -> Response:
+        display_command_store.report_sd_card(report.model_dump())
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.post("/display-sd-card/mode/{mode}", status_code=status.HTTP_202_ACCEPTED)
+    def set_display_mode(mode: str) -> dict[str, object]:
+        if mode not in {"live_images", "sd_card"}:
+            raise HTTPException(status_code=422, detail="Mode must be live_images or sd_card")
+        return display_command_store.queue("set_mode", mode=mode)
+
+    @app.post("/display-sd-card/refresh", status_code=status.HTTP_202_ACCEPTED)
+    def refresh_display_sd_card() -> dict[str, object]:
+        return display_command_store.queue("refresh_sd_card")
+
+    @app.post("/display-sd-card/files/{filename}/display", status_code=status.HTTP_202_ACCEPTED)
+    def display_sd_card_file(filename: str) -> dict[str, object]:
+        return display_command_store.queue("display_sd_file", filename=filename)
+
+    @app.delete("/display-sd-card/files/{filename}", status_code=status.HTTP_202_ACCEPTED)
+    def delete_sd_card_file(filename: str) -> dict[str, object]:
+        return display_command_store.queue("delete_sd_file", filename=filename)
 
     @app.get("/display-commands/next")
     def next_display_command() -> Response:

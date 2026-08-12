@@ -14,19 +14,30 @@ class DisplayCommandStore:
         self._completed: dict[str, dict[str, object]] = {}
 
     def queue_save(self, image_id: str | None = None) -> dict[str, object]:
+        return self.queue("save_saved_image" if image_id else "save_latest", image_id=image_id)
+
+    def queue(self, command_type: str, **values: object) -> dict[str, object]:
         with self._lock:
             command_id = uuid4().hex
             command = {
                 "id": command_id,
-                "type": "save_saved_image" if image_id else "save_latest",
-                "filename": f"esp-image-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.jpg",
+                "type": command_type,
                 "status": "pending",
             }
-            if image_id:
-                command["image_id"] = image_id
+            if command_type.startswith("save_"):
+                command["filename"] = f"esp-image-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.jpg"
+            command.update({key: value for key, value in values.items() if value is not None})
             self._pending = command
             self._completed[command_id] = command
             return dict(command)
+
+    def report_sd_card(self, report: dict[str, object]) -> None:
+        with self._lock:
+            self._sd_card_report = dict(report)
+
+    def sd_card_report(self) -> dict[str, object]:
+        with self._lock:
+            return dict(getattr(self, "_sd_card_report", {"available": False, "files": []}))
 
     def next(self) -> dict[str, object] | None:
         with self._lock:

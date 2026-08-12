@@ -203,9 +203,32 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
         response = client.get("/server-info")
 
     assert response.status_code == 200
-    assert response.json()["version"] == "0.1.87"
+    assert response.json()["version"] == "0.1.88"
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
+
+
+def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        assert client.get("/display-sd-card").json() == {"available": False, "files": []}
+        report = client.post(
+            "/display-sd-card/report",
+            json={
+                "available": True,
+                "mode": "sd_card",
+                "total_bytes": 1024,
+                "used_bytes": 256,
+                "files": [{"name": "image.jpg", "size": 128}],
+            },
+        )
+        queued = client.post("/display-sd-card/mode/live_images")
+        command = client.get("/display-commands/next")
+
+    assert report.status_code == 204
+    assert queued.status_code == 202
+    assert command.json()["type"] == "set_mode"
+    assert command.json()["mode"] == "live_images"
 
 
 def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:

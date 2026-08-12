@@ -66,6 +66,8 @@ const selectedSavedImage = ref(null)
 const deleteSavedImageDialog = ref(false)
 const deletingSavedImage = ref(false)
 const savingToDisplaySdCard = ref(false)
+const displaySdCard = ref({ available: false, files: [] })
+const displaySdCardLoading = ref(false)
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
@@ -294,6 +296,41 @@ async function loadSavedImages() {
   }
 }
 
+async function loadDisplaySdCard() {
+  displaySdCardLoading.value = true
+  try {
+    const response = await fetch('/display-sd-card')
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    displaySdCard.value = await response.json()
+  } catch {
+    displaySdCard.value = { available: false, files: [] }
+  } finally {
+    displaySdCardLoading.value = false
+  }
+}
+
+function openGeneratePage() {
+  page.value = 'generate'
+  if (display.value?.connected) {
+    sendDisplaySdCardCommand('/display-sd-card/mode/live_images')
+  }
+}
+
+async function sendDisplaySdCardCommand(endpoint, method = 'POST') {
+  error.value = ''
+  try {
+    const response = await fetch(endpoint, { method })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    status.value = 'Request sent to the display. Refreshing its SD card details shortly.'
+    window.setTimeout(loadDisplaySdCard, 3500)
+  } catch (requestError) {
+    error.value = `Could not update the display SD card: ${requestError.message}`
+  }
+}
+
 async function loadAppSettings() {
   try {
     const response = await fetch('/app-settings')
@@ -410,6 +447,7 @@ async function chooseImageLibrary() {
 async function openMetadataPane() {
   metadataPane.value = true
   await loadSavedImages()
+  await loadDisplaySdCard()
 }
 
 async function toggleMetadataPanePin() {
@@ -734,6 +772,7 @@ onMounted(async () => {
     loadServerStatus()
     loadDisplay()
     loadModels()
+    loadDisplaySdCard()
   }, 5000)
 })
 
@@ -819,12 +858,13 @@ onUnmounted(() => {
       <v-list-item class="py-4" title="ESPImageServer" subtitle="Local AI image generation" />
       <v-divider />
       <v-list nav density="comfortable">
-        <v-list-item title="Generate image" :active="page === 'generate'" @click="page = 'generate'">
+        <v-list-item title="Generate image" :active="page === 'generate'" @click="openGeneratePage">
           <template #prepend>
             <v-avatar :image="logoImageUrl" size="26" />
           </template>
         </v-list-item>
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
+        <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="page = 'sd-card'; loadDisplaySdCard()" />
         <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="page = 'settings'" />
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
       </v-list>
@@ -1142,6 +1182,33 @@ onUnmounted(() => {
             <v-list-item prepend-icon="mdi-brain" title="Model" :subtitle="serverInfo?.model_description || 'Loading model information...'" />
             <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display" :subtitle="displayMessage" />
           </v-list>
+        </v-card>
+
+        <v-card v-else-if="page === 'sd-card'">
+          <v-card-title class="text-h5 pt-5">Display SD Card</v-card-title>
+          <v-card-text>
+            <v-alert :type="displaySdCard.available ? 'success' : 'warning'" variant="tonal" density="compact" class="mb-4">
+              {{ displaySdCard.available ? `Card ready · ${displaySdCard.files?.length || 0} saved images` : 'Waiting for the display to report its SD card.' }}
+            </v-alert>
+            <v-alert v-if="status" type="success" variant="tonal" density="compact" class="mb-4">{{ status }}</v-alert>
+            <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
+            <div class="d-flex flex-wrap ga-2 mb-4">
+              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="loadDisplaySdCard">Refresh</v-btn>
+              <v-btn color="primary" prepend-icon="mdi-broadcast" @click="sendDisplaySdCardCommand('/display-sd-card/mode/live_images')">Live images mode</v-btn>
+              <v-btn color="secondary" prepend-icon="mdi-sd" @click="sendDisplaySdCardCommand('/display-sd-card/mode/sd_card')">SD Card mode</v-btn>
+            </div>
+            <v-list lines="two" border rounded>
+              <v-list-item v-for="file in displaySdCard.files || []" :key="file.name" prepend-icon="mdi-file-image">
+                <v-list-item-title>{{ file.name }}</v-list-item-title>
+                <v-list-item-subtitle>{{ Math.round((file.size || 0) / 1024) }} KB</v-list-item-subtitle>
+                <template #append>
+                  <v-btn icon="mdi-play" variant="text" title="Display image" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(file.name)}/display`)" />
+                  <v-btn icon="mdi-delete-outline" color="error" variant="text" title="Delete image" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(file.name)}`, 'DELETE')" />
+                </template>
+              </v-list-item>
+              <v-list-item v-if="displaySdCard.available && !(displaySdCard.files || []).length" title="No saved SD card images" />
+            </v-list>
+          </v-card-text>
         </v-card>
 
         <v-card v-else class="settings-card">
