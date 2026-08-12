@@ -615,13 +615,13 @@ onUnmounted(() => {
 
 <template>
   <v-app>
-    <v-dialog :model-value="modelSwitching" persistent max-width="580">
+    <v-dialog :model-value="modelSwitching" persistent max-width="580" width="calc(100% - 32px)">
       <v-card>
         <v-card-title class="d-flex align-center ga-3 py-5">
           <v-avatar color="primary" variant="tonal" size="44">
             <v-icon>{{ modelSwitchNeedsDownload ? 'mdi-download' : 'mdi-brain' }}</v-icon>
           </v-avatar>
-          <div>
+          <div class="model-switch-dialog__heading">
             <div class="text-h6">{{ modelSwitchTitle }} {{ modelSwitchTarget?.name }}</div>
             <div class="text-body-2 text-medium-emphasis font-weight-regular">{{ modelSwitchSubtitle }}</div>
           </div>
@@ -646,9 +646,8 @@ onUnmounted(() => {
             <v-list-item prepend-icon="mdi-image-auto" title="Image generation will be available when preparation finishes" />
           </v-list>
         </v-card-text>
-        <v-card-actions class="px-6 pb-5">
-          <v-spacer />
-          <v-btn variant="text" prepend-icon="mdi-close" @click="cancelModelSwitch">Cancel</v-btn>
+        <v-card-actions class="px-6 pb-5 pt-0">
+          <v-btn block variant="outlined" prepend-icon="mdi-close" @click="cancelModelSwitch">Cancel waiting</v-btn>
         </v-card-actions>
         <v-card-text class="pt-0 text-caption text-medium-emphasis">
           Cancel stops waiting in this window. If preparation has already started, it may finish safely in the background.
