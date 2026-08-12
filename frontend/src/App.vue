@@ -104,11 +104,8 @@ const generationBusy = computed(() => modelSwitching.value || generating.value |
 const modelSwitchNeedsDownload = computed(() => modelSwitchTarget.value?.installed === false)
 const modelSwitchTitle = computed(() => modelSwitchNeedsDownload.value ? 'Downloading and loading' : 'Loading')
 const modelSwitchSubtitle = computed(() => modelSwitchNeedsDownload.value
-  ? 'Downloading the model for the first time, then preparing it for image generation'
-  : 'This downloaded model is being prepared for local image generation')
-const modelSwitchProgressText = computed(() => modelSwitchNeedsDownload.value
-  ? 'Downloading and preparing locally—this can take several minutes.'
-  : 'Loading locally—this can take a moment.')
+  ? 'Downloading and preparing the model for the first time'
+  : 'Preparing the downloaded model for image generation')
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
@@ -807,31 +804,15 @@ onUnmounted(() => {
           </div>
         </v-card-title>
         <v-card-text class="pt-0">
-          <v-alert color="info" variant="tonal" density="comfortable" icon="mdi-information-outline" class="mb-5">
-            <template v-if="!modelSwitchNeedsDownload">
-              This model is already downloaded. No download is needed; ESPImageServer is only loading it into memory.
-            </template>
-            <template v-else>
-              This is a one-time download. The model remains available on this computer once preparation finishes.
-            </template>
-          </v-alert>
-          <v-progress-linear color="primary" indeterminate rounded height="10" class="mb-4" />
+          <v-progress-linear color="primary" indeterminate rounded height="8" class="mb-3" />
           <div class="d-flex align-center justify-space-between text-body-2">
-            <span>{{ modelSwitchProgressText }}</span>
+            <span>Please wait…</span>
             <span class="text-medium-emphasis">{{ modelSwitchElapsedSeconds }}s</span>
           </div>
-          <v-list density="compact" class="mt-4 px-0">
-            <v-list-item v-if="modelSwitchNeedsDownload" prepend-icon="mdi-cloud-download-outline" title="Downloading model files to this computer" />
-            <v-list-item :prepend-icon="modelSwitchNeedsDownload ? 'mdi-memory' : 'mdi-check-circle-outline'" :title="modelSwitchNeedsDownload ? 'Loading downloaded model components' : 'Loading model components into memory'" />
-            <v-list-item prepend-icon="mdi-image-auto" title="Image generation will be available when preparation finishes" />
-          </v-list>
         </v-card-text>
-        <v-card-actions class="px-6 pb-5 pt-0">
-          <v-btn block variant="outlined" prepend-icon="mdi-close" @click="cancelModelSwitch">Cancel waiting</v-btn>
+        <v-card-actions class="px-6 pb-5 pt-1">
+          <v-btn variant="text" prepend-icon="mdi-close" @click="cancelModelSwitch">Cancel</v-btn>
         </v-card-actions>
-        <v-card-text class="pt-0 text-caption text-medium-emphasis">
-          Cancel stops waiting in this window. If preparation has already started, it may finish safely in the background.
-        </v-card-text>
       </v-card>
     </v-dialog>
 
