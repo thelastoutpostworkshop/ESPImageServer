@@ -646,6 +646,7 @@ async function generate() {
     previewUrl.value = await createDisplayPreview(imageBlob)
     previewFittedFor.value = display.value?.connected ? display.value : null
     generatedMetadata.value = metadata
+    selectedSavedImage.value = null
     currentImageSavedToLibrary.value = autoSaveImages.value
     await loadSavedImages()
     status.value = autoSaveImages.value
@@ -991,7 +992,7 @@ onUnmounted(() => {
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
             </v-btn>
-            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!display?.connected" @click="saveImageToDisplaySdCard()">
+            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!display?.connected" @click="saveImageToDisplaySdCard(selectedSavedImage)">
               Save to display SD card
             </v-btn>
             <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
