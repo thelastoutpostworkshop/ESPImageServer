@@ -113,6 +113,7 @@ const rotationOptions = [
 const sdCardTableHeaders = [
   { title: 'Preview', key: 'thumbnail', sortable: false, width: '96px' },
   { title: 'File name', key: 'name' },
+  { title: 'Created', key: 'created_at', width: '180px' },
   { title: 'Size', key: 'size', width: '120px', align: 'end' },
   { title: 'Actions', key: 'actions', sortable: false, align: 'end', width: '120px' }
 ]
@@ -273,6 +274,12 @@ function formatFileSize(bytes) {
   return bytes < 1024 * 1024
     ? `${Math.round(bytes / 1024)} KB`
     : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDateTime(value) {
+  if (!value) return 'Unknown'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString()
 }
 
 function showSDCardSnackbar(message) {
@@ -957,6 +964,7 @@ onUnmounted(() => {
                   <div class="mt-1"><strong>Steps:</strong> {{ savedImage.metadata?.steps ?? '—' }}</div>
                   <div><strong>Seed:</strong> {{ savedImage.metadata?.seed ?? 'Random seed' }}</div>
                   <div><strong>Rotation:</strong> {{ savedImage.metadata?.rotation || 0 }}°</div>
+                  <div><strong>Created:</strong> {{ formatDateTime(savedImage.created_at) }}</div>
                 </div>
               </v-tooltip>
             </div>
@@ -1241,6 +1249,7 @@ onUnmounted(() => {
                 <div class="text-caption text-medium-emphasis">Saved on your display SD card</div>
               </template>
               <template #item.size="{ item }">{{ formatFileSize(item.size) }}</template>
+              <template #item.created_at="{ item }">{{ formatDateTime(item.created_at) }}</template>
               <template #item.actions="{ item }">
                 <div class="d-flex justify-end ga-1">
                   <v-tooltip text="Show on display">
