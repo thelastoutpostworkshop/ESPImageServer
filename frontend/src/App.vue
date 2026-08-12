@@ -82,9 +82,6 @@ const settingsStatus = ref('')
 const settingsError = ref('')
 const generating = ref(false)
 const cancelling = ref(false)
-const modelSwitching = ref(false)
-const modelSwitchTarget = ref(null)
-const modelSwitchElapsedSeconds = ref(0)
 const activeJobId = ref('')
 const generationProgress = ref(0)
 const generationStage = ref('')
@@ -95,17 +92,11 @@ const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
 const page = ref('generate')
 let statusTimer
-let modelSwitchTimer
 let modelSwitchAbortController
 let imageLibraryResizeStartX = 0
 let imageLibraryResizeStartWidth = 0
 const { mobile } = useDisplay()
-const generationBusy = computed(() => modelSwitching.value || generating.value || health.value?.generating === true)
-const modelSwitchNeedsDownload = computed(() => modelSwitchTarget.value?.installed === false)
-const modelSwitchTitle = computed(() => modelSwitchNeedsDownload.value ? 'Downloading and loading' : 'Loading')
-const modelSwitchSubtitle = computed(() => modelSwitchNeedsDownload.value
-  ? 'Downloading and preparing the model for the first time'
-  : 'Preparing the downloaded model for image generation')
+const generationBusy = computed(() => generating.value || health.value?.generating === true)
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
@@ -207,7 +198,7 @@ async function loadModels() {
   try {
     models.value = await fetch('/models').then(response => response.json())
     const activeModel = models.value.find(model => model.active)
-    if (activeModel && activeModel.id !== activeModelId.value) {
+    if (activeModel && !models.value.some(model => model.id === activeModelId.value)) {
       activeModelId.value = activeModel.id
     }
   } catch {
@@ -228,17 +219,15 @@ async function loadServerStatus() {
   }
 }
 
-async function selectModel(model) {
-  if (model.active || generationBusy.value) return
+async function prepareSelectedModel() {
+  const model = models.value.find(candidate => candidate.id === activeModelId.value)
+  if (!model) throw new Error('Choose an image model before generating.')
+  if (model.active) return
   const abortController = new AbortController()
   modelSwitchAbortController = abortController
-  modelSwitchTarget.value = model
-  modelSwitchElapsedSeconds.value = 0
-  modelSwitching.value = true
-  clearInterval(modelSwitchTimer)
-  modelSwitchTimer = window.setInterval(() => { modelSwitchElapsedSeconds.value += 1 }, 1000)
-  error.value = ''
-  status.value = ''
+  generationStage.value = model.installed
+    ? `Loading ${model.name}...`
+    : `Downloading ${model.name}...`
   try {
     const response = await fetch(`/models/${encodeURIComponent(model.id)}/select`, {
       method: 'POST',
@@ -249,31 +238,21 @@ async function selectModel(model) {
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     await Promise.all([loadServerStatus(), loadModels()])
-    status.value = `${model.name} is ready to generate images.`
-    page.value = 'generate'
   } catch (requestError) {
-    if (requestError.name === 'AbortError') {
-      status.value = `Stopped waiting for ${model.name}. If preparation had already started, ESPImageServer will finish it safely in the background.`
-    } else {
-      error.value = `Could not change the image model: ${requestError.message}`
-    }
+    if (requestError.name === 'AbortError') throw new Error('Image generation cancelled.')
+    throw new Error(`Could not prepare ${model.name}: ${requestError.message}`)
   } finally {
     if (modelSwitchAbortController === abortController) {
-      clearInterval(modelSwitchTimer)
       modelSwitchAbortController = undefined
-      modelSwitching.value = false
-      modelSwitchTarget.value = null
     }
   }
 }
 
-function cancelModelSwitch() {
-  modelSwitchAbortController?.abort()
-}
-
 function selectModelById(modelId) {
   const model = models.value.find(candidate => candidate.id === modelId)
-  if (model) selectModel(model)
+  if (!model || generationBusy.value) return
+  activeModelId.value = model.id
+  steps.value = model.default_steps
 }
 
 function chooseRandomSeed() {
@@ -679,8 +658,8 @@ async function createDisplayPreview(blob) {
 }
 
 function useRecommendedSteps() {
-  const activeModel = models.value.find(model => model.active)
-  if (activeModel) steps.value = activeModel.default_steps
+  const selectedModel = models.value.find(model => model.id === activeModelId.value)
+  if (selectedModel) steps.value = selectedModel.default_steps
 }
 
 async function generate() {
@@ -688,8 +667,10 @@ async function generate() {
   error.value = ''
   status.value = ''
   generationProgress.value = 0
-  generationStage.value = 'Starting image generation...'
+  generationStage.value = 'Preparing image generation...'
   try {
+    await prepareSelectedModel()
+    generationStage.value = 'Starting image generation...'
     const response = await fetch('/generation-jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -737,8 +718,12 @@ async function generate() {
       ? 'Image ready and saved. Your ESP32 display will pick it up shortly.'
       : 'Image ready. Automatic saving is off—use Save image to computer to keep this image.'
   } catch (requestError) {
-    error.value = `Could not generate the image: ${requestError.message}`
-    status.value = ''
+    if (requestError.message === 'Image generation cancelled.') {
+      status.value = requestError.message
+    } else {
+      error.value = `Could not generate the image: ${requestError.message}`
+      status.value = ''
+    }
   } finally {
     generating.value = false
     cancelling.value = false
@@ -749,9 +734,15 @@ async function generate() {
 }
 
 async function cancelGeneration() {
-  if (!activeJobId.value || cancelling.value) return
+  if (cancelling.value) return
   cancelling.value = true
   error.value = ''
+  if (modelSwitchAbortController) {
+    generationStage.value = 'Cancelling model preparation...'
+    modelSwitchAbortController.abort()
+    return
+  }
+  if (!activeJobId.value) return
   generationStage.value = 'Cancelling image generation...'
   try {
     const response = await fetch(`/generation-jobs/${activeJobId.value}`, { method: 'DELETE' })
@@ -783,7 +774,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.clearInterval(statusTimer)
-  window.clearInterval(modelSwitchTimer)
   modelSwitchAbortController?.abort()
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
@@ -792,30 +782,6 @@ onUnmounted(() => {
 
 <template>
   <v-app>
-    <v-dialog :model-value="modelSwitching" persistent max-width="580" width="calc(100% - 32px)">
-      <v-card>
-        <v-card-title class="d-flex align-center ga-3 py-5">
-          <v-avatar color="primary" variant="tonal" size="44">
-            <v-icon>{{ modelSwitchNeedsDownload ? 'mdi-download' : 'mdi-brain' }}</v-icon>
-          </v-avatar>
-          <div class="model-switch-dialog__heading">
-            <div class="text-h6">{{ modelSwitchTitle }} {{ modelSwitchTarget?.name }}</div>
-            <div class="text-body-2 text-medium-emphasis font-weight-regular">{{ modelSwitchSubtitle }}</div>
-          </div>
-        </v-card-title>
-        <v-card-text class="pt-0">
-          <v-progress-linear color="primary" indeterminate rounded height="8" class="mb-3" />
-          <div class="d-flex align-center justify-space-between text-body-2">
-            <span>Please wait…</span>
-            <span class="text-medium-emphasis">{{ modelSwitchElapsedSeconds }}s</span>
-          </div>
-        </v-card-text>
-        <v-card-actions class="px-6 pb-5 pt-1">
-          <v-btn variant="text" prepend-icon="mdi-close" @click="cancelModelSwitch">Cancel</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
     <v-snackbar v-model="displayConnectedSnackbar" color="success" location="top" timeout="5000">
       <div class="d-flex align-center ga-2">
         <v-icon icon="mdi-monitor-check" />
@@ -1036,24 +1002,24 @@ onUnmounted(() => {
               </v-alert>
               <v-row dense class="mb-6">
                 <v-col cols="12" sm="6">
-                  <v-text-field v-model.number="steps" label="Generation steps" type="number" :min="models.find(model => model.active)?.minimum_steps" :max="models.find(model => model.active)?.maximum_steps" variant="outlined" density="comfortable" hint="More steps can improve detail. Use the reset icon for this model's recommendation." persistent-hint append-inner-icon="mdi-restore" @click:append-inner="useRecommendedSteps" />
+                  <v-text-field v-model.number="steps" label="Generation steps" type="number" :min="models.find(model => model.id === activeModelId)?.minimum_steps" :max="models.find(model => model.id === activeModelId)?.maximum_steps" variant="outlined" density="comfortable" hint="More steps can improve detail. Use the reset icon for this model's recommendation." persistent-hint append-inner-icon="mdi-restore" @click:append-inner="useRecommendedSteps" />
                 </v-col>
                 <v-col cols="12" sm="6">
                   <v-text-field v-model="seed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint append-inner-icon="mdi-dice-5" @click:append-inner="chooseRandomSeed" />
                   <v-btn class="mt-1" size="small" variant="text" prepend-icon="mdi-dice-5" @click="chooseRandomSeed">Create random seed</v-btn>
                 </v-col>
               </v-row>
-              <v-btn type="submit" color="primary" :disabled="generating" prepend-icon="mdi-image-plus">
+              <v-btn type="submit" color="primary" :disabled="generationBusy" prepend-icon="mdi-image-plus">
                 Generate image
               </v-btn>
-              <v-btn v-if="activeJobId" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
-                Cancel generation
+              <v-btn v-if="generating" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
+                {{ activeJobId ? 'Cancel generation' : 'Cancel' }}
               </v-btn>
               <div v-if="generating" class="mt-5">
                 <div class="d-flex justify-space-between text-body-2 mb-2">
-                  <span>{{ generationStage }}</span><span>{{ generationProgress }}%</span>
+                  <span>{{ generationStage }}</span><span>{{ activeJobId ? `${generationProgress}%` : 'Preparing' }}</span>
                 </div>
-                <v-progress-linear :model-value="generationProgress" color="primary" height="10" rounded />
+                <v-progress-linear :model-value="generationProgress" :indeterminate="!activeJobId" color="primary" height="10" rounded />
               </div>
               <v-alert v-if="status" class="mt-4" type="success" variant="tonal" density="compact">
                 {{ status }}
