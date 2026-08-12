@@ -10,10 +10,16 @@ const generationSettingsKey = 'esp-image-server.generation-settings'
 const imageLibraryPaneSettingsKey = 'esp-image-server.image-library-pane-pinned'
 const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
+const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thumbnail-size'
 
 function loadImageLibraryWidth() {
   const savedWidth = Number(window.localStorage.getItem(imageLibraryWidthSettingsKey))
   return Number.isFinite(savedWidth) && savedWidth >= 300 && savedWidth <= 720 ? savedWidth : 380
+}
+
+function loadImageLibraryThumbnailSize() {
+  const savedSize = Number(window.localStorage.getItem(imageLibraryThumbnailSizeSettingsKey))
+  return Number.isFinite(savedSize) && savedSize >= 100 && savedSize <= 220 ? savedSize : 160
 }
 
 function loadGenerationSettings() {
@@ -48,6 +54,7 @@ const metadataPane = ref(false)
 const metadataPanePinned = ref(window.localStorage.getItem(imageLibraryPaneSettingsKey) === 'true')
 const imageLibraryView = ref(window.localStorage.getItem(imageLibraryViewSettingsKey) === 'list' ? 'list' : 'thumbnails')
 const imageLibraryWidth = ref(loadImageLibraryWidth())
+const imageLibraryThumbnailSize = ref(loadImageLibraryThumbnailSize())
 const generatedMetadata = ref(null)
 const currentImageSavedToLibrary = ref(false)
 const savingToCreationLibrary = ref(false)
@@ -139,6 +146,10 @@ watch(imageLibraryView, view => {
 
 watch(imageLibraryWidth, width => {
   window.localStorage.setItem(imageLibraryWidthSettingsKey, String(width))
+})
+
+watch(imageLibraryThumbnailSize, size => {
+  window.localStorage.setItem(imageLibraryThumbnailSizeSettingsKey, String(size))
 })
 
 const displayMessage = computed(() => {
@@ -852,12 +863,26 @@ onUnmounted(() => {
       </div>
       <v-divider />
       <div class="pa-4">
+        <v-slider
+          v-if="imageLibraryView === 'thumbnails'"
+          v-model="imageLibraryThumbnailSize"
+          min="100"
+          max="220"
+          step="10"
+          hide-details
+          density="compact"
+          color="primary"
+          prepend-icon="mdi-image-size-select-small"
+          append-icon="mdi-image-size-select-large"
+          aria-label="Thumbnail size"
+          class="mb-5"
+        />
         <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
         <div v-if="!savedImagesLoading && savedImages.length && imageLibraryView === 'thumbnails'" class="saved-image-library">
           <section v-for="group in savedImageGroups" :key="group.modelName" class="saved-image-group">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
-            <div class="saved-image-grid">
+            <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
               <v-card v-for="savedImage in group.images" :key="savedImage.id" class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
                 <v-img :src="`/saved-images/${encodeURIComponent(savedImage.id)}/thumbnail`" aspect-ratio="1.33" cover />
                 <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>

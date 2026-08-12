@@ -13,8 +13,8 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .metadata-list .v-list-item-subtitle { white-space: normal; }
 .saved-image-library { max-height: calc(100vh - 350px); overflow-y: auto; padding-right: 4px; }
 .saved-image-group + .saved-image-group { margin-top: 18px; }
-.saved-image-grid { display: grid; grid-template-columns: repeat(auto-fill, 160px); gap: 8px; }
-.saved-image-thumbnail { width: 160px; cursor: pointer; overflow: hidden; }
+.saved-image-grid { display: grid; grid-template-columns: repeat(auto-fill, var(--thumbnail-size)); gap: 8px; }
+.saved-image-thumbnail { width: var(--thumbnail-size); cursor: pointer; overflow: hidden; }
 .saved-image-thumbnail:hover { border-color: rgb(var(--v-theme-primary)); }
 .saved-image-thumbnail__prompt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .model-switch-dialog__heading { min-width: 0; }
