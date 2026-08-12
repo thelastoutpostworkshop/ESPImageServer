@@ -107,6 +107,12 @@ const rotationOptions = [
   { title: 'Rotate 180°', value: 180 },
   { title: 'Rotate 90° counter-clockwise', value: 270 }
 ]
+const sdCardTableHeaders = [
+  { title: 'Preview', key: 'thumbnail', sortable: false, width: '96px' },
+  { title: 'File name', key: 'name' },
+  { title: 'Size', key: 'size', width: '120px', align: 'end' },
+  { title: 'Actions', key: 'actions', sortable: false, align: 'end', width: '120px' }
+]
 const savedImageGroups = computed(() => {
   const groups = new Map()
   for (const savedImage of savedImages.value) {
@@ -257,6 +263,13 @@ function selectModelById(modelId) {
 
 function chooseRandomSeed() {
   seed.value = createRandomSeed()
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '0 KB'
+  return bytes < 1024 * 1024
+    ? `${Math.round(bytes / 1024)} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 async function loadSavedImages() {
@@ -1156,23 +1169,46 @@ onUnmounted(() => {
             <div class="d-flex flex-wrap ga-2 mb-4">
               <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="loadDisplaySdCard">Refresh</v-btn>
             </div>
-            <v-list lines="two" border rounded>
-              <v-list-item v-for="file in displaySdCard.files || []" :key="file.name">
-                <template #prepend>
-                  <v-avatar v-if="file.thumbnail_available" rounded="sm" size="44">
-                    <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(file.name)}`" cover />
-                  </v-avatar>
-                  <v-icon v-else>mdi-file-image</v-icon>
-                </template>
-                <v-list-item-title>{{ file.name }}</v-list-item-title>
-                <v-list-item-subtitle>{{ Math.round((file.size || 0) / 1024) }} KB</v-list-item-subtitle>
-                <template #append>
-                  <v-btn icon="mdi-play" variant="text" title="Display image" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(file.name)}/display`)" />
-                  <v-btn icon="mdi-delete-outline" color="error" variant="text" title="Delete image" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(file.name)}`, 'DELETE')" />
-                </template>
-              </v-list-item>
-              <v-list-item v-if="displaySdCard.available && !(displaySdCard.files || []).length" title="No saved SD card images" />
-            </v-list>
+            <v-data-table
+              :headers="sdCardTableHeaders"
+              :items="displaySdCard.files || []"
+              :loading="displaySdCardLoading"
+              :items-per-page="10"
+              hover
+              density="comfortable"
+              class="sd-card-table border rounded"
+            >
+              <template #item.thumbnail="{ item }">
+                <v-avatar v-if="item.raw.thumbnail_available" rounded="sm" size="56">
+                  <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(item.raw.name)}`" cover />
+                </v-avatar>
+                <v-avatar v-else color="surface-variant" rounded="sm" size="56">
+                  <v-icon>mdi-image-outline</v-icon>
+                </v-avatar>
+              </template>
+              <template #item.name="{ item }">
+                <div class="font-weight-medium">{{ item.raw.name }}</div>
+                <div class="text-caption text-medium-emphasis">Saved on your display SD card</div>
+              </template>
+              <template #item.size="{ item }">{{ formatFileSize(item.raw.size) }}</template>
+              <template #item.actions="{ item }">
+                <div class="d-flex justify-end ga-1">
+                  <v-tooltip text="Show on display">
+                    <template #activator="{ props }">
+                      <v-btn v-bind="props" icon="mdi-play" size="small" color="primary" variant="text" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.raw.name)}/display`)" />
+                    </template>
+                  </v-tooltip>
+                  <v-tooltip text="Delete from SD card">
+                    <template #activator="{ props }">
+                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.raw.name)}`, 'DELETE')" />
+                    </template>
+                  </v-tooltip>
+                </div>
+              </template>
+              <template #no-data>
+                <div class="py-8 text-center text-medium-emphasis">No saved SD card images yet.</div>
+              </template>
+            </v-data-table>
           </v-card-text>
         </v-card>
 

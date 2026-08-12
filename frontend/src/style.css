@@ -23,6 +23,9 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .image-library-resize-handle { position: absolute; z-index: 2; top: 0; bottom: 0; left: -6px; width: 12px; cursor: col-resize; touch-action: none; }
 .image-library-resize-handle::after { content: ''; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; background: transparent; transition: background-color 150ms; }
 .image-library-resize-handle:hover::after, .image-library-resize-handle:active::after { background: rgb(var(--v-theme-primary)); }
+.sd-card-table .v-data-table-header__content { font-weight: 700; color: rgba(var(--v-theme-on-surface), 0.75); }
+.sd-card-table .v-data-table__tr { min-height: 72px; }
+.sd-card-table .v-data-table__td { padding-block: 8px; }
 
 @media (max-width: 600px) {
   .app-container { padding-inline: 12px !important; }
