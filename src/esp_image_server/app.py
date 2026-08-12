@@ -24,6 +24,7 @@ from PIL import Image
 from .config import Settings
 from .app_settings import AppSettingsStore
 from .display import ActiveDisplayStore
+from .display_commands import DisplayCommandStore
 from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
 from .generator import DiffusersGenerator
@@ -117,6 +118,11 @@ class AcknowledgeImageRequest(BaseModel):
     image_id: str = Field(min_length=1, max_length=64)
 
 
+class DisplayCommandAcknowledgement(BaseModel):
+    success: bool
+    detail: str = Field(default="", max_length=200)
+
+
 def create_app(
     settings: Settings | None = None,
     generator: ImageGenerator | None = None,
@@ -128,6 +134,7 @@ def create_app(
     image_library: ImageLibrary | None = None,
     app_settings_store: AppSettingsStore | None = None,
     generation_jobs: GenerationJobStore | None = None,
+    display_command_store: DisplayCommandStore | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
     supplied_settings = settings is not None
@@ -145,6 +152,7 @@ def create_app(
     active_display_store = active_display_store or ActiveDisplayStore()
     display_settings_store = display_settings_store or DisplaySettingsStore()
     generation_jobs = generation_jobs or GenerationJobStore()
+    display_command_store = display_command_store or DisplayCommandStore()
     app_settings_store = app_settings_store or AppSettingsStore()
     persisted_app_settings = app_settings_store.get()
     library_location = persisted_app_settings.get("image_library_location")
@@ -183,13 +191,14 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.80", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.81", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
     app.state.display_settings_store = display_settings_store
     app.state.model_selection_store = model_selection_store
     app.state.generation_jobs = generation_jobs
+    app.state.display_command_store = display_command_store
     app.state.image_library = image_library
     app.state.app_settings_store = app_settings_store
     app.mount(
@@ -321,6 +330,31 @@ def create_app(
         if request.rotation not in VALID_ROTATIONS:
             raise HTTPException(status_code=422, detail="Image rotation must be 0, 90, 180, or 270 degrees")
         return {"rotation": display_settings_store.set_rotation(request.rotation)}
+
+    @app.post("/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
+    def save_latest_to_display_sd_card() -> dict[str, object]:
+        if latest_image_store.get() is None:
+            raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
+        return display_command_store.queue_save_latest()
+
+    @app.get("/display-commands/next")
+    def next_display_command() -> Response:
+        command = display_command_store.next()
+        return JSONResponse(command) if command is not None else Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.post("/display-commands/{command_id}/ack")
+    def acknowledge_display_command(command_id: str, acknowledgement: DisplayCommandAcknowledgement) -> dict[str, object]:
+        command = display_command_store.acknowledge(command_id, acknowledgement.success, acknowledgement.detail)
+        if command is None:
+            raise HTTPException(status_code=404, detail="Display command not found")
+        return command
+
+    @app.get("/display-commands/{command_id}")
+    def get_display_command(command_id: str) -> dict[str, object]:
+        command = display_command_store.get(command_id)
+        if command is None:
+            raise HTTPException(status_code=404, detail="Display command not found")
+        return command
         model_name, model_description = model_details.get(
             settings.model_id, (settings.model_id, "Local AI image model selected during installation.")
         )

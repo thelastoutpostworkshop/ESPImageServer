@@ -50,6 +50,7 @@ const savedImageContextMenuPosition = ref([0, 0])
 const contextMenuSavedImage = ref(null)
 const deleteSavedImageDialog = ref(false)
 const deletingSavedImage = ref(false)
+const savingToDisplaySdCard = ref(false)
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
@@ -524,6 +525,38 @@ async function saveCurrentImageToCreationLibrary() {
   }
 }
 
+async function saveLatestImageToDisplaySdCard() {
+  if (savingToDisplaySdCard.value) return
+  savingToDisplaySdCard.value = true
+  error.value = ''
+  status.value = ''
+  try {
+    const response = await fetch('/display-commands/save-latest', { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const command = await response.json()
+    status.value = 'Save request sent to the display. Waiting for its SD card...'
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 1000))
+      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      if (!commandResponse.ok) continue
+      const currentCommand = await commandResponse.json()
+      if (currentCommand.status === 'complete') {
+        status.value = `Saved to the display SD card: ${currentCommand.detail}`
+        return
+      }
+      if (currentCommand.status === 'failed') throw new Error(currentCommand.detail || 'The display could not save the image')
+    }
+    status.value = 'Save request is pending. The display will save the image when it next connects.'
+  } catch (requestError) {
+    error.value = `Could not save to the display SD card: ${requestError.message}`
+  } finally {
+    savingToDisplaySdCard.value = false
+  }
+}
+
 async function createDisplayPreview(blob) {
   const target = display.value?.connected ? display.value : null
   if (!target || typeof window.createImageBitmap !== 'function') {
@@ -945,6 +978,9 @@ onUnmounted(() => {
             </v-chip>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
+            </v-btn>
+            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!display?.connected" @click="saveLatestImageToDisplaySdCard">
+              Save to display SD card
             </v-btn>
             <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
           </v-card-actions>

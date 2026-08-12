@@ -203,7 +203,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
         response = client.get("/server-info")
 
     assert response.status_code == 200
-    assert response.json()["version"] == "0.1.80"
+    assert response.json()["version"] == "0.1.81"
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
 
@@ -270,6 +270,23 @@ def test_saved_image_can_be_deleted_from_the_creation_library(tmp_path) -> None:
     assert deleted.status_code == 204
     assert library.list() == []
     assert missing.status_code == 404
+
+
+def test_display_can_acknowledge_a_request_to_save_the_latest_image_to_sd_card() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        assert client.post("/generate", json={"prompt": "a tiny robot"}).status_code == 200
+        queued = client.post("/display-commands/save-latest")
+        command = client.get("/display-commands/next")
+        acknowledged = client.post(
+            f"/display-commands/{queued.json()['id']}/ack",
+            json={"success": True, "detail": "Saved /ESPImageServer/esp-image.jpg"},
+        )
+
+    assert queued.status_code == 202
+    assert command.json()["id"] == queued.json()["id"]
+    assert acknowledged.json()["status"] == "complete"
+    assert acknowledged.json()["detail"] == "Saved /ESPImageServer/esp-image.jpg"
 
 
 def test_dreamshaper_uses_an_aspect_matched_sd_1_5_canvas() -> None:
