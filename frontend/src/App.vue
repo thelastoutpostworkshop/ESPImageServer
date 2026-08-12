@@ -316,6 +316,14 @@ function openGeneratePage() {
   }
 }
 
+function openSDCardPage() {
+  page.value = 'sd-card'
+  loadDisplaySdCard()
+  if (display.value?.connected) {
+    sendDisplaySdCardCommand('/display-sd-card/mode/sd_card')
+  }
+}
+
 async function sendDisplaySdCardCommand(endpoint, method = 'POST') {
   error.value = ''
   try {
@@ -864,7 +872,7 @@ onUnmounted(() => {
           </template>
         </v-list-item>
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
-        <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="page = 'sd-card'; loadDisplaySdCard()" />
+        <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
         <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="page = 'settings'" />
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
       </v-list>
@@ -1194,8 +1202,6 @@ onUnmounted(() => {
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
             <div class="d-flex flex-wrap ga-2 mb-4">
               <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="loadDisplaySdCard">Refresh</v-btn>
-              <v-btn color="primary" prepend-icon="mdi-broadcast" @click="sendDisplaySdCardCommand('/display-sd-card/mode/live_images')">Live images mode</v-btn>
-              <v-btn color="secondary" prepend-icon="mdi-sd" @click="sendDisplaySdCardCommand('/display-sd-card/mode/sd_card')">SD Card mode</v-btn>
             </div>
             <v-list lines="two" border rounded>
               <v-list-item v-for="file in displaySdCard.files || []" :key="file.name" prepend-icon="mdi-file-image">
