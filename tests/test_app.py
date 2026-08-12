@@ -203,7 +203,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
         response = client.get("/server-info")
 
     assert response.status_code == 200
-    assert response.json()["version"] == "0.1.81"
+    assert response.json()["version"] == "0.1.82"
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
 
@@ -287,6 +287,20 @@ def test_display_can_acknowledge_a_request_to_save_the_latest_image_to_sd_card()
     assert command.json()["id"] == queued.json()["id"]
     assert acknowledged.json()["status"] == "complete"
     assert acknowledged.json()["detail"] == "Saved /ESPImageServer/esp-image.jpg"
+
+
+def test_display_can_save_a_specific_creation_library_image_to_sd_card(tmp_path) -> None:
+    library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
+    record = library.save(b"\xff\xd8saved image\xff\xd9", {"prompt": "saved creation"})
+    app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+
+    with TestClient(app) as client:
+        queued = client.post(f"/display-commands/save-saved-image/{record['id']}")
+        command = client.get("/display-commands/next")
+
+    assert queued.status_code == 202
+    assert command.json()["type"] == "save_saved_image"
+    assert command.json()["image_id"] == record["id"]
 
 
 def test_dreamshaper_uses_an_aspect_matched_sd_1_5_canvas() -> None:

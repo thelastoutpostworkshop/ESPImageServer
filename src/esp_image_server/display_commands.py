@@ -13,15 +13,17 @@ class DisplayCommandStore:
         self._pending: dict[str, object] | None = None
         self._completed: dict[str, dict[str, object]] = {}
 
-    def queue_save_latest(self) -> dict[str, object]:
+    def queue_save(self, image_id: str | None = None) -> dict[str, object]:
         with self._lock:
             command_id = uuid4().hex
             command = {
                 "id": command_id,
-                "type": "save_latest",
+                "type": "save_saved_image" if image_id else "save_latest",
                 "filename": f"esp-image-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.jpg",
                 "status": "pending",
             }
+            if image_id:
+                command["image_id"] = image_id
             self._pending = command
             self._completed[command_id] = command
             return dict(command)

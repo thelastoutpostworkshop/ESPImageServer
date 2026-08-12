@@ -191,7 +191,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.81", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.82", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -335,7 +335,13 @@ def create_app(
     def save_latest_to_display_sd_card() -> dict[str, object]:
         if latest_image_store.get() is None:
             raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
-        return display_command_store.queue_save_latest()
+        return display_command_store.queue_save()
+
+    @app.post("/display-commands/save-saved-image/{image_id}", status_code=status.HTTP_202_ACCEPTED)
+    def save_creation_library_image_to_display_sd_card(image_id: str) -> dict[str, object]:
+        if image_library.find_path(image_id) is None:
+            raise HTTPException(status_code=404, detail="Saved image not found")
+        return display_command_store.queue_save(image_id)
 
     @app.get("/display-commands/next")
     def next_display_command() -> Response:

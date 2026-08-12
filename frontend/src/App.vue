@@ -48,6 +48,7 @@ const recalledMetadata = ref(null)
 const savedImageContextMenu = ref(false)
 const savedImageContextMenuPosition = ref([0, 0])
 const contextMenuSavedImage = ref(null)
+const selectedSavedImage = ref(null)
 const deleteSavedImageDialog = ref(false)
 const deletingSavedImage = ref(false)
 const savingToDisplaySdCard = ref(false)
@@ -493,6 +494,7 @@ async function openSavedImage(savedImage) {
     previewFittedFor.value = display.value?.connected ? display.value : null
     generatedMetadata.value = savedImage.metadata
     recalledMetadata.value = savedImage.metadata
+    selectedSavedImage.value = savedImage
     currentImageSavedToLibrary.value = true
   } catch (requestError) {
     metadataError.value = `Could not open this saved image: ${requestError.message}`
@@ -525,13 +527,16 @@ async function saveCurrentImageToCreationLibrary() {
   }
 }
 
-async function saveLatestImageToDisplaySdCard() {
+async function saveImageToDisplaySdCard(savedImage = null) {
   if (savingToDisplaySdCard.value) return
   savingToDisplaySdCard.value = true
   error.value = ''
   status.value = ''
   try {
-    const response = await fetch('/display-commands/save-latest', { method: 'POST' })
+    const endpoint = savedImage
+      ? `/display-commands/save-saved-image/${encodeURIComponent(savedImage.id)}`
+      : '/display-commands/save-latest'
+    const response = await fetch(endpoint, { method: 'POST' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
@@ -555,6 +560,11 @@ async function saveLatestImageToDisplaySdCard() {
   } finally {
     savingToDisplaySdCard.value = false
   }
+}
+
+async function saveContextMenuImageToDisplaySdCard() {
+  savedImageContextMenu.value = false
+  await saveImageToDisplaySdCard(contextMenuSavedImage.value)
 }
 
 async function createDisplayPreview(blob) {
@@ -834,6 +844,7 @@ onUnmounted(() => {
             <v-list-item prepend-icon="mdi-rotate-right" title="Rotation" :subtitle="`${recalledMetadata.rotation || 0}°`" />
           </v-list>
           <v-btn color="primary" block prepend-icon="mdi-restore" :disabled="generationBusy" @click="useRecalledSettings">Use these settings</v-btn>
+          <v-btn class="mt-2" color="primary" block variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!display?.connected" @click="saveImageToDisplaySdCard(selectedSavedImage)">Save selected image to display SD card</v-btn>
         </template>
       </div>
     </v-navigation-drawer>
@@ -853,6 +864,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
+        <v-list-item color="primary" prepend-icon="mdi-sd" title="Save to display SD card" :disabled="!display?.connected || savingToDisplaySdCard" @click="saveContextMenuImageToDisplaySdCard" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Library" @click="confirmDeleteSavedImage" />
       </v-list>
@@ -979,7 +991,7 @@ onUnmounted(() => {
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
             </v-btn>
-            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!display?.connected" @click="saveLatestImageToDisplaySdCard">
+            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!display?.connected" @click="saveImageToDisplaySdCard()">
               Save to display SD card
             </v-btn>
             <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
