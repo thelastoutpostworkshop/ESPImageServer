@@ -203,7 +203,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
         response = client.get("/server-info")
 
     assert response.status_code == 200
-    assert response.json()["version"] == "0.1.92"
+    assert response.json()["version"] == "0.1.93"
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
 
@@ -293,6 +293,21 @@ def test_saved_image_can_be_deleted_from_the_creation_library(tmp_path) -> None:
     assert deleted.status_code == 204
     assert library.list() == []
     assert missing.status_code == 404
+
+
+def test_selecting_a_saved_image_makes_it_available_to_the_esp32(tmp_path) -> None:
+    library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
+    source = BytesIO()
+    Image.new("RGB", (64, 64), "red").save(source, format="JPEG")
+    record = library.save(source.getvalue(), {"prompt": "saved creation"})
+    app = create_app(Settings(output_width=20, output_height=10), FakeGenerator(), image_library=library, enable_mdns=False)
+
+    with TestClient(app) as client:
+        selected = client.post(f"/saved-images/{record['id']}/display")
+        latest = client.get("/latest.jpg")
+
+    assert selected.status_code == 202
+    assert Image.open(BytesIO(latest.content)).size == (20, 10)
 
 
 def test_display_can_acknowledge_a_request_to_save_the_latest_image_to_sd_card() -> None:

@@ -199,7 +199,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.92", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.93", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -513,6 +513,22 @@ def create_app(
         if image_path is None:
             raise HTTPException(status_code=404, detail="Saved image not found")
         return FileResponse(image_path, media_type="image/jpeg", filename=image_path.name)
+
+    @app.post("/saved-images/{image_id}/display", status_code=status.HTTP_202_ACCEPTED)
+    def show_saved_image_on_display(image_id: str) -> dict[str, object]:
+        """Make a saved creation the next image retrieved by the ESP32."""
+        image_path = image_library.find_path(image_id)
+        if image_path is None:
+            raise HTTPException(status_code=404, detail="Saved image not found")
+        try:
+            profile = active_display_store.get()
+            width = profile.width if profile else settings.output_width
+            height = profile.height if profile else settings.output_height
+            with Image.open(image_path) as source:
+                latest_image_store.set(to_jpeg(source, width=width, height=height, quality=jpeg_quality))
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"Could not prepare saved image for the display: {exc}") from exc
+        return {"message": "Saved image is ready for the display"}
 
     @app.delete("/saved-images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_saved_image(image_id: str) -> Response:

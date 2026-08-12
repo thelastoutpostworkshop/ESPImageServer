@@ -559,6 +559,14 @@ async function openSavedImage(savedImage) {
     recalledMetadata.value = savedImage.metadata
     selectedSavedImage.value = savedImage
     currentImageSavedToLibrary.value = true
+    if (display.value?.connected) {
+      const displayResponse = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, { method: 'POST' })
+      if (!displayResponse.ok) {
+        const body = await displayResponse.json().catch(() => ({}))
+        throw new Error(body.detail || `Could not send image to display (${displayResponse.status})`)
+      }
+      status.value = 'Selected image is ready for your ESP32 display.'
+    }
   } catch (requestError) {
     metadataError.value = `Could not open this saved image: ${requestError.message}`
   }
