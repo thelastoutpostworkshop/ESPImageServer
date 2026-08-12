@@ -183,7 +183,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.78", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.79", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -237,6 +237,7 @@ def create_app(
         else:
             processing = f"Processing device: {generator.device}"
         return {
+            "version": app.version,
             "model_name": get_model(active_model_id).name,
             "model_id": active_model_id,
             "model_description": get_model(active_model_id).description,

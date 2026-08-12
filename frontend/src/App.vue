@@ -698,6 +698,7 @@ onUnmounted(() => {
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
       <v-app-bar-title class="font-weight-bold" :class="{ 'app-bar__title--compact': mobile }">ESPImageServer</v-app-bar-title>
+      <v-chip v-if="serverInfo?.version && !mobile" class="mr-2" variant="text" size="small">v{{ serverInfo.version }}</v-chip>
       <v-chip class="mr-2" :color="health?.status === 'ready' ? 'success' : 'warning'" variant="tonal" prepend-icon="mdi-server">
         <span v-if="!mobile">{{ health?.status === 'ready' ? 'Server ready' : 'Server loading' }}</span>
       </v-chip>
@@ -1002,6 +1003,7 @@ onUnmounted(() => {
             Generate local AI images and show them on a connected ESP32 display. Images remain on your local network.
           </v-card-text>
           <v-list density="compact">
+            <v-list-item prepend-icon="mdi-tag-outline" title="App version" :subtitle="serverInfo?.version ? `Version ${serverInfo.version}` : 'Loading version information...'" />
             <v-list-item prepend-icon="mdi-brain" title="Model" :subtitle="serverInfo?.model_description || 'Loading model information...'" />
             <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display" :subtitle="displayMessage" />
           </v-list>
