@@ -61,6 +61,21 @@ class ImageLibrary:
                     return path if path.is_file() else None
         return None
 
+    def delete(self, image_id: str) -> bool:
+        """Remove a saved image and its library record."""
+        with self._lock:
+            records = self._read_index()
+            record = next((item for item in records if item.get("id") == image_id), None)
+            if record is None:
+                return False
+            image_path = self.path / str(record.get("filename", ""))
+            try:
+                image_path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise OSError(f"Could not remove saved image: {exc}") from exc
+            self._write_index([item for item in records if item.get("id") != image_id])
+            return True
+
     def relocate(self, target: Path) -> Path:
         """Move the whole library so its index and existing images stay together."""
         with self._lock:

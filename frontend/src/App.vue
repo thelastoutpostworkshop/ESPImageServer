@@ -44,6 +44,8 @@ const recalledMetadata = ref(null)
 const savedImageContextMenu = ref(false)
 const savedImageContextMenuPosition = ref([0, 0])
 const contextMenuSavedImage = ref(null)
+const deleteSavedImageDialog = ref(false)
+const deletingSavedImage = ref(false)
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
@@ -431,6 +433,33 @@ async function useSavedImageSettings(metadata, setting) {
   if (!metadataPanePinned.value) metadataPane.value = false
 }
 
+function confirmDeleteSavedImage() {
+  savedImageContextMenu.value = false
+  if (contextMenuSavedImage.value) deleteSavedImageDialog.value = true
+}
+
+async function deleteSavedImage() {
+  const savedImage = contextMenuSavedImage.value
+  if (!savedImage || deletingSavedImage.value) return
+  deletingSavedImage.value = true
+  metadataError.value = ''
+  try {
+    const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    savedImages.value = savedImages.value.filter(image => image.id !== savedImage.id)
+    if (recalledMetadata.value === savedImage.metadata) recalledMetadata.value = null
+    deleteSavedImageDialog.value = false
+    status.value = 'Image removed from the Creation Library.'
+  } catch (requestError) {
+    metadataError.value = `Could not remove this saved image: ${requestError.message}`
+  } finally {
+    deletingSavedImage.value = false
+  }
+}
+
 async function openSavedImage(savedImage) {
   metadataError.value = ''
   try {
@@ -698,16 +727,6 @@ onUnmounted(() => {
       </div>
       <v-divider />
       <div class="pa-4">
-        <div class="text-subtitle-1 font-weight-bold mb-2">Current creation</div>
-        <p class="text-body-2 text-medium-emphasis mb-3">Save the current image with its model, prompt, steps, seed, and rotation.</p>
-        <v-btn v-if="imageUrl && !currentImageSavedToLibrary" color="primary" prepend-icon="mdi-bookmark-plus" :loading="savingToCreationLibrary" @click="saveCurrentImageToCreationLibrary">Save to Creation Library</v-btn>
-        <v-chip v-else-if="imageUrl" color="success" variant="tonal" prepend-icon="mdi-check-circle">Saved to Creation Library</v-chip>
-        <v-alert v-else type="info" variant="tonal" density="compact">Generate an image first.</v-alert>
-        <div v-if="generatedMetadata" class="text-caption text-medium-emphasis mt-3">
-          Ready to save: {{ generatedMetadata.model.name }}, {{ generatedMetadata.steps }} steps, seed {{ generatedMetadata.seed }}.
-        </div>
-
-        <v-divider class="my-6" />
         <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
         <div v-if="!savedImagesLoading && savedImages.length" class="saved-image-library">
@@ -761,8 +780,23 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
+        <v-divider class="my-1" />
+        <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Library" @click="confirmDeleteSavedImage" />
       </v-list>
     </v-menu>
+
+    <v-dialog v-model="deleteSavedImageDialog" max-width="440" width="calc(100% - 32px)">
+      <v-card title="Delete saved image">
+        <v-card-text>
+          Remove this image from the Creation Library? This cannot be undone.
+        </v-card-text>
+        <v-card-actions class="px-6 pb-5">
+          <v-spacer />
+          <v-btn variant="text" :disabled="deletingSavedImage" @click="deleteSavedImageDialog = false">Keep image</v-btn>
+          <v-btn color="error" variant="flat" :loading="deletingSavedImage" @click="deleteSavedImage">Delete image</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">

@@ -438,6 +438,16 @@ def create_app(
             raise HTTPException(status_code=404, detail="Saved image not found")
         return FileResponse(image_path, media_type="image/jpeg", filename=image_path.name)
 
+    @app.delete("/saved-images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_saved_image(image_id: str) -> Response:
+        try:
+            deleted = image_library.delete(image_id)
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Saved image not found")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @app.get("/saved-images/{image_id}/thumbnail", response_class=Response)
     def saved_image_thumbnail(image_id: str) -> Response:
         image_path = image_library.find_path(image_id)

@@ -250,6 +250,20 @@ def test_upgrade_preserves_image_library_model_and_rotation(tmp_path, monkeypatc
         assert client.get("/display-settings").json() == {"rotation": 270}
 
 
+def test_saved_image_can_be_deleted_from_the_creation_library(tmp_path) -> None:
+    library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
+    record = library.save(b"\xff\xd8saved image\xff\xd9", {"prompt": "a tiny robot"})
+    app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+
+    with TestClient(app) as client:
+        deleted = client.delete(f"/saved-images/{record['id']}")
+        missing = client.get(f"/saved-images/{record['id']}/image")
+
+    assert deleted.status_code == 204
+    assert library.list() == []
+    assert missing.status_code == 404
+
+
 def test_dreamshaper_uses_an_aspect_matched_sd_1_5_canvas() -> None:
     generator = FakeGenerator()
     app = create_app(Settings(model_id="Lykon/dreamshaper-8"), generator, enable_mdns=False)
