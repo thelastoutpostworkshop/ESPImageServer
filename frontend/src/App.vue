@@ -68,6 +68,7 @@ const deletingSavedImage = ref(false)
 const savingToDisplaySdCard = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardLoading = ref(false)
+const displayingSdCardFile = ref('')
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
@@ -325,6 +326,37 @@ async function sendDisplaySdCardCommand(endpoint, method = 'POST') {
     window.setTimeout(loadDisplaySdCard, 3500)
   } catch (requestError) {
     error.value = `Could not update the display SD card: ${requestError.message}`
+  }
+}
+
+async function showSDCardFileOnDisplay(filename) {
+  if (displayingSdCardFile.value) return
+  displayingSdCardFile.value = filename
+  error.value = ''
+  status.value = ''
+  try {
+    const response = await fetch(`/display-sd-card/files/${encodeURIComponent(filename)}/display`, { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const command = await response.json()
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 500))
+      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      if (!commandResponse.ok) throw new Error(`Could not check display status (${commandResponse.status})`)
+      const result = await commandResponse.json()
+      if (result.status === 'complete') {
+        status.value = 'Image is now showing on the display.'
+        return
+      }
+      if (result.status === 'failed') throw new Error(result.detail || 'The display could not show this image')
+    }
+    status.value = 'The display is still processing the image.'
+  } catch (requestError) {
+    error.value = `Could not show image on the display: ${requestError.message}`
+  } finally {
+    displayingSdCardFile.value = ''
   }
 }
 
@@ -1195,12 +1227,13 @@ onUnmounted(() => {
                 <div class="d-flex justify-end ga-1">
                   <v-tooltip text="Show on display">
                     <template #activator="{ props }">
-                      <v-btn v-bind="props" icon="mdi-play" size="small" color="primary" variant="text" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.name)}/display`)" />
+                      <v-btn v-if="displayingSdCardFile !== item.name" v-bind="props" icon="mdi-play" size="small" color="primary" variant="text" :disabled="Boolean(displayingSdCardFile)" @click="showSDCardFileOnDisplay(item.name)" />
+                      <v-progress-circular v-else v-bind="props" indeterminate color="primary" size="22" width="3" />
                     </template>
                   </v-tooltip>
                   <v-tooltip text="Delete from SD card">
                     <template #activator="{ props }">
-                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.name)}`, 'DELETE')" />
+                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" :disabled="Boolean(displayingSdCardFile)" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.name)}`, 'DELETE')" />
                     </template>
                   </v-tooltip>
                 </div>
