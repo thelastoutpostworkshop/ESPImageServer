@@ -4,6 +4,7 @@ import time
 
 from fastapi.testclient import TestClient
 from PIL import Image
+import pytest
 
 from esp_image_server.app import create_app
 from esp_image_server.app_settings import AppSettingsStore
@@ -12,6 +13,12 @@ from esp_image_server.display_settings import DisplaySettingsStore
 from esp_image_server.model_settings import ModelSelectionStore
 from esp_image_server.generation_jobs import GenerationCancelled
 from esp_image_server.image_library import ImageLibrary
+
+
+@pytest.fixture(autouse=True)
+def isolate_app_data(tmp_path, monkeypatch) -> None:
+    """Keep fake generated test images out of the user's real app data."""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
 
 
 class FakeGenerator:
