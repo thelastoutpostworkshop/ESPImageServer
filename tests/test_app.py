@@ -6,10 +6,12 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from esp_image_server.app import create_app
+from esp_image_server.app_settings import AppSettingsStore
 from esp_image_server.config import Settings
 from esp_image_server.display_settings import DisplaySettingsStore
 from esp_image_server.model_settings import ModelSelectionStore
 from esp_image_server.generation_jobs import GenerationCancelled
+from esp_image_server.image_library import ImageLibrary
 
 
 class FakeGenerator:
@@ -209,6 +211,43 @@ def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
     assert len(models.json()) == 4
     assert selected.status_code == 200
     assert store.get() == "segmind/SSD-1B"
+
+
+def test_upgrade_preserves_image_library_model_and_rotation(tmp_path, monkeypatch) -> None:
+    """Existing per-user settings must be used when a newer app starts."""
+    app_data = tmp_path / "ESPImageServer"
+    original_library = tmp_path / "old-images"
+    upgraded_library = tmp_path / "kept-images"
+    app_settings_store = AppSettingsStore(app_data / "app_settings.json")
+    model_store = ModelSelectionStore("stabilityai/sd-turbo", app_data / "settings.json")
+    rotation_store = DisplaySettingsStore(app_data / "display_settings.json")
+
+    old_app = create_app(
+        Settings(),
+        FakeGenerator(),
+        model_selection_store=model_store,
+        display_settings_store=rotation_store,
+        image_library=ImageLibrary(original_library, app_data / "image_library_index.json"),
+        app_settings_store=app_settings_store,
+        enable_mdns=False,
+    )
+    with TestClient(old_app) as client:
+        assert client.put("/app-settings", json={"image_library_location": str(upgraded_library)}).status_code == 200
+        assert client.post("/models/Lykon/dreamshaper-8/select").status_code == 200
+        assert client.put("/display-settings", json={"rotation": 270}).status_code == 200
+
+    monkeypatch.setattr(Settings, "from_env", staticmethod(lambda: Settings()))
+    upgraded_app = create_app(
+        generator=FakeGenerator(),
+        model_selection_store=model_store,
+        display_settings_store=rotation_store,
+        app_settings_store=app_settings_store,
+        enable_mdns=False,
+    )
+    with TestClient(upgraded_app) as client:
+        assert client.get("/app-settings").json()["image_library_location"] == str(upgraded_library)
+        assert client.get("/server-info").json()["model_id"] == "Lykon/dreamshaper-8"
+        assert client.get("/display-settings").json() == {"rotation": 270}
 
 
 def test_dreamshaper_uses_an_aspect_matched_sd_1_5_canvas() -> None:
