@@ -9,6 +9,12 @@ function createRandomSeed() {
 const generationSettingsKey = 'esp-image-server.generation-settings'
 const imageLibraryPaneSettingsKey = 'esp-image-server.image-library-pane-pinned'
 const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
+const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
+
+function loadImageLibraryWidth() {
+  const savedWidth = Number(window.localStorage.getItem(imageLibraryWidthSettingsKey))
+  return Number.isFinite(savedWidth) && savedWidth >= 300 && savedWidth <= 720 ? savedWidth : 380
+}
 
 function loadGenerationSettings() {
   try {
@@ -41,6 +47,7 @@ const previewFittedFor = ref(null)
 const metadataPane = ref(false)
 const metadataPanePinned = ref(window.localStorage.getItem(imageLibraryPaneSettingsKey) === 'true')
 const imageLibraryView = ref(window.localStorage.getItem(imageLibraryViewSettingsKey) === 'list' ? 'list' : 'thumbnails')
+const imageLibraryWidth = ref(loadImageLibraryWidth())
 const generatedMetadata = ref(null)
 const currentImageSavedToLibrary = ref(false)
 const savingToCreationLibrary = ref(false)
@@ -81,6 +88,8 @@ const page = ref('generate')
 let statusTimer
 let modelSwitchTimer
 let modelSwitchAbortController
+let imageLibraryResizeStartX = 0
+let imageLibraryResizeStartWidth = 0
 const { mobile } = useDisplay()
 const generationBusy = computed(() => modelSwitching.value || generating.value || health.value?.generating === true)
 const modelSwitchNeedsDownload = computed(() => modelSwitchTarget.value?.installed === false)
@@ -126,6 +135,10 @@ watch(metadataPanePinned, pinned => {
 
 watch(imageLibraryView, view => {
   window.localStorage.setItem(imageLibraryViewSettingsKey, view)
+})
+
+watch(imageLibraryWidth, width => {
+  window.localStorage.setItem(imageLibraryWidthSettingsKey, String(width))
 })
 
 const displayMessage = computed(() => {
@@ -431,6 +444,23 @@ function openSavedImageContextMenu(event, savedImage) {
 
 function toggleImageLibraryView() {
   imageLibraryView.value = imageLibraryView.value === 'thumbnails' ? 'list' : 'thumbnails'
+}
+
+function startImageLibraryResize(event) {
+  if (mobile.value) return
+  imageLibraryResizeStartX = event.clientX
+  imageLibraryResizeStartWidth = imageLibraryWidth.value
+  event.currentTarget.setPointerCapture(event.pointerId)
+}
+
+function resizeImageLibrary(event) {
+  if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+  const maximumWidth = Math.max(300, window.innerWidth - 320)
+  imageLibraryWidth.value = Math.min(maximumWidth, Math.max(300, imageLibraryResizeStartWidth + imageLibraryResizeStartX - event.clientX))
+}
+
+function stopImageLibraryResize(event) {
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
 }
 
 async function useSavedImageSettings(metadata, setting) {
@@ -792,7 +822,18 @@ onUnmounted(() => {
       </template>
     </v-navigation-drawer>
 
-    <v-navigation-drawer v-model="metadataPane" location="right" width="380" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
+    <v-navigation-drawer v-model="metadataPane" location="right" :width="imageLibraryWidth" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
+      <div
+        v-if="!mobile"
+        class="image-library-resize-handle"
+        role="separator"
+        aria-label="Resize Creation Library"
+        aria-orientation="vertical"
+        @pointerdown="startImageLibraryResize"
+        @pointermove="resizeImageLibrary"
+        @pointerup="stopImageLibraryResize"
+        @pointercancel="stopImageLibraryResize"
+      />
       <div class="d-flex align-center pa-4">
         <div>
           <div class="text-h6">Creation Library</div>
