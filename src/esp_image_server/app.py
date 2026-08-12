@@ -200,7 +200,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.94", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.95", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -673,6 +673,8 @@ def create_app(
             cancelled=is_cancelled,
         )
         ensure_not_cancelled()
+        if image.convert("RGB").getbbox() is None:
+            raise RuntimeError("The model returned a blank image. Please try generating again.")
         if progress is not None:
             if rotation:
                 progress(1, 1, "Rotating image for your ESP32 display")
@@ -712,6 +714,9 @@ def create_app(
     async def generate(request: GenerateRequest) -> Response:
         try:
             jpeg = await run_in_threadpool(generate_jpeg, request)
+        except RuntimeError as exc:
+            logger.exception("Image generation failed")
+            raise HTTPException(status_code=500, detail=str(exc)) from None
         except Exception:
             logger.exception("Image generation failed")
             raise HTTPException(status_code=500, detail="Image generation failed") from None

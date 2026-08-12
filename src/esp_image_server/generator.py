@@ -50,7 +50,16 @@ class DiffusersGenerator:
         options = {"torch_dtype": dtype}
         if model_cache_dir := os.getenv("ESP_IMAGE_MODEL_CACHE"):
             options["cache_dir"] = model_cache_dir
-        pipeline = AutoPipelineForText2Image.from_pretrained(self.settings.model_id, **options)
+        # Some model repositories bundle the legacy safety checker. Its false
+        # positives are returned as an all-black image, which is especially
+        # confusing on a small ESP32 display. The app validates output below
+        # instead of silently showing a blank image.
+        pipeline = AutoPipelineForText2Image.from_pretrained(
+            self.settings.model_id,
+            safety_checker=None,
+            requires_safety_checker=False,
+            **options,
+        )
         pipeline = pipeline.to(self._device)
         if self._device == "cpu":
             pipeline.enable_attention_slicing()

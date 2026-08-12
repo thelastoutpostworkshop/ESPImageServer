@@ -62,6 +62,11 @@ class CancellableFakeGenerator(FakeGenerator):
         return Image.new("RGB", (64, 64), "blue")
 
 
+class BlankFakeGenerator(FakeGenerator):
+    def generate(self, prompt: str, width=None, height=None, progress=None, inference_steps=None, seed=None, cancelled=None) -> Image.Image:
+        return Image.new("RGB", (64, 64), "black")
+
+
 def test_generate_returns_jpeg_binary() -> None:
     app = create_app(Settings(output_width=20, output_height=10), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
@@ -70,6 +75,15 @@ def test_generate_returns_jpeg_binary() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
     assert Image.open(BytesIO(response.content)).size == (20, 10)
+
+
+def test_generate_rejects_a_blank_model_result() -> None:
+    app = create_app(Settings(), BlankFakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        response = client.post("/generate", json={"prompt": "a tiny robot"})
+
+    assert response.status_code == 500
+    assert "blank image" in response.json()["detail"]
 
 
 def test_health_reports_that_no_generation_is_active() -> None:
@@ -203,7 +217,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
         response = client.get("/server-info")
 
     assert response.status_code == 200
-    assert response.json()["version"] == "0.1.94"
+    assert response.json()["version"] == "0.1.95"
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
 
