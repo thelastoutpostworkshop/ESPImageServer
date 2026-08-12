@@ -1179,28 +1179,28 @@ onUnmounted(() => {
               class="sd-card-table border rounded"
             >
               <template #item.thumbnail="{ item }">
-                <v-avatar v-if="item.raw.thumbnail_available" rounded="sm" size="56">
-                  <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(item.raw.name)}`" cover />
+                <v-avatar v-if="item.thumbnail_available" rounded="sm" size="56">
+                  <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(item.name)}`" cover />
                 </v-avatar>
                 <v-avatar v-else color="surface-variant" rounded="sm" size="56">
                   <v-icon>mdi-image-outline</v-icon>
                 </v-avatar>
               </template>
               <template #item.name="{ item }">
-                <div class="font-weight-medium">{{ item.raw.name }}</div>
+                <div class="font-weight-medium">{{ item.name }}</div>
                 <div class="text-caption text-medium-emphasis">Saved on your display SD card</div>
               </template>
-              <template #item.size="{ item }">{{ formatFileSize(item.raw.size) }}</template>
+              <template #item.size="{ item }">{{ formatFileSize(item.size) }}</template>
               <template #item.actions="{ item }">
                 <div class="d-flex justify-end ga-1">
                   <v-tooltip text="Show on display">
                     <template #activator="{ props }">
-                      <v-btn v-bind="props" icon="mdi-play" size="small" color="primary" variant="text" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.raw.name)}/display`)" />
+                      <v-btn v-bind="props" icon="mdi-play" size="small" color="primary" variant="text" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.name)}/display`)" />
                     </template>
                   </v-tooltip>
                   <v-tooltip text="Delete from SD card">
                     <template #activator="{ props }">
-                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.raw.name)}`, 'DELETE')" />
+                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.name)}`, 'DELETE')" />
                     </template>
                   </v-tooltip>
                 </div>

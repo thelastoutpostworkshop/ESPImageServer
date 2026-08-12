@@ -217,7 +217,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
         response = client.get("/server-info")
 
     assert response.status_code == 200
-    assert response.json()["version"] == "0.1.96"
+    assert response.json()["version"] == "0.1.97"
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
 
