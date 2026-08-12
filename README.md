@@ -1,132 +1,102 @@
 # ESPImageServer
 
-A small local Python server that turns a text prompt into a JPEG sized for an ESP32 display. The API returns raw JPEG bytes—no Base64 and no image storage.
+ESPImageServer creates AI images on your own computer and sends them to an ESP32 display on your local network. Describe the image you want, choose a model, and generate an image sized exactly for your connected display.
 
-The default model is [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai/sd-turbo), used via Hugging Face Diffusers. It downloads on its first start and is much faster on an NVIDIA CUDA GPU. CPU works for validating the workflow but may take several minutes per image.
+Your prompts, generated images, and model files stay on your computer. The ESP32 only downloads the finished JPEG from your local network.
 
-## Requirements
+## What you need
 
-- Windows 11, macOS, or Linux
-- Python 3.10+
-- About 8 GB RAM; an NVIDIA GPU with sufficient VRAM is strongly recommended
+- A Windows computer.
+- An ESP32 display running compatible ESPImageServer firmware and connected to the same Wi-Fi network.
+- Enough free disk space for AI models. The first use of a model downloads its files.
 
-## Maker installer (Windows)
+ESPImageServer works best with an NVIDIA graphics card. It can run on the computer processor instead, but image generation may take several minutes per image.
 
-For a maker-facing installation, build and distribute `ESPImageServer-Setup.exe`. It opens a Windows wizard that lets the user select CPU or NVIDIA CUDA acceleration and choose a model. The installer downloads the selected model before it finishes, so the server is ready to use immediately. Models are stored in the user's local application data folder, separate from the program files, so installer upgrades preserve them.
+## Install
 
-To build it as a project developer, install [Inno Setup](https://jrsoftware.org/isinfo.php), then run:
+1. Download the latest `ESPImageServer-Setup-<version>.exe` installer.
+2. Run the installer and follow the setup steps.
+3. Choose CPU mode or NVIDIA graphics card acceleration when prompted.
+4. Choose an initial image model. Its files download during setup or the first time you select it.
+5. Open **ESPImageServer** from the Start Menu or desktop shortcut.
 
-```powershell
-iscc installer\ESPImageServer.iss
-```
+The desktop app starts the local server automatically. You can also open the app in a browser at `http://127.0.0.1:8000` while it is running.
 
-The installer is created at `dist\ESPImageServer-Setup.exe`.
+## Connect your display
 
-## Developer quick install (Windows)
+Start your ESP32 display on the same Wi-Fi network as the computer. The board registers its name and screen size automatically. Once connected, ESPImageServer shows the display name and resolution near the top of the app.
 
-Double-click `install.bat` in the project folder. If Python is absent, it installs Python 3.12 for the current Windows user with Windows Package Manager (`winget`), then creates an ignored `.venv` folder, installs the CPU PyTorch build, and installs ESPImageServer.
+Generated images are automatically sized for the physical display. No manual image-size setup is needed.
 
-After it completes, start the server with:
+If the display does not connect, confirm that:
 
-```powershell
-.venv\Scripts\python.exe -m esp_image_server
-```
+- The computer and ESP32 are on the same local network.
+- ESPImageServer is open and Windows Firewall allows it on private networks.
+- The ESP32 firmware uses the correct server address, normally `http://espimageserver.local:8000`.
 
-The CPU build makes the install work everywhere, but it is not practical for regular image generation. If the computer has an NVIDIA GPU, replace it with the CUDA build selected at [pytorch.org](https://pytorch.org/get-started/locally/) before starting the server.
+## Create an image
 
-Install a PyTorch build appropriate to the machine first. For NVIDIA CUDA, use the selector at [pytorch.org](https://pytorch.org/get-started/locally/). For a CPU-only proof of concept, this is sufficient:
+1. Open **Generate image**.
+2. Choose an image model and, if needed, an image rotation.
+3. Describe the scene in the prompt box.
+4. Optionally adjust **Generation steps** or use a seed to repeat a variation.
+5. Select **Generate**.
 
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install --upgrade pip
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[dev]"
-```
+The new image is sent to the connected ESP32 when generation finishes. It is also saved to the Creation Library by default.
 
-## Web interface development
+### Prompts, seeds, and steps
 
-The browser app is a Vue 3 + Vite project in `frontend`. Install its developer dependencies and run it with:
+- **Prompt**: what you want to see. Be specific about subject, style, lighting, and mood.
+- **Seed**: a number that helps reproduce a result. Use the same prompt, model, settings, and seed for the closest repeat; create a random seed for a new variation.
+- **Steps**: how long the model spends refining the image. More steps can add detail but take longer.
+- **Rotation**: changes the image orientation for the physical display. It is applied by ESPImageServer, so the board receives an image in its native dimensions.
 
-```powershell
-npm --prefix frontend install
-npm --prefix frontend run dev
-```
+## Choose a model
 
-Keep FastAPI running on port 8000; Vite proxies its API requests there. Before building the Windows installer, create the production frontend bundle with `npm --prefix frontend run build`. The installer includes this bundle, so makers do not need Node.js or npm.
+Open **Models** to choose the look and quality level you want.
 
-## Windows desktop app
-
-The maker installer includes an Electron desktop window. It starts the local Python image server without a terminal window, provides native Windows folder selection, and keeps the FastAPI server available to ESP32 devices on the local network. The browser interface at `http://127.0.0.1:8000/` remains available for troubleshooting.
-
-To build the desktop bundle during development:
-
-```powershell
-npm --prefix desktop install
-npm --prefix desktop run build
-```
-
-## Run
-
-```powershell
-python -m esp_image_server
-```
-
-Startup logs show the listening address and selected device. The first run downloads the model; later starts use the local Hugging Face cache. Open `http://localhost:8000/docs` for the interactive API documentation.
-
-Open `http://127.0.0.1:8000/` for the browser test page. `0.0.0.0` in Uvicorn's startup message is a network bind address, not a browser URL. The server also advertises itself on the local network as `espimageserver.local`, so ESP32 devices can use that stable name instead of a changing LAN IP address.
-
-On Windows, ESPImageServer advertises the active physical LAN address rather than WSL or Hyper-V virtual-network addresses.
-
-The Start Menu and desktop launchers open this test page automatically after the server is ready. To do the same from another launcher, set `ESP_IMAGE_OPEN_BROWSER=1` before starting the server.
-
-## Changing the image model
-
-Open the **Models** item in the web app to select an available model. The app shows whether it is already on the computer. Choosing a new model downloads it if needed, loads it, and remembers the selection for the next server start. The current release includes SD-Turbo (fast, recommended), DreamShaper 8 (creative and artistic, NVIDIA recommended), Segmind SSD-1B (higher quality, NVIDIA recommended), and SDXL Base 1.0 (best detail, powerful NVIDIA GPU required).
-
-## Generate an image
-
-```powershell
-$body = @{ prompt = 'A small robot exploring Mars, bright friendly illustration' } | ConvertTo-Json
-Invoke-WebRequest -Uri http://localhost:8000/generate -Method POST -ContentType 'application/json' -Body $body -OutFile robot.jpg
-```
-
-The response is `Content-Type: image/jpeg` and can be written directly by an ESP32 HTTP client to a decoder or file. `GET /health` reports whether the model is ready and the selected device.
-
-## Show images on an ESP32 display
-
-Each generated image automatically becomes the current display image. An ESP32 on the same local network polls:
-
-```text
-http://espimageserver.local:8000/latest.jpg
-```
-
-The endpoint returns `204` until an image has been generated. It supplies an `ETag` with each JPEG; the ESP32 sends that value back as `If-None-Match` and receives `304` when nothing has changed. This keeps setup to Wi-Fi credentials only and avoids repeatedly downloading the same image.
-
-The single ESP32 board announces its name and integrated screen dimensions to `POST /display`. The browser test page then uses that resolution automatically; for example, the JC4827W543 board reports `480x272`.
-
-ESPImageServer generates on an aspect-matched canvas that is appropriate for the selected model, then precisely crops and resizes the JPEG for the reported screen. For a `480x272` display this is `512x288` with SD-Turbo and `1024x584` with SSD-1B. The browser does not offer manual image-size controls: the connected board is the source of truth.
-
-## Configuration
-
-Set these environment variables before starting the server:
-
-| Variable | Default | Meaning |
+| Model | Best for | Computer guidance |
 | --- | --- | --- |
-| `ESP_IMAGE_MODEL` | `stabilityai/sd-turbo` | Any compatible local Diffusers text-to-image model |
-| `ESP_IMAGE_MODEL_CACHE` | Hugging Face default | Model-cache directory; the Windows installer sets this to the app's `models` folder |
-| `ESP_IMAGE_HOST` | `0.0.0.0` | Bind address; use `0.0.0.0` for LAN ESP32 access |
-| `ESP_IMAGE_PORT` | `8000` | HTTP port |
-| `ESP_IMAGE_OUTPUT_WIDTH` | `466` | Returned JPEG width |
-| `ESP_IMAGE_OUTPUT_HEIGHT` | `466` | Returned JPEG height |
-| `ESP_IMAGE_JPEG_QUALITY` | `85` | JPEG quality, 1–100 |
-| `ESP_IMAGE_GENERATION_WIDTH` | `512` | Model generation width, divisible by 8 |
-| `ESP_IMAGE_GENERATION_HEIGHT` | `512` | Model generation height, divisible by 8 |
+| SD-Turbo | Fast experiments and everyday display images | Works on CPU or NVIDIA graphics cards |
+| DreamShaper 8 | Creative, illustrated, and fantasy artwork | NVIDIA graphics card recommended |
+| Segmind SSD-1B | More detailed, higher-quality images | NVIDIA graphics card recommended |
+| SDXL Base 1.0 | The richest detail and prompt understanding | Powerful NVIDIA graphics card required |
 
-The server center-crops and resizes the generated image to the output dimensions. Model integration lives in `generator.py`, separate from the FastAPI routes, so a future model only needs to implement `load()` and `generate(prompt)`.
+When you choose a model for the first time, ESPImageServer says it is **Downloading and loading** it. Later, it says **Loading** because the model is already on your computer and only needs to be prepared for image generation.
 
-## Test
+Your selected model is remembered after you close the app. Installer upgrades keep downloaded models too.
 
-```powershell
-pytest
-```
+## Use the Creation Library
+
+The Creation Library keeps your generated images and their settings together.
+
+- Open **Creation Library** from the app bar.
+- Select an image to review its prompt, model, steps, seed, and rotation.
+- Right-click a thumbnail to reuse just its prompt, seed, steps, model, or rotation in the generator.
+- Choose **Use all** to restore all of that image's generation settings.
+
+In **Settings**, you can choose where the image library is stored, open that folder, and turn automatic saving on or off. Your library location and settings survive app upgrades.
+
+## Troubleshooting
+
+### Generation is slow
+
+CPU generation is expected to be slow, especially with larger models. Try SD-Turbo, use fewer steps, or use a computer with a compatible NVIDIA graphics card.
+
+### A model appears to be stuck loading
+
+The first download can take time, depending on the model size and internet connection. Keep the app open until it finishes. If a previously downloaded model is loading, it may take a moment to move the model into memory.
+
+### The display orientation is wrong
+
+Change **Image rotation** in the Generate page, then create a new image. Rotation applies to newly generated images.
+
+### I cannot find my images
+
+Open **Settings** and select **Open image library folder**. You can also use **Choose image library** to move future images to an empty folder.
+
+## Privacy and network use
+
+Image generation runs locally. Model downloads require internet access the first time a model is installed. After that, normal image generation and ESP32 image delivery use your computer and local network.
+
+For developer setup, testing, and release instructions, see [CONTRIBUTING.md](CONTRIBUTING.md).
