@@ -40,7 +40,7 @@ class FakeGenerator:
     def unload(self) -> None:
         self.ready = False
 
-    def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None, cancelled=None) -> Image.Image:
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None, cancelled=None, negative_prompt=None) -> Image.Image:
         assert prompt == "a tiny robot"
         self.last_size = (width, height)
         self.last_steps, self.last_seed = inference_steps, seed
@@ -54,7 +54,7 @@ class CancellableFakeGenerator(FakeGenerator):
         super().__init__()
         self.started = Event()
 
-    def generate(self, prompt: str, width=None, height=None, progress=None, inference_steps=None, seed=None, cancelled=None) -> Image.Image:
+    def generate(self, prompt: str, width=None, height=None, progress=None, inference_steps=None, seed=None, cancelled=None, negative_prompt=None) -> Image.Image:
         self.started.set()
         for step in range(100):
             if cancelled is not None and cancelled():
@@ -66,7 +66,7 @@ class CancellableFakeGenerator(FakeGenerator):
 
 
 class BlankFakeGenerator(FakeGenerator):
-    def generate(self, prompt: str, width=None, height=None, progress=None, inference_steps=None, seed=None, cancelled=None) -> Image.Image:
+    def generate(self, prompt: str, width=None, height=None, progress=None, inference_steps=None, seed=None, cancelled=None, negative_prompt=None) -> Image.Image:
         return Image.new("RGB", (64, 64), "black")
 
 
@@ -220,7 +220,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
         response = client.get("/server-info")
 
     assert response.status_code == 200
-    assert response.json()["version"] == "1.0.5"
+    assert response.json()["version"] == "1.0.6"
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
 

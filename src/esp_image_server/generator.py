@@ -106,6 +106,7 @@ class DiffusersGenerator:
         self, prompt: str, width: int | None = None, height: int | None = None,
         progress: Callable[[int, int], None] | None = None, inference_steps: int | None = None,
         seed: int | None = None, cancelled: Callable[[], bool] | None = None,
+        negative_prompt: str | None = None,
     ) -> Image.Image:
         if self._pipeline is None:
             raise RuntimeError("Image model is not ready")
@@ -135,6 +136,8 @@ class DiffusersGenerator:
                 "height": height,
                 "callback_on_step_end": on_step_end if progress is not None or cancelled is not None else None,
             }
+            if negative_prompt:
+                options["negative_prompt"] = negative_prompt
             if seed is not None:
                 import torch
                 options["generator"] = torch.Generator(device=self._device).manual_seed(seed)

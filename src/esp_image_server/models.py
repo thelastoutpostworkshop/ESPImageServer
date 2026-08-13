@@ -23,13 +23,14 @@ class ModelDefinition:
     guidance_scale: float
     generation_width: int
     generation_height: int
+    supports_negative_prompt: bool
 
 
 MODELS: tuple[ModelDefinition, ...] = (
-    ModelDefinition("stabilityai/sd-turbo", "SD-Turbo", "Fast local AI image model, designed for quick results.", "Recommended for most ESP32 displays and CPU compatibility mode.", "CPU or NVIDIA GPU", "Fast", 1, 4, 1, 0.0, 512, 512),
-    ModelDefinition("Lykon/dreamshaper-8", "DreamShaper 8", "Creative, polished artwork for illustrations, fantasy scenes, and stylized displays.", "NVIDIA graphics card recommended. It is slower than SD-Turbo but creates more artistic images.", "NVIDIA GPU recommended", "Creative and detailed", 10, 40, 25, 7.0, 512, 512),
-    ModelDefinition("segmind/SSD-1B", "Segmind SSD-1B", "Higher-quality local AI image model with more detailed results.", "Best with an NVIDIA graphics card; generation takes longer.", "NVIDIA GPU recommended", "Higher quality", 10, 40, 20, 9.0, 1024, 1024),
-    ModelDefinition("stabilityai/stable-diffusion-xl-base-1.0", "SDXL Base 1.0", "Premium image detail, richer compositions, and stronger prompt understanding.", "Requires a powerful NVIDIA graphics card with ample video memory. This is the largest and slowest option.", "Powerful NVIDIA GPU required", "Best detail", 10, 40, 30, 7.0, 1024, 1024),
+    ModelDefinition("stabilityai/sd-turbo", "SD-Turbo", "Fast local AI image model, designed for quick results.", "Recommended for most ESP32 displays and CPU compatibility mode.", "CPU or NVIDIA GPU", "Fast", 1, 4, 1, 0.0, 512, 512, False),
+    ModelDefinition("Lykon/dreamshaper-8", "DreamShaper 8", "Creative, polished artwork for illustrations, fantasy scenes, and stylized displays.", "NVIDIA graphics card recommended. It is slower than SD-Turbo but creates more artistic images.", "NVIDIA GPU recommended", "Creative and detailed", 10, 40, 25, 7.0, 512, 512, True),
+    ModelDefinition("segmind/SSD-1B", "Segmind SSD-1B", "Higher-quality local AI image model with more detailed results.", "Best with an NVIDIA graphics card; generation takes longer.", "NVIDIA GPU recommended", "Higher quality", 10, 40, 20, 9.0, 1024, 1024, True),
+    ModelDefinition("stabilityai/stable-diffusion-xl-base-1.0", "SDXL Base 1.0", "Premium image detail, richer compositions, and stronger prompt understanding.", "Requires a powerful NVIDIA graphics card with ample video memory. This is the largest and slowest option.", "Powerful NVIDIA GPU required", "Best detail", 10, 40, 30, 7.0, 1024, 1024, True),
 )
 
 

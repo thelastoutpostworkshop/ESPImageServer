@@ -87,7 +87,7 @@ class ImageGenerator(Protocol):
 
     def unload(self) -> None: ...
 
-    def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None) -> Image.Image: ...
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None, negative_prompt=None) -> Image.Image: ...
 
 
 class GenerateRequest(BaseModel):
@@ -95,6 +95,7 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=1_000, description="Text to turn into an image")
     steps: int | None = Field(default=None, ge=1, le=100, description="Model inference steps")
     seed: int | None = Field(default=None, ge=0, le=4_294_967_295, description="Optional repeatable random seed")
+    negative_prompt: str | None = Field(default=None, max_length=1_000)
 
 
 class DisplayAnnouncement(BaseModel):
@@ -303,6 +304,7 @@ def create_app(
                 "default_steps": model.inference_steps,
                 "minimum_steps": model.minimum_steps,
                 "maximum_steps": model.maximum_steps,
+                "supports_negative_prompt": model.supports_negative_prompt,
                 "active": model.model_id == active_model_id,
                 "installed": model_is_cached(model, active_settings.model_cache_dir),
             }
@@ -699,6 +701,8 @@ def create_app(
         )
         generation_width, generation_height = optimal_generation_size(active_model_id, artwork_width, artwork_height)
         model = get_model(active_model_id)
+        if request.negative_prompt and not model.supports_negative_prompt:
+            raise ValueError(f"{model.name} does not support negative prompts")
         steps = request.steps if request.steps is not None else model.inference_steps
         if not model.minimum_steps <= steps <= model.maximum_steps:
             raise ValueError(f"{model.name} supports {model.minimum_steps} to {model.maximum_steps} steps")
@@ -711,6 +715,7 @@ def create_app(
             inference_steps=steps,
             seed=request.seed,
             cancelled=is_cancelled,
+            negative_prompt=request.negative_prompt,
         )
         ensure_not_cancelled()
         if image.convert("RGB").getbbox() is None:
@@ -735,6 +740,7 @@ def create_app(
             "createdAt": datetime.now(UTC).isoformat(),
             "model": {"id": active_model_id, "name": model.name},
             "prompt": request.prompt,
+            "negative_prompt": request.negative_prompt,
             "steps": steps,
             "seed": request.seed,
             "rotation": rotation,

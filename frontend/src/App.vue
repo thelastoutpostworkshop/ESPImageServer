@@ -31,10 +31,11 @@ function loadGenerationSettings() {
       prompt: typeof saved.prompt === 'string' ? saved.prompt : 'A cheerful small robot holding a paintbrush, friendly illustration',
       steps: Number.isInteger(saved.steps) ? saved.steps : 1,
       seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed(),
+      negativePrompt: typeof saved.negativePrompt === 'string' ? saved.negativePrompt : '',
       modelId: typeof saved.modelId === 'string' ? saved.modelId : ''
     }
   } catch {
-    return { prompt: 'A cheerful small robot holding a paintbrush, friendly illustration', steps: 1, seed: createRandomSeed(), modelId: '' }
+    return { prompt: 'A cheerful small robot holding a paintbrush, friendly illustration', steps: 1, seed: createRandomSeed(), negativePrompt: '', modelId: '' }
   }
 }
 
@@ -57,6 +58,7 @@ function loadVideoGenerationSettings() {
 const savedGenerationSettings = loadGenerationSettings()
 const savedVideoGenerationSettings = loadVideoGenerationSettings()
 const prompt = ref(savedGenerationSettings.prompt)
+const negativePrompt = ref(savedGenerationSettings.negativePrompt)
 const serverInfo = ref(null)
 const health = ref(null)
 const display = ref(null)
@@ -172,7 +174,7 @@ const savedImageGroups = computed(() => {
   return [...groups].map(([modelName, images]) => ({ modelName, images }))
 })
 
-watch([prompt, steps, seed, activeModelId], () => {
+watch([prompt, negativePrompt, steps, seed, activeModelId], () => {
   window.localStorage.setItem(generationSettingsKey, JSON.stringify({
     prompt: prompt.value,
     steps: Number(steps.value),
@@ -573,6 +575,7 @@ function buildGenerationMetadata() {
     prompt: prompt.value,
     steps: Number(steps.value),
     seed: seed.value === '' ? null : Number(seed.value),
+    negativePrompt: negativePrompt.value,
     rotation: displayRotation.value,
     display: display.value?.connected
       ? { name: display.value.name, width: display.value.width, height: display.value.height }
@@ -817,6 +820,7 @@ async function generate() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt: prompt.value,
+        negative_prompt: negativePrompt.value || null,
         steps: Number(steps.value),
         seed: seed.value === '' ? null : Number(seed.value)
       })
@@ -1221,6 +1225,19 @@ onUnmounted(() => {
                 rows="4"
                 auto-grow
                 max-rows="12"
+              />
+              <v-textarea
+                v-if="models.find(model => model.id === activeModelId)?.supports_negative_prompt"
+                v-model="negativePrompt"
+                label="What should the image avoid? (optional)"
+                hint="For example: blurry, distorted, extra fingers, text"
+                persistent-hint
+                maxlength="1000"
+                counter="1000"
+                variant="outlined"
+                rows="2"
+                auto-grow
+                class="mb-2"
               />
               <v-alert type="info" variant="tonal" density="compact" class="mb-4">
                 <strong>Steps</strong> trade speed for detail: more steps take longer. <strong>Seed</strong> lets you repeat a result. Use Create random seed for a fresh image variation.
