@@ -37,6 +37,8 @@ from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser
 from .models import MODELS, get_model, model_is_cached, model_settings
 from .model_settings import ModelSelectionStore
+from .video_generator import LTXVideoGenerator
+from .video_jobs import VideoJobStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -132,6 +134,16 @@ class DisplaySDCardReport(BaseModel):
     files: list[dict[str, object]] = Field(default_factory=list)
 
 
+class VideoGenerateRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=1_000)
+    width: int = Field(default=512, ge=256, le=768, multiple_of=32)
+    height: int = Field(default=320, ge=256, le=768, multiple_of=32)
+    num_frames: int = Field(default=25, ge=9, le=81)
+    fps: int = Field(default=8, ge=4, le=24)
+    steps: int = Field(default=8, ge=4, le=8)
+    seed: int | None = Field(default=None, ge=0, le=4_294_967_295)
+
+
 def create_app(
     settings: Settings | None = None,
     generator: ImageGenerator | None = None,
@@ -144,6 +156,8 @@ def create_app(
     app_settings_store: AppSettingsStore | None = None,
     generation_jobs: GenerationJobStore | None = None,
     display_command_store: DisplayCommandStore | None = None,
+    video_generator: LTXVideoGenerator | None = None,
+    video_jobs: VideoJobStore | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
     supplied_settings = settings is not None
@@ -162,6 +176,9 @@ def create_app(
     display_settings_store = display_settings_store or DisplaySettingsStore()
     generation_jobs = generation_jobs or GenerationJobStore()
     display_command_store = display_command_store or DisplayCommandStore()
+    video_generator = video_generator or LTXVideoGenerator()
+    video_jobs = video_jobs or VideoJobStore()
+    video_output_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "videos"
     sd_thumbnail_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
     persisted_app_settings = app_settings_store.get()
@@ -200,8 +217,9 @@ def create_app(
             if mdns is not None:
                 mdns.close()
             generation_jobs.close()
+            video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.104", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.109", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -210,6 +228,7 @@ def create_app(
     app.state.generation_jobs = generation_jobs
     app.state.display_command_store = display_command_store
     app.state.image_library = image_library
+    app.state.video_jobs = video_jobs
     app.state.app_settings_store = app_settings_store
     app.mount(
         "/assets",
@@ -757,6 +776,53 @@ def create_app(
         if job.status != "complete" or job.jpeg is None:
             raise HTTPException(status_code=409, detail="Image is not ready")
         return Response(content=job.jpeg, media_type="image/jpeg")
+
+    @app.get("/video-generation-info")
+    def video_generation_info() -> dict[str, object]:
+        return {
+            "model_name": "LTX-Video 2B distilled",
+            "model_id": video_generator.model_id,
+            "ready": video_generator.ready,
+            "requires_cuda": True,
+            "device": generator.device,
+        }
+
+    @app.post("/video-generation-jobs", status_code=status.HTTP_202_ACCEPTED)
+    def create_video_generation_job(request: VideoGenerateRequest) -> dict[str, object]:
+        if generator.device != "cuda":
+            raise HTTPException(status_code=409, detail="LTX-Video requires a compatible NVIDIA GPU; this server is running image generation on CPU.")
+        if (request.num_frames - 1) % 8:
+            raise HTTPException(status_code=422, detail="Video frame count must be 1 plus a multiple of 8 (for example 17, 25, or 33).")
+        filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
+        output_path = video_output_path / filename
+        job = video_jobs.create(lambda progress, cancelled: video_generator.generate(
+            request.prompt, request.width, request.height, request.num_frames, request.fps,
+            request.steps, request.seed, output_path, progress, cancelled,
+        ))
+        return job.as_dict()
+
+    @app.get("/video-generation-jobs/{job_id}")
+    def video_generation_job(job_id: str) -> dict[str, object]:
+        job = video_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Video generation job not found")
+        return job.as_dict()
+
+    @app.delete("/video-generation-jobs/{job_id}")
+    def cancel_video_generation_job(job_id: str) -> dict[str, object]:
+        job = video_jobs.cancel(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Video generation job not found")
+        return job.as_dict()
+
+    @app.get("/video-generation-jobs/{job_id}/video")
+    def video_generation_job_video(job_id: str) -> FileResponse:
+        job = video_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Video generation job not found")
+        if job.status != "complete" or job.video_path is None or not job.video_path.is_file():
+            raise HTTPException(status_code=409, detail="Video is not ready")
+        return FileResponse(job.video_path, media_type="video/mp4", filename=job.video_path.name)
 
     return app
 

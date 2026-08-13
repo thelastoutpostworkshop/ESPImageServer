@@ -48,6 +48,18 @@ const models = ref([])
 const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
+const videoUrl = ref('')
+const videoPrompt = ref('Gentle cinematic camera movement, subtle natural motion')
+const videoSeed = ref(createRandomSeed())
+const videoFrames = ref(25)
+const videoFps = ref(8)
+const videoSteps = ref(8)
+const generatingVideo = ref(false)
+const cancellingVideo = ref(false)
+const activeVideoJobId = ref('')
+const videoProgress = ref(0)
+const videoStage = ref('')
+const videoError = ref('')
 const previewUrl = ref('')
 const previewFittedFor = ref(null)
 const metadataPane = ref(false)
@@ -828,6 +840,73 @@ async function cancelGeneration() {
   }
 }
 
+async function generateVideo() {
+  if (generatingVideo.value) return
+  generatingVideo.value = true
+  videoError.value = ''
+  videoProgress.value = 0
+  videoStage.value = 'Starting video generation...'
+  try {
+    const response = await fetch('/video-generation-jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: videoPrompt.value,
+        width: 512,
+        height: 320,
+        num_frames: Number(videoFrames.value),
+        fps: Number(videoFps.value),
+        steps: Number(videoSteps.value),
+        seed: videoSeed.value === '' ? null : Number(videoSeed.value)
+      })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const job = await response.json()
+    activeVideoJobId.value = job.id
+    let currentJob = job
+    while (!['complete', 'failed', 'cancelled'].includes(currentJob.status)) {
+      await new Promise(resolve => window.setTimeout(resolve, 500))
+      const statusResponse = await fetch(`/video-generation-jobs/${job.id}`)
+      if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
+      currentJob = await statusResponse.json()
+      videoProgress.value = currentJob.progress
+      videoStage.value = currentJob.steps ? `${currentJob.stage} — Step ${currentJob.step} of ${currentJob.steps}` : currentJob.stage
+    }
+    if (currentJob.status === 'cancelled') {
+      videoStage.value = 'Video generation cancelled.'
+      return
+    }
+    if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Video generation failed')
+    const videoResponse = await fetch(`/video-generation-jobs/${job.id}/video`)
+    if (!videoResponse.ok) throw new Error(`Request failed (${videoResponse.status})`)
+    if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
+    videoUrl.value = URL.createObjectURL(await videoResponse.blob())
+    videoStage.value = 'Video ready. It is saved locally and can be downloaded below.'
+  } catch (requestError) {
+    videoError.value = `Could not generate the video: ${requestError.message}`
+    videoStage.value = ''
+  } finally {
+    generatingVideo.value = false
+    cancellingVideo.value = false
+    activeVideoJobId.value = ''
+  }
+}
+
+async function cancelVideoGeneration() {
+  if (cancellingVideo.value || !activeVideoJobId.value) return
+  cancellingVideo.value = true
+  try {
+    const response = await fetch(`/video-generation-jobs/${activeVideoJobId.value}`, { method: 'DELETE' })
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+  } catch (requestError) {
+    cancellingVideo.value = false
+    videoError.value = `Could not cancel video generation: ${requestError.message}`
+  }
+}
+
 onMounted(async () => {
   await loadServerStatus()
   await loadDisplay()
@@ -849,6 +928,7 @@ onUnmounted(() => {
   modelSwitchAbortController?.abort()
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
 })
 </script>
 
@@ -896,6 +976,7 @@ onUnmounted(() => {
             <v-avatar :image="logoImageUrl" size="26" />
           </template>
         </v-list-item>
+        <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="page = 'video'" />
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
         <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="page = 'settings'" />
@@ -1153,6 +1234,37 @@ onUnmounted(() => {
         </v-col>
         </v-row>
         </template>
+
+        <v-card v-else-if="page === 'video'" class="mx-auto" max-width="980">
+          <v-card-title class="text-h5 pt-5">Generate video <v-chip class="ml-2" size="small" color="warning" variant="tonal">Experimental</v-chip></v-card-title>
+          <v-card-text>
+            <v-alert type="warning" variant="tonal" density="compact" class="mb-4" icon="mdi-expansion-card-variant">
+              LTX-Video 2B distilled requires a compatible NVIDIA GPU. The first video downloads the model and can take several minutes.
+            </v-alert>
+            <v-alert :type="health?.device === 'cuda' ? 'success' : 'info'" variant="tonal" density="compact" class="mb-4">
+              <strong>Processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
+            </v-alert>
+            <v-form @submit.prevent="generateVideo">
+              <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow />
+              <v-row dense class="mt-1">
+                <v-col cols="12" sm="6" lg="3"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="[{ title: '17 frames · about 2 seconds', value: 17 }, { title: '25 frames · about 3 seconds', value: 25 }, { title: '33 frames · about 4 seconds', value: 33 }]" /></v-col>
+                <v-col cols="12" sm="6" lg="3"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
+                <v-col cols="12" sm="6" lg="3"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" hint="8 is recommended for the distilled model." persistent-hint :items="[4, 5, 6, 7, 8]" /></v-col>
+                <v-col cols="12" sm="6" lg="3"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
+              </v-row>
+              <v-btn type="submit" color="primary" :disabled="generatingVideo || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
+              <v-btn v-if="generatingVideo" class="ml-2" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
+            </v-form>
+            <div v-if="generatingVideo" class="mt-5">
+              <div class="d-flex justify-space-between text-body-2 mb-2"><span>{{ videoStage }}</span><span>{{ videoProgress }}%</span></div>
+              <v-progress-linear :model-value="videoProgress" :indeterminate="!activeVideoJobId" color="primary" height="10" rounded />
+            </div>
+            <v-alert v-else-if="videoStage" type="success" variant="tonal" density="compact" class="mt-4">{{ videoStage }}</v-alert>
+            <v-alert v-if="videoError" type="error" variant="tonal" density="compact" class="mt-4">{{ videoError }}</v-alert>
+            <video v-if="videoUrl" :src="videoUrl" controls loop class="mt-6 w-100 rounded border" />
+          </v-card-text>
+          <v-card-actions v-if="videoUrl"><v-btn :href="videoUrl" download="esp-image-video.mp4" color="secondary" prepend-icon="mdi-download">Download MP4</v-btn></v-card-actions>
+        </v-card>
 
         <v-card v-else-if="page === 'models'">
           <v-card-title class="text-h5 pt-5">Image models</v-card-title>
