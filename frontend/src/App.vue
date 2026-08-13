@@ -276,7 +276,7 @@ async function prepareSelectedModel() {
   modelSwitchAbortController = abortController
   generationStage.value = model.installed
     ? `Loading ${model.name}...`
-    : `Downloading ${model.name}...`
+    : `Downloading ${model.name}. This first download can take several minutes...`
   try {
     const response = await fetch(`/models/${encodeURIComponent(model.id)}/select`, {
       method: 'POST',
@@ -872,7 +872,7 @@ async function generateVideo() {
   generatingVideo.value = true
   videoError.value = ''
   videoProgress.value = 0
-  videoStage.value = 'Starting video generation...'
+  videoStage.value = 'Starting video generation. LTX-Video will download first if it is not already on this computer...'
   try {
     const response = await fetch('/video-generation-jobs', {
       method: 'POST',

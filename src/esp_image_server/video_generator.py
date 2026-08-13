@@ -27,7 +27,7 @@ class LTXVideoGenerator:
     def ready(self) -> bool:
         return self._pipeline is not None
 
-    def _load(self) -> None:
+    def _load(self, progress: Callable[[int, int, str], None] | None = None) -> None:
         if self._pipeline is not None:
             return
         try:
@@ -44,6 +44,8 @@ class LTXVideoGenerator:
         # Download with Hugging Face's cache API first. Passing its web URL to
         # from_single_file makes recent Diffusers versions mistake ``resolve``
         # for part of the filename.
+        if progress is not None:
+            progress(0, 0, "Checking or downloading LTX-Video (first download may take several minutes)")
         checkpoint_path = hf_hub_download(
             repo_id=self.checkpoint_repository,
             filename=self.checkpoint_filename,
@@ -52,6 +54,8 @@ class LTXVideoGenerator:
         # This original-format checkpoint contains the actual 2B distilled
         # model. Diffusers recognises its format and uses the 0.9.5 component
         # configuration.
+        if progress is not None:
+            progress(0, 0, "Loading LTX-Video into your NVIDIA graphics card")
         pipeline = LTXPipeline.from_single_file(
             checkpoint_path,
             config=self.config_id,
@@ -69,7 +73,7 @@ class LTXVideoGenerator:
         cancelled: Callable[[], bool],
     ) -> Path:
         with self._lock:
-            self._load()
+            self._load(progress)
             import torch
             from diffusers.utils import export_to_video
             if cancelled():
