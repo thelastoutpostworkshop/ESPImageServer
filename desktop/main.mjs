@@ -143,7 +143,9 @@ async function createWindow() {
   mainWindow.on('maximize', scheduleWindowStateSave)
   mainWindow.on('unmaximize', scheduleWindowStateSave)
   mainWindow.on('close', saveWindowState)
-  await mainWindow.loadFile(path.join(desktopDirectory, 'splash.html'))
+  await mainWindow.loadFile(path.join(desktopDirectory, 'splash.html'), {
+    query: { version: app.getVersion() }
+  })
   sendToWindow('server-log', serverLogLines)
   mainWindow.show()
   if (windowState.isMaximized) mainWindow.maximize()

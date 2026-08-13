@@ -7,6 +7,7 @@ function createRandomSeed() {
 }
 
 const generationSettingsKey = 'esp-image-server.generation-settings'
+const videoGenerationSettingsKey = 'esp-image-server.video-generation-settings'
 const imageLibraryPaneSettingsKey = 'esp-image-server.image-library-pane-pinned'
 const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
@@ -36,7 +37,23 @@ function loadGenerationSettings() {
   }
 }
 
+function loadVideoGenerationSettings() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(videoGenerationSettingsKey) || '{}')
+    return {
+      prompt: typeof saved.prompt === 'string' ? saved.prompt : 'Gentle cinematic camera movement, subtle natural motion',
+      frames: [17, 25, 33].includes(saved.frames) ? saved.frames : 25,
+      fps: [8, 12, 15, 24].includes(saved.fps) ? saved.fps : 8,
+      steps: [4, 5, 6, 7, 8].includes(saved.steps) ? saved.steps : 8,
+      seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed()
+    }
+  } catch {
+    return { prompt: 'Gentle cinematic camera movement, subtle natural motion', frames: 25, fps: 8, steps: 8, seed: createRandomSeed() }
+  }
+}
+
 const savedGenerationSettings = loadGenerationSettings()
+const savedVideoGenerationSettings = loadVideoGenerationSettings()
 const prompt = ref(savedGenerationSettings.prompt)
 const serverInfo = ref(null)
 const health = ref(null)
@@ -49,11 +66,11 @@ const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
 const videoUrl = ref('')
-const videoPrompt = ref('Gentle cinematic camera movement, subtle natural motion')
-const videoSeed = ref(createRandomSeed())
-const videoFrames = ref(25)
-const videoFps = ref(8)
-const videoSteps = ref(8)
+const videoPrompt = ref(savedVideoGenerationSettings.prompt)
+const videoSeed = ref(savedVideoGenerationSettings.seed)
+const videoFrames = ref(savedVideoGenerationSettings.frames)
+const videoFps = ref(savedVideoGenerationSettings.fps)
+const videoSteps = ref(savedVideoGenerationSettings.steps)
 const generatingVideo = ref(false)
 const cancellingVideo = ref(false)
 const activeVideoJobId = ref('')
@@ -145,6 +162,16 @@ watch([prompt, steps, seed, activeModelId], () => {
     steps: Number(steps.value),
     seed: seed.value === '' ? null : Number(seed.value),
     modelId: activeModelId.value
+  }))
+})
+
+watch([videoPrompt, videoFrames, videoFps, videoSteps, videoSeed], () => {
+  window.localStorage.setItem(videoGenerationSettingsKey, JSON.stringify({
+    prompt: videoPrompt.value,
+    frames: Number(videoFrames.value),
+    fps: Number(videoFps.value),
+    steps: Number(videoSteps.value),
+    seed: videoSeed.value === '' ? null : Number(videoSeed.value)
   }))
 })
 
