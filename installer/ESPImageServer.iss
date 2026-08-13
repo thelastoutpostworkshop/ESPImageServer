@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "1.0.22"
+#define AppVersion "1.0.23"
 #define AppPublisher "ESPImageServer"
 #ifndef DesktopBuildOutput
   #define DesktopBuildOutput "..\desktop\release\win-unpacked"
@@ -16,7 +16,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-1.0.22
+OutputBaseFilename=ESPImageServer-Setup-1.0.23
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -83,7 +83,7 @@ end;
 procedure InitializeWizard;
 begin
   ComputePage := CreateInputOptionPage(wpSelectDir,
-    'Choose image-generation hardware',
+    'Choose image and video generation hardware',
     'Select the hardware this computer should use.',
     'NVIDIA CUDA is much faster, but requires a compatible NVIDIA driver. CPU mode works on any PC but is slow.',
     True, True);
