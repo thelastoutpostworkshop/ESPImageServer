@@ -136,8 +136,8 @@ class DisplaySDCardReport(BaseModel):
 
 class VideoGenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=1_000)
-    width: int = Field(default=512, ge=256, le=768, multiple_of=32)
-    height: int = Field(default=320, ge=256, le=768, multiple_of=32)
+    width: int = Field(default=512, ge=1, le=768)
+    height: int = Field(default=320, ge=1, le=768)
     num_frames: int = Field(default=25, ge=9, le=249)
     fps: int = Field(default=8, ge=4, le=24)
     steps: int = Field(default=8, ge=4, le=8)
@@ -797,10 +797,13 @@ def create_app(
         source_image_path = image_library.find_path(request.source_image_id) if request.source_image_id else None
         if request.source_image_id and source_image_path is None:
             raise HTTPException(status_code=404, detail="The selected Creation Gallery image was not found")
+        profile = active_display_store.get()
+        output_width = profile.width if profile else request.width
+        output_height = profile.height if profile else request.height
         filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
         output_path = video_output_path / filename
         job = video_jobs.create(lambda progress, cancelled: video_generator.generate(
-            request.prompt, request.width, request.height, request.num_frames, request.fps,
+            request.prompt, output_width, output_height, request.num_frames, request.fps,
             request.steps, request.seed, output_path, progress, cancelled, source_image_path,
         ))
         return job.as_dict()

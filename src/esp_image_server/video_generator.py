@@ -7,6 +7,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Callable
 
+from PIL import Image, ImageOps
+
 from .generation_jobs import GenerationCancelled
 
 
@@ -134,11 +136,16 @@ class LTXVideoGenerator:
                 )
                 generation_options = {"image": source_frame, "frame_rate": fps}
 
+            # LTX requires a canvas divisible by 32. Generate on the smallest
+            # such canvas enclosing the native display size, then fit the
+            # decoded frames back to the exact display dimensions for playback.
+            generation_width = max(256, ((width + 31) // 32) * 32)
+            generation_height = max(256, ((height + 31) // 32) * 32)
             frames = generation_pipeline(
                 prompt=prompt,
                 negative_prompt="worst quality, blurry, jittery, distorted, flickering",
-                width=width,
-                height=height,
+                width=generation_width,
+                height=generation_height,
                 num_frames=num_frames,
                 num_inference_steps=steps,
                 # The distilled checkpoint is trained for CFG 1.0 and up to eight
@@ -152,5 +159,7 @@ class LTXVideoGenerator:
                 raise GenerationCancelled()
             progress(steps, steps, "Encoding MP4 video")
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            if (generation_width, generation_height) != (width, height):
+                frames = [ImageOps.fit(frame.convert("RGB"), (width, height), method=Image.Resampling.LANCZOS) for frame in frames]
             export_to_video(frames, str(output_path), fps=fps)
             return output_path

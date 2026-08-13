@@ -894,8 +894,6 @@ async function generateVideo() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt: videoPrompt.value,
-        width: 512,
-        height: 320,
         num_frames: Number(videoFrames.value),
         fps: Number(videoFps.value),
         steps: Number(videoSteps.value),
@@ -1289,6 +1287,7 @@ onUnmounted(() => {
               Video generation cannot run in CPU mode. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, then restart ESPImageServer.
             </v-alert>
             <v-form @submit.prevent="generateVideo">
+              <div v-if="display?.connected" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
               <v-alert v-if="videoSourceImage" type="success" variant="tonal" density="compact" class="mb-4">
                 <div class="d-flex align-center">
                   <v-avatar rounded size="44" class="mr-3"><v-img :src="`/saved-images/${encodeURIComponent(videoSourceImage.id)}/thumbnail`" /></v-avatar>
