@@ -261,7 +261,13 @@ class LTXVideoGenerator:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             if (generation_width, generation_height) != (width, height):
                 progress(steps, steps, "Resizing video for your ESP32 display")
-                frames = [ImageOps.fit(frame.convert("RGB"), (width, height), method=Image.Resampling.LANCZOS) for frame in frames]
+                frames = [
+                    ImageOps.fit(
+                        frame.convert("RGB") if isinstance(frame, Image.Image) else Image.fromarray(frame).convert("RGB"),
+                        (width, height), method=Image.Resampling.LANCZOS,
+                    )
+                    for frame in frames
+                ]
             progress(steps, steps, "Encoding MP4 video")
             export_to_video(frames, str(output_path), fps=fps)
             return output_path
