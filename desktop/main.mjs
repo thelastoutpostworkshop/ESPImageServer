@@ -152,7 +152,7 @@ async function createWindow() {
 
   if (!await serverIsAvailable()) startServer()
   else updateSplash('Connecting to ESPImageServer', 'The local image service is already running…')
-  updateSplash('Waiting for ESPImageServer', 'The AI model is being prepared for local image generation…')
+  updateSplash('Waiting for ESPImageServer', 'The AI model is being prepared for local image & video generation…')
   if (await waitForServer()) {
     updateSplash('Ready', 'Opening the workspace…')
     await mainWindow.loadURL('http://127.0.0.1:8000/#generate')
