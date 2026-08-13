@@ -1322,7 +1322,7 @@ onUnmounted(() => {
               <div v-if="display?.connected" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
               <v-alert v-if="videoSourceImage" type="success" variant="tonal" density="compact" class="mb-4">
                 <div class="d-flex align-center">
-                  <v-avatar rounded size="44" class="mr-3"><v-img :src="`/saved-images/${encodeURIComponent(videoSourceImage.id)}/thumbnail`" /></v-avatar>
+                      <v-avatar rounded size="72" class="mr-4"><v-img :src="`/saved-images/${encodeURIComponent(videoSourceImage.id)}/thumbnail`" /></v-avatar>
                   <span>Animating the selected Creation Gallery image as the first frame.</span>
                   <v-spacer /><v-btn icon="mdi-close" size="small" variant="text" aria-label="Stop using this image for the video" @click="videoSourceImage = null" />
                 </div>
