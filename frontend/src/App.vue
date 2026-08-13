@@ -326,6 +326,19 @@ async function prepareSelectedModel() {
   generationStage.value = model.installed
     ? `Loading ${model.name}...`
     : `Downloading ${model.name}. This first download can take several minutes...`
+  generationProgress.value = 0
+  const refreshDownloadProgress = async () => {
+    try {
+      const loading = await fetch('/model-loading-status').then(response => response.json())
+      if (loading.active) {
+        generationProgress.value = loading.steps ? Math.round(loading.step * 100 / loading.steps) : 0
+        generationStage.value = loading.stage || generationStage.value
+      }
+    } catch {
+      // The select request itself still reports a useful error if it fails.
+    }
+  }
+  const progressTimer = window.setInterval(refreshDownloadProgress, 350)
   try {
     const response = await fetch(`/models/${encodeURIComponent(model.id)}/select`, {
       method: 'POST',
@@ -340,6 +353,7 @@ async function prepareSelectedModel() {
     if (requestError.name === 'AbortError') throw new Error('Image generation cancelled.')
     throw new Error(`Could not prepare ${model.name}: ${requestError.message}`)
   } finally {
+    window.clearInterval(progressTimer)
     if (modelSwitchAbortController === abortController) {
       modelSwitchAbortController = undefined
     }
@@ -1462,9 +1476,9 @@ onUnmounted(() => {
               </v-btn>
               <div v-if="generating" class="mt-5">
                 <div class="d-flex justify-space-between text-body-2 mb-2">
-                  <span>{{ generationStage }}</span><span>{{ activeJobId ? `${generationProgress}%` : 'Preparing' }}</span>
+                  <span>{{ generationStage }}</span><span>{{ activeJobId || generationProgress ? `${generationProgress}%` : 'Preparing' }}</span>
                 </div>
-                <v-progress-linear :model-value="generationProgress" :indeterminate="!activeJobId" color="primary" height="10" rounded />
+                <v-progress-linear :model-value="generationProgress" :indeterminate="!activeJobId && !generationProgress" color="primary" height="10" rounded />
               </div>
               <v-alert v-if="status" class="mt-4" type="success" variant="tonal" density="compact">
                 {{ status }}

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from threading import Lock
 from typing import Callable
 
 from PIL import Image
 
 from .config import Settings
+from .download_progress import DownloadProgress, huggingface_progress
 from .generation_jobs import GenerationCancelled
 
 logger = logging.getLogger(__name__)
@@ -43,13 +45,14 @@ class DiffusersGenerator:
     def ready(self) -> bool:
         return self._pipeline is not None
 
-    def load(self) -> None:
+    def load(self, progress: DownloadProgress | None = None) -> None:
         """Load the model once. Imports stay here so setup errors are actionable."""
         if self._pipeline is not None:
             return
         try:
             import torch
             from diffusers import AutoPipelineForText2Image
+            from huggingface_hub import snapshot_download
         except ImportError as exc:
             raise RuntimeError(
                 "Image dependencies are missing. Install the project dependencies and PyTorch."
@@ -59,14 +62,20 @@ class DiffusersGenerator:
         dtype = torch.float16 if self._device == "cuda" else torch.float32
         logger.info("Loading model '%s' on %s", self.settings.model_id, self._device)
         options = {"torch_dtype": dtype}
-        if model_cache_dir := os.getenv("ESP_IMAGE_MODEL_CACHE"):
-            options["cache_dir"] = model_cache_dir
+        model_cache_dir = Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
+        model_cache_dir.mkdir(parents=True, exist_ok=True)
+        if progress is not None:
+            progress(0, 0, f"Checking or downloading {self.settings.model_id}")
+        model_path = snapshot_download(
+            self.settings.model_id, cache_dir=model_cache_dir,
+            tqdm_class=huggingface_progress(self.settings.model_id, progress) if progress else None,
+        )
         # Some model repositories bundle the legacy safety checker. Its false
         # positives are returned as an all-black image, which is especially
         # confusing on a small ESP32 display. The app validates output below
         # instead of silently showing a blank image.
         pipeline = AutoPipelineForText2Image.from_pretrained(
-            self.settings.model_id,
+            model_path,
             safety_checker=None,
             requires_safety_checker=False,
             **options,
@@ -76,14 +85,14 @@ class DiffusersGenerator:
             pipeline.enable_attention_slicing()
         self._pipeline = pipeline
 
-    def activate_model(self, settings: Settings) -> None:
+    def activate_model(self, settings: Settings, progress: DownloadProgress | None = None) -> None:
         """Unload the current pipeline and download/load the selected model."""
         with self._lock:
             if self._pipeline is not None and self.settings.model_id == settings.model_id:
                 return
             self._pipeline = None
             self.settings = settings
-        self.load()
+        self.load(progress)
 
     def unload(self) -> None:
         """Release the image pipeline so another GPU workload can use VRAM."""

@@ -84,7 +84,7 @@ class ImageGenerator(Protocol):
 
     def load(self) -> None: ...
 
-    def activate_model(self, settings: Settings) -> None: ...
+    def activate_model(self, settings: Settings, progress=None) -> None: ...
 
     def unload(self) -> None: ...
 
@@ -188,6 +188,7 @@ def create_app(
     # Only one model family may own the GPU at a time. The lock covers the
     # check, unload, and job creation so simultaneous requests cannot overlap.
     generation_mode_lock = Lock()
+    model_loading_status: dict[str, object] = {"active": False, "step": 0, "steps": 0, "stage": ""}
     video_output_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "videos"
     sd_thumbnail_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
@@ -231,7 +232,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="1.0.18", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="1.0.19", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -337,16 +338,25 @@ def create_app(
         if model_id == active_model_id and generator.ready:
             return {"status": "active", "model_id": model_id}
         try:
+            model_loading_status.update(active=True, step=0, steps=0, stage="Preparing image model")
+            def report_download(step: int, steps: int, stage: str) -> None:
+                model_loading_status.update(active=True, step=step, steps=steps, stage=stage)
             video_generator.unload()
-            await run_in_threadpool(generator.activate_model, selected_settings)
+            await run_in_threadpool(generator.activate_model, selected_settings, report_download)
             model_selection_store.set(model_id)
         except Exception:
             logger.exception("Unable to activate image model '%s'", model_id)
             raise HTTPException(status_code=500, detail="Unable to download or load the selected model") from None
+        finally:
+            model_loading_status["active"] = False
         active_settings = selected_settings
         active_model_id = model_id
         logger.info("Active image model changed to %s", model_id)
         return {"status": "active", "model_id": model_id}
+
+    @app.get("/model-loading-status")
+    def get_model_loading_status() -> dict[str, object]:
+        return model_loading_status.copy()
 
     @app.get("/display")
     def active_display() -> JSONResponse:

@@ -10,6 +10,7 @@ from typing import Callable
 from PIL import Image, ImageOps
 
 from .generation_jobs import GenerationCancelled
+from .download_progress import huggingface_progress
 
 
 VIDEO_MODELS = {
@@ -100,19 +101,24 @@ class LTXVideoGenerator:
             try:
                 from diffusers import AutoencoderKLWan, WanPipeline
                 from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
+                from huggingface_hub import snapshot_download
             except ImportError as exc:
                 raise RuntimeError("Your installed Diffusers version does not support Wan 2.1. Reinstall ESPImageServer.") from exc
             if progress is not None:
                 progress(0, 0, "Checking or downloading Wan 2.1 (first download may take several minutes)")
             repository = VIDEO_MODELS[model_id]["repository"]
+            model_path = snapshot_download(
+                repository, cache_dir=cache_dir,
+                tqdm_class=huggingface_progress("Wan 2.1", progress) if progress else None,
+            )
             # The VAE is intentionally float32, as recommended by Diffusers for
             # cleaner Wan decoding. CPU offload keeps it out of VRAM except when
             # it is needed to decode the finished frames.
             vae = AutoencoderKLWan.from_pretrained(
-                repository, subfolder="vae", torch_dtype=torch.float32, cache_dir=cache_dir,
+                model_path, subfolder="vae", torch_dtype=torch.float32,
             )
             pipeline = WanPipeline.from_pretrained(
-                repository, vae=vae, torch_dtype=torch.bfloat16, cache_dir=cache_dir,
+                model_path, vae=vae, torch_dtype=torch.bfloat16,
             )
             pipeline.scheduler = UniPCMultistepScheduler.from_config(pipeline.scheduler.config, flow_shift=5.0)
             if progress is not None:
@@ -125,7 +131,7 @@ class LTXVideoGenerator:
             return
         try:
             from diffusers import LTXPipeline
-            from huggingface_hub import hf_hub_download, snapshot_download
+            from huggingface_hub import snapshot_download
             from transformers import T5EncoderModel
         except ImportError as exc:
             raise RuntimeError("LTX-Video dependencies are missing. Reinstall ESPImageServer to add video support.") from exc
@@ -134,11 +140,13 @@ class LTXVideoGenerator:
         # for part of the filename.
         if progress is not None:
             progress(0, 0, "Checking or downloading LTX-Video (first download may take several minutes)")
-        checkpoint_path = hf_hub_download(
+        checkpoint_root = snapshot_download(
             repo_id=self.checkpoint_repository,
-            filename=VIDEO_MODELS[model_id]["checkpoint"],
             cache_dir=cache_dir,
+            allow_patterns=VIDEO_MODELS[model_id]["checkpoint"],
+            tqdm_class=huggingface_progress("LTX-Video", progress) if progress else None,
         )
+        checkpoint_path = Path(checkpoint_root) / VIDEO_MODELS[model_id]["checkpoint"]
         # This original-format checkpoint contains the actual 2B distilled
         # model. Diffusers recognises its format and uses the 0.9.5 component
         # configuration.
@@ -156,6 +164,7 @@ class LTXVideoGenerator:
                 "model_index.json", "scheduler/*", "text_encoder/config.json",
                 "tokenizer/*", "transformer/config.json", "vae/config.json",
             ],
+            tqdm_class=huggingface_progress("LTX-Video configuration", progress) if progress else None,
         )
         if progress is not None:
             progress(0, 0, "Checking or downloading the LTX text encoder (first download may take several minutes)")
@@ -165,6 +174,7 @@ class LTXVideoGenerator:
             local_dir=cache_dir / "ltx-video-text-encoder",
             local_dir_use_symlinks=False,
             allow_patterns="text_encoder/*",
+            tqdm_class=huggingface_progress("LTX text encoder", progress) if progress else None,
         )
         text_encoder = T5EncoderModel.from_pretrained(
             Path(text_encoder_root) / "text_encoder",

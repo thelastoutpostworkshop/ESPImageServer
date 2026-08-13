@@ -34,7 +34,7 @@ class FakeGenerator:
     def load(self) -> None:
         self.ready = True
 
-    def activate_model(self, settings: Settings) -> None:
+    def activate_model(self, settings: Settings, progress=None) -> None:
         self.ready = False
         self.load()
 
