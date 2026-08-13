@@ -114,6 +114,7 @@ class AppSettingsRequest(BaseModel):
     image_library_location: str | None = Field(default=None, min_length=1)
     jpeg_quality: int | None = Field(default=None, ge=1, le=100)
     auto_save_images: bool | None = None
+    confirm_deletion: bool | None = None
 
 
 class RegisterDeviceRequest(BaseModel):
@@ -198,6 +199,8 @@ def create_app(
     jpeg_quality = jpeg_quality if isinstance(jpeg_quality, int) and 1 <= jpeg_quality <= 100 else settings.jpeg_quality
     auto_save_images = persisted_app_settings.get("auto_save_images", True)
     auto_save_images = auto_save_images if isinstance(auto_save_images, bool) else True
+    confirm_deletion = persisted_app_settings.get("confirm_deletion", True)
+    confirm_deletion = confirm_deletion if isinstance(confirm_deletion, bool) else True
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -228,7 +231,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="1.0.12", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="1.0.13", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -490,11 +493,12 @@ def create_app(
             "image_library_location": str(image_library.path),
             "jpeg_quality": jpeg_quality,
             "auto_save_images": auto_save_images,
+            "confirm_deletion": confirm_deletion,
         }
 
     @app.put("/app-settings")
     def update_app_settings(request: AppSettingsRequest) -> dict[str, object]:
-        nonlocal jpeg_quality, auto_save_images
+        nonlocal jpeg_quality, auto_save_images, confirm_deletion
         if request.image_library_location is not None:
             location = Path(request.image_library_location)
             if not location.is_absolute():
@@ -508,10 +512,13 @@ def create_app(
             jpeg_quality = request.jpeg_quality
         if request.auto_save_images is not None:
             auto_save_images = request.auto_save_images
+        if request.confirm_deletion is not None:
+            confirm_deletion = request.confirm_deletion
         app_settings_store.set({
             "image_library_location": str(image_library.path),
             "jpeg_quality": jpeg_quality,
             "auto_save_images": auto_save_images,
+            "confirm_deletion": confirm_deletion,
         })
         return get_app_settings()
 

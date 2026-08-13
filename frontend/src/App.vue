@@ -107,8 +107,10 @@ const contextMenuSavedImage = ref(null)
 const selectedSavedImage = ref(null)
 const deleteSavedImageDialog = ref(false)
 const deletingSavedImage = ref(false)
+const deleteSavedImageDontAskAgain = ref(false)
 const deleteSavedVideoDialog = ref(false)
 const deletingSavedVideo = ref(false)
+const deleteSavedVideoDontAskAgain = ref(false)
 const savingToDisplaySdCard = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardLoading = ref(false)
@@ -121,6 +123,7 @@ const savedImagesLoading = ref(false)
 const imageLibraryLocation = ref('')
 const jpegQuality = ref(85)
 const autoSaveImages = ref(true)
+const confirmDeletion = ref(true)
 const autoSaveSaving = ref(false)
 const settingsSaving = ref(false)
 const openingImageLibrary = ref(false)
@@ -414,7 +417,13 @@ function useSavedVideoSettings(metadata) {
 
 function confirmDeleteSavedVideo() {
   savedVideoContextMenu.value = false
-  if (contextMenuSavedVideo.value) deleteSavedVideoDialog.value = true
+  if (!contextMenuSavedVideo.value) return
+  if (!confirmDeletion.value) {
+    deleteSavedVideo()
+    return
+  }
+  deleteSavedVideoDontAskAgain.value = false
+  deleteSavedVideoDialog.value = true
 }
 
 async function deleteSavedVideo() {
@@ -423,6 +432,7 @@ async function deleteSavedVideo() {
   deletingSavedVideo.value = true
   metadataError.value = ''
   try {
+    if (deleteSavedVideoDontAskAgain.value) await setDeleteConfirmation(false)
     const response = await fetch(`/saved-videos/${encodeURIComponent(savedVideo.id)}`, { method: 'DELETE' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -520,6 +530,7 @@ async function loadAppSettings() {
     imageLibraryLocation.value = settings.image_library_location
     jpegQuality.value = settings.jpeg_quality
     autoSaveImages.value = settings.auto_save_images !== false
+    confirmDeletion.value = settings.confirm_deletion !== false
   } catch {
     // The rest of the app remains usable while settings are unavailable.
   }
@@ -536,7 +547,8 @@ async function saveAppSettings() {
       body: JSON.stringify({
         image_library_location: imageLibraryLocation.value,
         jpeg_quality: Number(jpegQuality.value),
-        auto_save_images: autoSaveImages.value
+        auto_save_images: autoSaveImages.value,
+        confirm_deletion: confirmDeletion.value
       })
     })
     if (!response.ok) {
@@ -547,6 +559,7 @@ async function saveAppSettings() {
     imageLibraryLocation.value = settings.image_library_location
     jpegQuality.value = settings.jpeg_quality
     autoSaveImages.value = settings.auto_save_images !== false
+    confirmDeletion.value = settings.confirm_deletion !== false
     await loadSavedImages()
     settingsStatus.value = 'Settings saved. JPEG quality is used for new images.'
   } catch (requestError) {
@@ -579,6 +592,20 @@ async function setAutoSaveImages(value) {
   } finally {
     autoSaveSaving.value = false
   }
+}
+
+async function setDeleteConfirmation(value) {
+  const response = await fetch('/app-settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm_deletion: value })
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail || `Request failed (${response.status})`)
+  }
+  const settings = await response.json()
+  confirmDeletion.value = settings.confirm_deletion !== false
 }
 
 async function revealImageLibrary() {
@@ -726,7 +753,13 @@ function animateSavedImage(savedImage) {
 
 function confirmDeleteSavedImage() {
   savedImageContextMenu.value = false
-  if (contextMenuSavedImage.value) deleteSavedImageDialog.value = true
+  if (!contextMenuSavedImage.value) return
+  if (!confirmDeletion.value) {
+    deleteSavedImage()
+    return
+  }
+  deleteSavedImageDontAskAgain.value = false
+  deleteSavedImageDialog.value = true
 }
 
 async function deleteSavedImage() {
@@ -735,6 +768,7 @@ async function deleteSavedImage() {
   deletingSavedImage.value = true
   metadataError.value = ''
   try {
+    if (deleteSavedImageDontAskAgain.value) await setDeleteConfirmation(false)
     const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}`, { method: 'DELETE' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -1286,6 +1320,7 @@ onUnmounted(() => {
       <v-card title="Delete saved image">
         <v-card-text>
           Remove this image from the Creation Library? This cannot be undone.
+          <v-checkbox v-model="deleteSavedImageDontAskAgain" label="Don't ask again" density="compact" hide-details class="mt-3" />
         </v-card-text>
         <v-card-actions class="px-6 pb-5">
           <v-spacer />
@@ -1299,6 +1334,7 @@ onUnmounted(() => {
       <v-card title="Delete saved video">
         <v-card-text>
           Remove this video from the Creation Gallery? This cannot be undone.
+          <v-checkbox v-model="deleteSavedVideoDontAskAgain" label="Don't ask again" density="compact" hide-details class="mt-3" />
         </v-card-text>
         <v-card-actions class="px-6 pb-5">
           <v-spacer />
@@ -1687,6 +1723,14 @@ onUnmounted(() => {
               <div class="text-body-2 text-medium-emphasis mb-5">
                 Higher quality produces larger files and can take a little longer for the ESP32 to download. This applies to newly generated images only.
               </div>
+              <v-switch
+                v-model="confirmDeletion"
+                label="Ask before deleting gallery images and videos"
+                color="primary"
+                hint="Turn this off to delete saved images and videos immediately."
+                persistent-hint
+                class="mb-5"
+              />
               <v-btn type="submit" color="primary" :loading="settingsSaving" prepend-icon="mdi-content-save">Save settings</v-btn>
               <v-alert v-if="settingsStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ settingsStatus }}</v-alert>
               <v-alert v-if="settingsError" type="error" variant="tonal" density="compact" class="mt-4">{{ settingsError }}</v-alert>

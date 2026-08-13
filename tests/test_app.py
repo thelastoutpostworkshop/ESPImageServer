@@ -313,6 +313,19 @@ def test_saved_image_can_be_deleted_from_the_creation_library(tmp_path) -> None:
     assert missing.status_code == 404
 
 
+def test_deletion_confirmation_setting_is_saved(tmp_path) -> None:
+    app_settings = AppSettingsStore(tmp_path / "app_settings.json")
+    app = create_app(Settings(), FakeGenerator(), app_settings_store=app_settings, enable_mdns=False)
+
+    with TestClient(app) as client:
+        initial = client.get("/app-settings")
+        updated = client.put("/app-settings", json={"confirm_deletion": False})
+
+    assert initial.json()["confirm_deletion"] is True
+    assert updated.json()["confirm_deletion"] is False
+    assert app_settings.get()["confirm_deletion"] is False
+
+
 def test_saved_video_can_be_deleted_from_the_creation_library(tmp_path, monkeypatch) -> None:
     library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
     videos = VideoLibrary(library.path)
