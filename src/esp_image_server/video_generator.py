@@ -15,13 +15,22 @@ from .generation_jobs import GenerationCancelled
 VIDEO_MODELS = {
     "ltx-2b-0.9.6-distilled": {
         "name": "LTX-Video 2B distilled", "description": "Fast short animations with low graphics-card memory use.",
-        "checkpoint": "ltxv-2b-0.9.6-distilled-04-25.safetensors", "minimum_steps": 4, "maximum_steps": 8, "recommended_steps": 8,
+        "checkpoint": "ltxv-2b-0.9.6-distilled-04-25.safetensors", "minimum_steps": 4, "maximum_steps": 8, "recommended_steps": 8, "guidance_scale": 1.0,
     },
     "ltx-2b-0.9.6-dev": {
         "name": "LTX-Video 2B quality", "description": "More detail and prompt accuracy, but much slower and more demanding.",
-        "checkpoint": "ltxv-2b-0.9.6-dev-04-25.safetensors", "minimum_steps": 10, "maximum_steps": 40, "recommended_steps": 30,
+        "checkpoint": "ltxv-2b-0.9.6-dev-04-25.safetensors", "minimum_steps": 10, "maximum_steps": 40, "recommended_steps": 30, "guidance_scale": 3.0,
     },
 }
+
+
+def working_video_size(width: int, height: int) -> tuple[int, int]:
+    """Use an LTX-friendly canvas, then scale the result down for the display."""
+    shortest, longest = min(width, height), max(width, height)
+    scale = min(384 / shortest, 704 / longest)
+    working_width = max(256, round(width * scale / 32) * 32)
+    working_height = max(256, round(height * scale / 32) * 32)
+    return working_width, working_height
 
 
 class LTXVideoGenerator:
@@ -172,11 +181,10 @@ class LTXVideoGenerator:
                 )
                 generation_options = {"image": source_frame, "frame_rate": fps}
 
-            # LTX requires a canvas divisible by 32. Generate on the smallest
-            # such canvas enclosing the native display size, then fit the
-            # decoded frames back to the exact display dimensions for playback.
-            generation_width = max(256, ((width + 31) // 32) * 32)
-            generation_height = max(256, ((height + 31) // 32) * 32)
+            # Native ESP32 screens are far below LTX's useful working size.
+            # Generate on an aspect-matched, 32-pixel-aligned canvas first,
+            # then downscale the decoded frames to the display dimensions.
+            generation_width, generation_height = working_video_size(width, height)
             frames = generation_pipeline(
                 prompt=prompt,
                 negative_prompt="worst quality, blurry, jittery, distorted, flickering",
@@ -184,9 +192,7 @@ class LTXVideoGenerator:
                 height=generation_height,
                 num_frames=num_frames,
                 num_inference_steps=steps,
-                # The distilled checkpoint is trained for CFG 1.0 and up to eight
-                # denoising steps.  Higher values visibly degrade its output.
-                guidance_scale=1.0,
+                guidance_scale=VIDEO_MODELS[model_id]["guidance_scale"],
                 generator=generator,
                 callback_on_step_end=on_step_end,
                 **generation_options,
