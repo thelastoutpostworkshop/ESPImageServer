@@ -40,6 +40,7 @@ from .model_settings import ModelSelectionStore
 from .video_generator import LTXVideoGenerator, VIDEO_MODELS
 from .video_jobs import VideoJobStore
 from .video_library import VideoLibrary
+from .version import APP_VERSION
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -232,7 +233,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="1.0.20", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version=APP_VERSION, lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store

@@ -51,12 +51,7 @@
 ## Installer and releases
 
 - For any app or installer-facing change, do not rebuild the installer, the user will ask to rebuild it.
-- Increment the patch version consistently in:
-  - `pyproject.toml`
-  - `src/esp_image_server/app.py`
-  - `installer/ESPImageServer.iss` (`AppVersion` and `OutputBaseFilename`)
-  - `desktop/package.json`
-  - the root-package entries in `desktop/package-lock.json`
+- `pyproject.toml` is the single source of truth for the version. Update it before a release, then run `./build-installer.ps1`; the script synchronizes Electron and Inno Setup metadata automatically. Do not manually change the derived version values.
 - Build the frontend first:
 
   ```powershell
