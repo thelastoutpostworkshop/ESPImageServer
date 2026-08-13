@@ -107,6 +107,8 @@ const contextMenuSavedImage = ref(null)
 const selectedSavedImage = ref(null)
 const deleteSavedImageDialog = ref(false)
 const deletingSavedImage = ref(false)
+const deleteSavedVideoDialog = ref(false)
+const deletingSavedVideo = ref(false)
 const savingToDisplaySdCard = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardLoading = ref(false)
@@ -408,6 +410,32 @@ function useSavedVideoSettings(metadata) {
   page.value = 'video'
   videoStage.value = 'Saved video settings restored.'
   if (!metadataPanePinned.value) metadataPane.value = false
+}
+
+function confirmDeleteSavedVideo() {
+  savedVideoContextMenu.value = false
+  if (contextMenuSavedVideo.value) deleteSavedVideoDialog.value = true
+}
+
+async function deleteSavedVideo() {
+  const savedVideo = contextMenuSavedVideo.value
+  if (!savedVideo || deletingSavedVideo.value) return
+  deletingSavedVideo.value = true
+  metadataError.value = ''
+  try {
+    const response = await fetch(`/saved-videos/${encodeURIComponent(savedVideo.id)}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    savedVideos.value = savedVideos.value.filter(video => video.id !== savedVideo.id)
+    deleteSavedVideoDialog.value = false
+    status.value = 'Video removed from the Creation Gallery.'
+  } catch (requestError) {
+    metadataError.value = `Could not remove this saved video: ${requestError.message}`
+  } finally {
+    deletingSavedVideo.value = false
+  }
 }
 
 async function loadDisplaySdCard() {
@@ -1249,6 +1277,8 @@ onUnmounted(() => {
         <v-list-subheader>Saved video</v-list-subheader>
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use these video settings" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata)" />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
+        <v-divider class="my-1" />
+        <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Gallery" @click="confirmDeleteSavedVideo" />
       </v-list>
     </v-menu>
 
@@ -1261,6 +1291,19 @@ onUnmounted(() => {
           <v-spacer />
           <v-btn variant="text" :disabled="deletingSavedImage" @click="deleteSavedImageDialog = false">Keep image</v-btn>
           <v-btn color="error" variant="flat" :loading="deletingSavedImage" @click="deleteSavedImage">Delete image</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="deleteSavedVideoDialog" max-width="440" width="calc(100% - 32px)">
+      <v-card title="Delete saved video">
+        <v-card-text>
+          Remove this video from the Creation Gallery? This cannot be undone.
+        </v-card-text>
+        <v-card-actions class="px-6 pb-5">
+          <v-spacer />
+          <v-btn variant="text" :disabled="deletingSavedVideo" @click="deleteSavedVideoDialog = false">Keep video</v-btn>
+          <v-btn color="error" variant="flat" :loading="deletingSavedVideo" @click="deleteSavedVideo">Delete video</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

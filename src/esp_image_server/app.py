@@ -586,6 +586,16 @@ def create_app(
             raise HTTPException(status_code=404, detail="Saved video thumbnail not found")
         return FileResponse(thumbnail_path, media_type="image/jpeg")
 
+    @app.delete("/saved-videos/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_saved_video(video_id: str) -> Response:
+        try:
+            deleted = video_library.delete(video_id)
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Saved video not found")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @app.post("/creation-library/images", status_code=status.HTTP_201_CREATED)
     async def save_image_to_creation_library(request: Request) -> dict[str, object]:
         if request.headers.get("content-type", "").split(";", 1)[0].lower() != "image/jpeg":

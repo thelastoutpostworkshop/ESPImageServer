@@ -81,3 +81,26 @@ class VideoLibrary:
                 path = self.path / str(record.get("thumbnail_filename", ""))
                 return path if path.is_file() else None
         return None
+
+    def delete(self, video_id: str) -> bool:
+        """Remove a saved video, its metadata, and its generated thumbnail."""
+        record = next((item for item in self.list(limit=10_000) if item.get("id") == video_id), None)
+        if record is None:
+            return False
+        filenames = [
+            str(record.get("filename", "")),
+            str(record.get("thumbnail_filename", "")),
+        ]
+        video_filename = str(record.get("filename", ""))
+        if video_filename:
+            filenames.append(str(Path(video_filename).with_suffix(".json")))
+        try:
+            for filename in filenames:
+                if not filename:
+                    continue
+                path = self.path / filename
+                if path.parent == self.path:
+                    path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise OSError(f"Could not remove saved video: {exc}") from exc
+        return True

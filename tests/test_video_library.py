@@ -30,3 +30,23 @@ def test_video_library_finds_thumbnail(tmp_path) -> None:
     )
 
     assert library.find_thumbnail_path("video-id") == thumbnail
+
+
+def test_video_library_delete_removes_the_video_thumbnail_and_metadata(tmp_path) -> None:
+    library = VideoLibrary(tmp_path / "gallery")
+    library.path.mkdir(parents=True)
+    video = library.path / "saved.mp4"
+    thumbnail = library.path / "saved.jpg"
+    metadata = video.with_suffix(".json")
+    video.write_bytes(b"video")
+    thumbnail.write_bytes(b"thumbnail")
+    metadata.write_text(
+        '{"id":"video-id","filename":"saved.mp4","thumbnail_filename":"saved.jpg","created_at":"2026-01-01T00:00:00Z","metadata":{}}',
+        encoding="utf-8",
+    )
+
+    assert library.delete("video-id") is True
+    assert not video.exists()
+    assert not thumbnail.exists()
+    assert not metadata.exists()
+    assert library.delete("video-id") is False

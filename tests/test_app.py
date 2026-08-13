@@ -13,6 +13,7 @@ from esp_image_server.display_settings import DisplaySettingsStore
 from esp_image_server.model_settings import ModelSelectionStore
 from esp_image_server.generation_jobs import GenerationCancelled
 from esp_image_server.image_library import ImageLibrary
+from esp_image_server.video_library import VideoLibrary
 
 
 @pytest.fixture(autouse=True)
@@ -309,6 +310,25 @@ def test_saved_image_can_be_deleted_from_the_creation_library(tmp_path) -> None:
 
     assert deleted.status_code == 204
     assert library.list() == []
+    assert missing.status_code == 404
+
+
+def test_saved_video_can_be_deleted_from_the_creation_library(tmp_path, monkeypatch) -> None:
+    library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
+    videos = VideoLibrary(library.path)
+    source = tmp_path / "generated.mp4"
+    source.write_bytes(b"video")
+    monkeypatch.setattr("esp_image_server.video_library.bundled_ffmpeg_executable", lambda: "ffmpeg.exe")
+    monkeypatch.setattr("esp_image_server.video_library.subprocess.run", lambda *args, **kwargs: None)
+    record = videos.save(source, {"prompt": "a tiny robot"})
+    app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+
+    with TestClient(app) as client:
+        deleted = client.delete(f"/saved-videos/{record['id']}")
+        missing = client.get(f"/saved-videos/{record['id']}/video")
+
+    assert deleted.status_code == 204
+    assert videos.list() == []
     assert missing.status_code == 404
 
 
