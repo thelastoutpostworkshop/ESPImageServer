@@ -1040,6 +1040,15 @@ onUnmounted(() => {
                 class="mb-4"
                 @update:model-value="selectModelById"
               />
+              <v-alert
+                :icon="health?.device === 'cuda' ? 'mdi-expansion-card-variant' : 'mdi-cpu-64-bit'"
+                :type="health?.device === 'cuda' ? 'success' : 'info'"
+                variant="tonal"
+                density="compact"
+                class="mb-4"
+              >
+                <strong>Image processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
+              </v-alert>
               <v-select
                 :model-value="displayRotation"
                 :items="rotationOptions"
@@ -1212,6 +1221,11 @@ onUnmounted(() => {
           <v-list density="compact">
             <v-list-item prepend-icon="mdi-tag-outline" title="App version" :subtitle="serverInfo?.version ? `Version ${serverInfo.version}` : 'Loading version information...'" />
             <v-list-item prepend-icon="mdi-brain" title="Model" :subtitle="serverInfo?.model_description || 'Loading model information...'" />
+            <v-list-item
+              :prepend-icon="health?.device === 'cuda' ? 'mdi-expansion-card-variant' : 'mdi-cpu-64-bit'"
+              title="Image processing"
+              :subtitle="serverInfo?.processing || 'Loading processing information...'"
+            />
             <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display" :subtitle="displayMessage" />
           </v-list>
         </v-card>
