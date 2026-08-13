@@ -100,7 +100,7 @@ class LTXVideoGenerator:
     def generate(
         self, prompt: str, width: int, height: int, num_frames: int, fps: int, steps: int,
         seed: int | None, output_path: Path, progress: Callable[[int, int, str], None],
-        cancelled: Callable[[], bool],
+        cancelled: Callable[[], bool], source_image_path: Path | None = None,
     ) -> Path:
         with self._lock:
             self._load(progress)
@@ -116,7 +116,25 @@ class LTXVideoGenerator:
                 return callback_kwargs
 
             generator = torch.Generator(device="cuda").manual_seed(seed) if seed is not None else None
-            frames = self._pipeline(
+            generation_pipeline = self._pipeline
+            generation_options: dict[str, object] = {}
+            if source_image_path is not None:
+                from diffusers import LTXImageToVideoPipeline
+                from PIL import Image
+
+                progress(0, 0, "Preparing your Creation Gallery image for animation")
+                with Image.open(source_image_path) as source_image:
+                    source_frame = source_image.convert("RGB").copy()
+                generation_pipeline = LTXImageToVideoPipeline(
+                    scheduler=self._pipeline.scheduler,
+                    vae=self._pipeline.vae,
+                    text_encoder=self._pipeline.text_encoder,
+                    tokenizer=self._pipeline.tokenizer,
+                    transformer=self._pipeline.transformer,
+                )
+                generation_options = {"image": source_frame, "frame_rate": fps}
+
+            frames = generation_pipeline(
                 prompt=prompt,
                 negative_prompt="worst quality, blurry, jittery, distorted, flickering",
                 width=width,
@@ -128,6 +146,7 @@ class LTXVideoGenerator:
                 guidance_scale=1.0,
                 generator=generator,
                 callback_on_step_end=on_step_end,
+                **generation_options,
             ).frames[0]
             if cancelled():
                 raise GenerationCancelled()

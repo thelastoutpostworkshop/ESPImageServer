@@ -142,6 +142,7 @@ class VideoGenerateRequest(BaseModel):
     fps: int = Field(default=8, ge=4, le=24)
     steps: int = Field(default=8, ge=4, le=8)
     seed: int | None = Field(default=None, ge=0, le=4_294_967_295)
+    source_image_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 def create_app(
@@ -218,7 +219,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="1.0.2", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="1.0.3", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -793,11 +794,14 @@ def create_app(
             raise HTTPException(status_code=409, detail="LTX-Video requires a compatible NVIDIA GPU; this server is running image generation on CPU.")
         if (request.num_frames - 1) % 8:
             raise HTTPException(status_code=422, detail="Video frame count must be 1 plus a multiple of 8 (for example 17, 25, or 33).")
+        source_image_path = image_library.find_path(request.source_image_id) if request.source_image_id else None
+        if request.source_image_id and source_image_path is None:
+            raise HTTPException(status_code=404, detail="The selected Creation Gallery image was not found")
         filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
         output_path = video_output_path / filename
         job = video_jobs.create(lambda progress, cancelled: video_generator.generate(
             request.prompt, request.width, request.height, request.num_frames, request.fps,
-            request.steps, request.seed, output_path, progress, cancelled,
+            request.steps, request.seed, output_path, progress, cancelled, source_image_path,
         ))
         return job.as_dict()
 

@@ -66,6 +66,7 @@ const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
 const videoUrl = ref('')
+const videoSourceImage = ref(null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
 const videoFrames = ref(savedVideoGenerationSettings.frames)
@@ -615,6 +616,15 @@ async function useSavedImageSettings(metadata, setting) {
   if (!metadataPanePinned.value) metadataPane.value = false
 }
 
+function animateSavedImage(savedImage) {
+  if (!savedImage) return
+  savedImageContextMenu.value = false
+  videoSourceImage.value = savedImage
+  videoPrompt.value = 'Subtle natural motion, gentle cinematic camera movement'
+  page.value = 'video'
+  if (!metadataPanePinned.value) metadataPane.value = false
+}
+
 function confirmDeleteSavedImage() {
   savedImageContextMenu.value = false
   if (contextMenuSavedImage.value) deleteSavedImageDialog.value = true
@@ -884,7 +894,8 @@ async function generateVideo() {
         num_frames: Number(videoFrames.value),
         fps: Number(videoFps.value),
         steps: Number(videoSteps.value),
-        seed: videoSeed.value === '' ? null : Number(videoSeed.value)
+        seed: videoSeed.value === '' ? null : Number(videoSeed.value),
+        source_image_id: videoSourceImage.value?.id || null
       })
     })
     if (!response.ok) {
@@ -1110,6 +1121,7 @@ onUnmounted(() => {
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
         <v-list-item color="primary" prepend-icon="mdi-sd" title="Save to display SD card" :disabled="!display?.connected || savingToDisplaySdCard" @click="saveContextMenuImageToDisplaySdCard" />
+        <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Library" @click="confirmDeleteSavedImage" />
       </v-list>
@@ -1275,6 +1287,13 @@ onUnmounted(() => {
               <strong>Processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
             </v-alert>
             <v-form @submit.prevent="generateVideo">
+              <v-alert v-if="videoSourceImage" type="success" variant="tonal" density="compact" class="mb-4">
+                <div class="d-flex align-center">
+                  <v-avatar rounded size="44" class="mr-3"><v-img :src="`/saved-images/${encodeURIComponent(videoSourceImage.id)}/thumbnail`" /></v-avatar>
+                  <span>Animating the selected Creation Gallery image as the first frame.</span>
+                  <v-spacer /><v-btn size="small" variant="text" @click="videoSourceImage = null">Use text only</v-btn>
+                </div>
+              </v-alert>
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow />
               <v-row dense class="mt-1">
                 <v-col cols="12" sm="6" lg="3"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="[{ title: '17 frames · about 2 seconds', value: 17 }, { title: '25 frames · about 3 seconds', value: 25 }, { title: '33 frames · about 4 seconds', value: 33 }]" /></v-col>
