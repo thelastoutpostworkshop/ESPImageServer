@@ -228,7 +228,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="1.0.9", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="1.0.10", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -579,6 +579,13 @@ def create_app(
             raise HTTPException(status_code=404, detail="Saved video not found")
         return FileResponse(video_path, media_type="video/mp4", filename=video_path.name)
 
+    @app.get("/saved-videos/{video_id}/thumbnail", response_class=Response)
+    def saved_video_thumbnail(video_id: str) -> FileResponse:
+        thumbnail_path = video_library.find_thumbnail_path(video_id)
+        if thumbnail_path is None:
+            raise HTTPException(status_code=404, detail="Saved video thumbnail not found")
+        return FileResponse(thumbnail_path, media_type="image/jpeg")
+
     @app.post("/creation-library/images", status_code=status.HTTP_201_CREATED)
     async def save_image_to_creation_library(request: Request) -> dict[str, object]:
         if request.headers.get("content-type", "").split(";", 1)[0].lower() != "image/jpeg":
@@ -868,6 +875,7 @@ def create_app(
             job.metadata = {
                 "model": {"id": request.model_id, "name": video_model["name"]}, "prompt": request.prompt,
                 "steps": request.steps, "seed": request.seed, "frames": request.num_frames, "fps": request.fps,
+                "source_image_id": request.source_image_id,
             }
         return job.as_dict()
 

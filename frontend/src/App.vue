@@ -74,6 +74,9 @@ const completedVideoJobId = ref('')
 const savingVideoToCreationLibrary = ref(false)
 const videoSavedToCreationLibrary = ref(false)
 const savedVideos = ref([])
+const savedVideoContextMenu = ref(false)
+const savedVideoContextMenuPosition = ref([0, 0])
+const contextMenuSavedVideo = ref(null)
 const videoSourceImage = ref(null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
@@ -373,6 +376,29 @@ async function loadSavedVideos() {
   } catch {
     savedVideos.value = []
   }
+}
+
+function openSavedVideoContextMenu(event, savedVideo) {
+  event.preventDefault()
+  contextMenuSavedVideo.value = savedVideo
+  savedVideoContextMenuPosition.value = [event.clientX, event.clientY]
+  savedVideoContextMenu.value = false
+  window.requestAnimationFrame(() => { savedVideoContextMenu.value = true })
+}
+
+function useSavedVideoSettings(metadata) {
+  if (!metadata) return
+  videoPrompt.value = metadata.prompt || videoPrompt.value
+  videoFrames.value = metadata.frames || videoFrames.value
+  videoFps.value = metadata.fps || videoFps.value
+  videoSteps.value = metadata.steps || videoSteps.value
+  videoSeed.value = metadata.seed ?? createRandomSeed()
+  if (metadata.model?.id) videoModelId.value = metadata.model.id
+  videoSourceImage.value = savedImages.value.find(image => image.id === metadata.source_image_id) || null
+  savedVideoContextMenu.value = false
+  page.value = 'video'
+  videoStage.value = 'Saved video settings restored.'
+  if (!metadataPanePinned.value) metadataPane.value = false
 }
 
 async function loadDisplaySdCard() {
@@ -1162,13 +1188,24 @@ onUnmounted(() => {
         <div v-if="!savedImagesLoading && !savedImages.length" class="text-body-2 text-medium-emphasis">No generated images have been saved yet.</div>
         <template v-if="savedVideos.length">
           <div class="text-subtitle-1 font-weight-bold mt-6 mb-2">Saved videos</div>
-          <v-list density="compact" lines="two">
-            <v-list-item v-for="savedVideo in savedVideos" :key="savedVideo.id" prepend-icon="mdi-movie-open-outline">
-              <v-list-item-title>{{ savedVideo.metadata?.prompt || 'Generated video' }}</v-list-item-title>
-              <v-list-item-subtitle>{{ savedVideo.metadata?.model?.name || 'LTX-Video' }} · {{ formatDateTime(savedVideo.created_at) }}</v-list-item-subtitle>
-              <template #append><v-btn :href="`/saved-videos/${encodeURIComponent(savedVideo.id)}/video`" icon="mdi-download" size="small" variant="text" /></template>
-            </v-list-item>
-          </v-list>
+          <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
+            <v-tooltip v-for="savedVideo in savedVideos" :key="savedVideo.id" location="end" max-width="300">
+              <template #activator="{ props }">
+                <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
+                  <v-img v-if="savedVideo.thumbnail_filename" :src="`/saved-videos/${encodeURIComponent(savedVideo.id)}/thumbnail`" aspect-ratio="1.33" cover />
+                  <v-sheet v-else class="d-flex align-center justify-center" height="120"><v-icon size="40">mdi-movie-open-outline</v-icon></v-sheet>
+                  <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
+                </v-card>
+              </template>
+              <div class="text-body-2">
+                <div><strong>Model:</strong> {{ savedVideo.metadata?.model?.name || 'LTX-Video' }}</div>
+                <div class="mt-1"><strong>Prompt:</strong> {{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
+                <div><strong>Frames:</strong> {{ savedVideo.metadata?.frames }} · {{ savedVideo.metadata?.fps }} fps</div>
+                <div><strong>Steps:</strong> {{ savedVideo.metadata?.steps }} · <strong>Seed:</strong> {{ savedVideo.metadata?.seed ?? 'Random seed' }}</div>
+                <div><strong>Created:</strong> {{ formatDateTime(savedVideo.created_at) }}</div>
+              </div>
+            </v-tooltip>
+          </div>
         </template>
         <v-alert v-if="metadataError" type="warning" variant="tonal" density="compact" class="mt-3">{{ metadataError }}</v-alert>
       </div>
@@ -1193,6 +1230,14 @@ onUnmounted(() => {
         <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Library" @click="confirmDeleteSavedImage" />
+      </v-list>
+    </v-menu>
+
+    <v-menu v-model="savedVideoContextMenu" :target="savedVideoContextMenuPosition" location="bottom start" :close-on-content-click="true">
+      <v-list min-width="230" density="comfortable">
+        <v-list-subheader>Saved video</v-list-subheader>
+        <v-list-item color="primary" prepend-icon="mdi-restore" title="Use these video settings" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata)" />
+        <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
       </v-list>
     </v-menu>
 

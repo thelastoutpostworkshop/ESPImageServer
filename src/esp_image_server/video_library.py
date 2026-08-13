@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import shutil
+import subprocess
 from uuid import uuid4
 
 
@@ -20,7 +21,19 @@ class VideoLibrary:
         filename = f"{created_at[:19].replace(':', '-')}-{video_id[:8]}.mp4"
         destination = self.path / filename
         shutil.copy2(source, destination)
-        record = {"id": video_id, "filename": filename, "created_at": created_at, "metadata": metadata}
+        thumbnail_filename = f"{destination.stem}.jpg"
+        thumbnail_path = self.path / thumbnail_filename
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-ss", "0.1", "-i", str(destination), "-frames:v", "1", "-q:v", "3", str(thumbnail_path)],
+                capture_output=True, check=True, timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            thumbnail_filename = ""
+        record = {
+            "id": video_id, "filename": filename, "thumbnail_filename": thumbnail_filename,
+            "created_at": created_at, "metadata": metadata,
+        }
         (destination.with_suffix(".json")).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         return record
 
@@ -41,5 +54,12 @@ class VideoLibrary:
         for record in self.list(limit=10_000):
             if record.get("id") == video_id:
                 path = self.path / str(record.get("filename", ""))
+                return path if path.is_file() else None
+        return None
+
+    def find_thumbnail_path(self, video_id: str) -> Path | None:
+        for record in self.list(limit=10_000):
+            if record.get("id") == video_id:
+                path = self.path / str(record.get("thumbnail_filename", ""))
                 return path if path.is_file() else None
         return None
