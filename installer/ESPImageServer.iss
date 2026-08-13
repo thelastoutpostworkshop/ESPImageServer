@@ -2,9 +2,8 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.109"
+#define AppVersion "0.1.110"
 #define AppPublisher "ESPImageServer"
-#define ModelId "stabilityai/sd-turbo"
 
 [Setup]
 AppId={{18AA2901-70A7-4C30-9C55-6B78F51F6CC0}
@@ -14,7 +13,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.109
+OutputBaseFilename=ESPImageServer-Setup-0.1.110
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -53,7 +52,6 @@ Filename: "{app}\desktop\ESPImageServer.exe"; Description: "Start ESPImageServer
 [Code]
 var
   ComputePage: TInputOptionWizardPage;
-  ModelPage: TInputOptionWizardPage;
   BootstrapProgress: TOutputProgressWizardPage;
   BootstrapOutput: TNewMemo;
   BootstrapCancelButton: TNewButton;
@@ -93,16 +91,6 @@ begin
   else
     ComputePage.SelectedValueIndex := 0;
 
-  ModelPage := CreateInputOptionPage(ComputePage.ID,
-    'Choose image model',
-    'The selected model will download during installation.',
-    'This installer downloads one model so ESPImageServer is ready immediately. You can download and switch to the other supported models later from the Models page in the web app. SD-Turbo is the fast, display-focused default. DreamShaper 8 creates artistic images, SSD-1B provides more detail, and SDXL Base 1.0 offers the best detail but requires a powerful NVIDIA GPU.',
-    True, True);
-  ModelPage.Add('SD-Turbo - fast, 512 x 512, recommended');
-  ModelPage.Add('DreamShaper 8 - creative artwork, NVIDIA GPU recommended');
-  ModelPage.Add('Segmind SSD-1B - higher quality, slower, NVIDIA GPU recommended');
-  ModelPage.Add('SDXL Base 1.0 - best detail, powerful NVIDIA GPU required');
-  ModelPage.SelectedValueIndex := 0;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -124,28 +112,16 @@ function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoType
   MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 var
   ComputeChoice: String;
-  SelectedModel: String;
 begin
   if ComputePage.SelectedValueIndex = 1 then
     ComputeChoice := 'NVIDIA CUDA acceleration'
   else
     ComputeChoice := 'CPU compatibility mode';
 
-  if ModelPage.SelectedValueIndex = 0 then
-    SelectedModel := 'stabilityai/sd-turbo (fast, 512 x 512)'
-  else if ModelPage.SelectedValueIndex = 1 then
-    SelectedModel := 'Lykon/dreamshaper-8 (creative artwork, 512 x 512)'
-  else if ModelPage.SelectedValueIndex = 2 then
-    SelectedModel := 'segmind/SSD-1B (higher quality, 1024 x 1024)'
-  else
-    SelectedModel := 'stabilityai/stable-diffusion-xl-base-1.0 (best detail, 1024 x 1024)';
-
   Result := MemoUserInfoInfo + MemoDirInfo + MemoTypeInfo + MemoComponentsInfo +
     MemoGroupInfo + MemoTasksInfo + NewLine + 'Image generation:' + NewLine +
-    Space + 'Model: ' + SelectedModel + NewLine +
     Space + 'Hardware: ' + ComputeChoice + NewLine +
-    Space + 'Model download: during installation' + NewLine +
-    Space + 'Other supported models: available later from the web app Models page';
+    Space + 'Models: choose and download them later in the app';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -161,20 +137,12 @@ begin
   Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\bootstrap.ps1') + '"';
   if ComputePage.SelectedValueIndex = 1 then
     Parameters := Parameters + ' -UseCuda';
-  if ModelPage.SelectedValueIndex = 0 then
-    Parameters := Parameters + ' -ModelId "stabilityai/sd-turbo" -InferenceSteps 1 -GuidanceScale 0 -GenerationWidth 512 -GenerationHeight 512'
-  else if ModelPage.SelectedValueIndex = 1 then
-    Parameters := Parameters + ' -ModelId "Lykon/dreamshaper-8" -InferenceSteps 25 -GuidanceScale 7 -GenerationWidth 512 -GenerationHeight 512'
-  else if ModelPage.SelectedValueIndex = 2 then
-    Parameters := Parameters + ' -ModelId "segmind/SSD-1B" -InferenceSteps 20 -GuidanceScale 9 -GenerationWidth 1024 -GenerationHeight 1024'
-  else
-    Parameters := Parameters + ' -ModelId "stabilityai/stable-diffusion-xl-base-1.0" -InferenceSteps 30 -GuidanceScale 7 -GenerationWidth 1024 -GenerationHeight 1024';
 
   BootstrapProgress := CreateOutputProgressPage('Installing ESPImageServer',
     'Setting up the local image-generation environment.');
   BootstrapProgress.SetProgress(1, 6);
   BootstrapProgress.SetText('Installing the local image-generation environment...',
-    'This can take several minutes while PyTorch and the selected model are prepared. Please keep this window open.');
+    'This can take several minutes while PyTorch and ESPImageServer are prepared. Please keep this window open.');
   BootstrapOutput := TNewMemo.Create(BootstrapProgress);
   BootstrapOutput.Left := 0;
   BootstrapOutput.Top := BootstrapProgress.ProgressBar.Top + BootstrapProgress.ProgressBar.Height + ScaleY(12);
@@ -185,7 +153,7 @@ begin
   BootstrapOutput.Text := 'Installation is in progress.' + #13#10 + #13#10 +
     '- Creating the local Python environment' + #13#10 +
     '- Installing PyTorch and ESPImageServer packages' + #13#10 +
-    '- Downloading the selected image model' + #13#10 + #13#10 +
+    '- Models will download only when selected in the app' + #13#10 + #13#10 +
     'The installer will continue automatically when this is complete.';
   BootstrapOutput.Parent := BootstrapProgress.Surface;
   BootstrapCancelButton := TNewButton.Create(BootstrapProgress);

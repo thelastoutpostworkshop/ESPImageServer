@@ -244,7 +244,7 @@ async function loadServerStatus() {
 async function prepareSelectedModel() {
   const model = models.value.find(candidate => candidate.id === activeModelId.value)
   if (!model) throw new Error('Choose an image model before generating.')
-  if (model.active) return
+  if (model.active && health.value?.status === 'ready') return
   const abortController = new AbortController()
   modelSwitchAbortController = abortController
   generationStage.value = model.installed

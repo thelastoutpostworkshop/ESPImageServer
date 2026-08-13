@@ -207,8 +207,7 @@ def create_app(
             )
         else:
             logger.info("Server address: http://%s:%s/", settings.host, settings.port)
-        await run_in_threadpool(generator.load)
-        logger.info("Image model is ready; device=%s", generator.device)
+        logger.info("Image model will download and load when the user selects it; device=%s", generator.device)
         if os.getenv("ESP_IMAGE_OPEN_BROWSER") == "1":
             Timer(0.5, lambda: webbrowser.open_new_tab(f"http://127.0.0.1:{settings.port}/")).start()
         try:
@@ -219,7 +218,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.109", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.110", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -266,7 +265,7 @@ def create_app(
             ),
         }
         model_name, model_description = model_details.get(
-            active_model_id, (active_model_id, "Local AI image model selected during installation.")
+            active_model_id, (active_model_id, "Local AI image model selected in the app.")
         )
         if generator.device == "cuda":
             processing = "NVIDIA graphics card acceleration — fast image generation."
@@ -315,7 +314,7 @@ def create_app(
             selected_settings = model_settings(settings, model_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail="This model is not available in ESPImageServer") from exc
-        if model_id == active_model_id:
+        if model_id == active_model_id and generator.ready:
             return {"status": "active", "model_id": model_id}
         try:
             await run_in_threadpool(generator.activate_model, selected_settings)
@@ -674,7 +673,10 @@ def create_app(
 
         ensure_not_cancelled()
         if not generator.ready:
-            raise RuntimeError("Image model is still loading")
+            # A fresh installation deliberately has no model.  A generation
+            # request is the user's explicit choice to fetch and load the
+            # currently selected model.
+            generator.activate_model(active_settings)
         profile = active_display_store.get()
         output_width = profile.width if profile else settings.output_width
         output_height = profile.height if profile else settings.output_height
@@ -749,8 +751,6 @@ def create_app(
 
     @app.post("/generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
-        if not generator.ready:
-            raise HTTPException(status_code=503, detail="Image model is still loading")
         job = generation_jobs.create(lambda progress, is_cancelled: generate_jpeg(request, progress, is_cancelled))
         return job.as_dict()
 
