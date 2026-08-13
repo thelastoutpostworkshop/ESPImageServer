@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 
 function createRandomSeed() {
@@ -405,18 +405,23 @@ function openSavedVideoContextMenu(event, savedVideo) {
   window.requestAnimationFrame(() => { savedVideoContextMenu.value = true })
 }
 
-function useSavedVideoSettings(metadata) {
+async function useSavedVideoSettings(metadata, setting) {
   if (!metadata) return
-  videoPrompt.value = metadata.prompt || videoPrompt.value
-  videoFrames.value = metadata.frames || videoFrames.value
-  videoFps.value = metadata.fps || videoFps.value
-  videoSteps.value = metadata.steps || videoSteps.value
-  videoSeed.value = metadata.seed ?? createRandomSeed()
-  if (metadata.model?.id) videoModelId.value = metadata.model.id
-  videoSourceImage.value = savedImages.value.find(image => image.id === metadata.source_image_id) || null
   savedVideoContextMenu.value = false
+  if (setting === 'prompt' || setting === 'all') videoPrompt.value = metadata.prompt || videoPrompt.value
+  if (setting === 'frames' || setting === 'all') videoFrames.value = metadata.frames || videoFrames.value
+  if (setting === 'fps' || setting === 'all') videoFps.value = metadata.fps || videoFps.value
+  if (setting === 'model' || setting === 'all') {
+    if (metadata.model?.id) {
+      videoModelId.value = metadata.model.id
+      await nextTick()
+    }
+  }
+  if (setting === 'steps' || setting === 'all') videoSteps.value = metadata.steps || videoSteps.value
+  if (setting === 'seed' || setting === 'all') videoSeed.value = metadata.seed ?? createRandomSeed()
+  if (setting === 'all') videoSourceImage.value = savedImages.value.find(image => image.id === metadata.source_image_id) || null
   page.value = 'video'
-  videoStage.value = 'Saved video settings restored.'
+  videoStage.value = setting === 'all' ? 'Saved video settings restored.' : `Saved video ${setting} restored.`
   if (!metadataPanePinned.value) metadataPane.value = false
 }
 
@@ -1318,8 +1323,15 @@ onUnmounted(() => {
 
     <v-menu v-model="savedVideoContextMenu" :target="savedVideoContextMenuPosition" location="bottom start" :close-on-content-click="true">
       <v-list min-width="230" density="comfortable">
-        <v-list-subheader>Saved video</v-list-subheader>
-        <v-list-item color="primary" prepend-icon="mdi-restore" title="Use these video settings" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata)" />
+        <v-list-subheader>Reuse video settings</v-list-subheader>
+        <v-list-item prepend-icon="mdi-text" title="Use prompt" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'prompt')" />
+        <v-list-item prepend-icon="mdi-dice-5" title="Use seed" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'seed')" />
+        <v-list-item prepend-icon="mdi-foot-print" title="Use steps" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'steps')" />
+        <v-list-item prepend-icon="mdi-brain" title="Use model" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'model')" />
+        <v-list-item prepend-icon="mdi-filmstrip" title="Use length" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'frames')" />
+        <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
+        <v-divider class="my-1" />
+        <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Gallery" @click="confirmDeleteSavedVideo" />
