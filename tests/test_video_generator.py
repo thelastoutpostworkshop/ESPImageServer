@@ -1,4 +1,4 @@
-from esp_image_server.video_generator import working_video_size, working_wan_video_size
+from esp_image_server.video_generator import VIDEO_MODELS, working_video_size, working_wan_video_size
 
 
 def test_working_video_size_keeps_portrait_display_aspect_at_useful_resolution() -> None:
@@ -11,6 +11,10 @@ def test_working_video_size_keeps_landscape_display_aspect_at_useful_resolution(
 
 def test_working_wan_video_size_uses_a_larger_480p_class_canvas() -> None:
     assert working_wan_video_size(172, 320) == (448, 832)
+
+
+def test_wan_uses_the_official_diffusers_repository() -> None:
+    assert VIDEO_MODELS["wan-2.1-t2v-1.3b"]["repository"] == "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
 
 
 def test_video_module_image_helper_is_available_without_a_reference_image() -> None:

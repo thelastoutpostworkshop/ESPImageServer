@@ -23,7 +23,7 @@ VIDEO_MODELS = {
     },
     "wan-2.1-t2v-1.3b": {
         "name": "Wan 2.1 T2V 1.3B", "description": "Detailed text-to-video alternative. Slower, with CPU memory offload for 8 GB graphics cards.",
-        "family": "wan", "repository": "Wan-AI/Wan2.1-T2V-1.3B", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30, "guidance_scale": 6.0,
+        "family": "wan", "repository": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30, "guidance_scale": 6.0,
     },
 }
 
@@ -98,14 +98,23 @@ class LTXVideoGenerator:
         cache_dir.mkdir(parents=True, exist_ok=True)
         if VIDEO_MODELS[model_id]["family"] == "wan":
             try:
-                from diffusers import WanPipeline
+                from diffusers import AutoencoderKLWan, WanPipeline
+                from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
             except ImportError as exc:
                 raise RuntimeError("Your installed Diffusers version does not support Wan 2.1. Reinstall ESPImageServer.") from exc
             if progress is not None:
                 progress(0, 0, "Checking or downloading Wan 2.1 (first download may take several minutes)")
-            pipeline = WanPipeline.from_pretrained(
-                VIDEO_MODELS[model_id]["repository"], torch_dtype=torch.bfloat16, cache_dir=cache_dir,
+            repository = VIDEO_MODELS[model_id]["repository"]
+            # The VAE is intentionally float32, as recommended by Diffusers for
+            # cleaner Wan decoding. CPU offload keeps it out of VRAM except when
+            # it is needed to decode the finished frames.
+            vae = AutoencoderKLWan.from_pretrained(
+                repository, subfolder="vae", torch_dtype=torch.float32, cache_dir=cache_dir,
             )
+            pipeline = WanPipeline.from_pretrained(
+                repository, vae=vae, torch_dtype=torch.bfloat16, cache_dir=cache_dir,
+            )
+            pipeline.scheduler = UniPCMultistepScheduler.from_config(pipeline.scheduler.config, flow_shift=5.0)
             if progress is not None:
                 progress(0, 0, "Loading Wan 2.1 with graphics-card memory offload")
             pipeline.enable_model_cpu_offload()
