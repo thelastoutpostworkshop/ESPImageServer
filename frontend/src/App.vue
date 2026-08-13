@@ -1311,11 +1311,8 @@ onUnmounted(() => {
         </template>
 
         <v-card v-else-if="page === 'video'" class="mx-auto" max-width="1400">
-          <v-card-title class="text-h5 pt-5">Generate video <v-chip class="ml-2" size="small" color="warning" variant="tonal">Experimental</v-chip></v-card-title>
+          <v-card-title class="text-h5 pt-5">Generate video</v-card-title>
           <v-card-text>
-            <v-alert type="warning" variant="tonal" density="compact" class="mb-4" icon="mdi-expansion-card-variant">
-              LTX-Video 2B distilled requires a compatible NVIDIA GPU. The first video downloads the model and can take several minutes.
-            </v-alert>
             <v-alert v-if="health?.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
               Video generation cannot run in CPU mode. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, then restart ESPImageServer.
             </v-alert>
