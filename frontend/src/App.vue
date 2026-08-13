@@ -1336,7 +1336,6 @@ onUnmounted(() => {
                 <v-card-text class="pt-0">
                   <div class="font-weight-medium">{{ selectedVideoModel.title }}</div>
                   <div class="text-body-2 mt-1">{{ selectedVideoModel.description }}</div>
-                  <div class="text-caption text-medium-emphasis mt-3">The 13B and FP8 LTX models are not shown because they are not a practical fit for an RTX 3060 Ti.</div>
                 </v-card-text>
               </v-card>
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow />
