@@ -955,6 +955,7 @@ async function generate() {
       return
     }
     if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Image generation failed')
+    generationStage.value = 'Image ready. Loading it into the preview...'
     const imageResponse = await fetch(`/generation-jobs/${job.id}/image`)
     if (!imageResponse.ok) throw new Error(`Request failed (${imageResponse.status})`)
     const rawImageBlob = await imageResponse.blob()
@@ -963,11 +964,13 @@ async function generate() {
     if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
     imageUrl.value = URL.createObjectURL(imageBlob)
+    generationStage.value = 'Preparing the display preview...'
     previewUrl.value = await createDisplayPreview(imageBlob)
     previewFittedFor.value = display.value?.connected ? display.value : null
     generatedMetadata.value = metadata
     selectedSavedImage.value = null
     currentImageSavedToLibrary.value = autoSaveImages.value
+    generationStage.value = 'Refreshing your Creation Gallery...'
     await loadSavedImages()
     status.value = autoSaveImages.value
       ? 'Image ready and saved. Your ESP32 display will pick it up shortly.'
@@ -1053,9 +1056,11 @@ async function generateVideo() {
       return
     }
     if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Video generation failed')
+    videoStage.value = 'Video ready. Loading it into the preview...'
     const videoResponse = await fetch(`/video-generation-jobs/${job.id}/video`)
     if (!videoResponse.ok) throw new Error(`Request failed (${videoResponse.status})`)
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
+    videoStage.value = 'Preparing video preview...'
     videoUrl.value = URL.createObjectURL(await videoResponse.blob())
     completedVideoJobId.value = job.id
     videoStage.value = 'Video ready. It is saved locally and can be downloaded below.'

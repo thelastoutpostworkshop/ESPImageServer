@@ -231,7 +231,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="1.0.13", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="1.0.14", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -773,6 +773,8 @@ def create_app(
         ensure_not_cancelled()
         if progress is not None and rotation:
             progress(1, 1, "Fitting the image to your ESP32 display")
+        if progress is not None:
+            progress(1, 1, "Encoding image for your ESP32 display")
         jpeg = to_jpeg(image, width=output_width, height=output_height, quality=jpeg_quality)
         metadata = {
             "version": 1,
@@ -792,6 +794,8 @@ def create_app(
         ensure_not_cancelled()
         latest_image_store.set(jpeg)
         if auto_save_images:
+            if progress is not None:
+                progress(1, 1, "Saving image to your Creation Gallery")
             image_library.save(jpeg, metadata)
         return jpeg
 
