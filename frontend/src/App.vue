@@ -1303,8 +1303,8 @@ onUnmounted(() => {
                 <v-col cols="12" sm="6" lg="3"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" hint="8 is recommended for the distilled model." persistent-hint :items="[4, 5, 6, 7, 8]" /></v-col>
                 <v-col cols="12" sm="6" lg="3"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
-              <v-btn type="submit" color="primary" :disabled="generatingVideo || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
-              <v-btn v-if="generatingVideo" class="ml-2" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
+              <v-btn type="submit" class="mt-4" color="primary" :disabled="generatingVideo || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
+              <v-btn v-if="generatingVideo" class="ml-2 mt-4" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
             </v-form>
             <div v-if="generatingVideo" class="mt-5">
               <div class="d-flex justify-space-between text-body-2 mb-2"><span>{{ videoStage }}</span><span>{{ videoProgress }}%</span></div>
