@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import logging
 from threading import Lock
 from typing import Callable
 from uuid import uuid4
+
+from .generation_errors import user_facing_generation_error
+
+logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[int, int, str], None]
 CancellationCallback = Callable[[], bool]
@@ -97,9 +102,10 @@ class GenerationJobStore:
                 job.status, job.stage, job.error = "cancelled", "Image generation cancelled", None
             return
         except Exception as exc:
+            logger.exception("Image generation job %s failed", job_id)
             with self._lock:
                 job = self._jobs[job_id]
-                job.status, job.stage, job.error = "failed", "Generation failed", str(exc)
+                job.status, job.stage, job.error = "failed", "Generation failed", user_facing_generation_error(exc, "image")
             return
         with self._lock:
             job = self._jobs[job_id]

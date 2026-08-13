@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from threading import Lock
 from typing import Callable
 from uuid import uuid4
 
 from .generation_jobs import GenerationCancelled
+from .generation_errors import user_facing_generation_error
+
+logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[int, int, str], None]
 VideoWork = Callable[[ProgressCallback, Callable[[], bool]], Path]
@@ -86,9 +90,10 @@ class VideoJobStore:
                 job = self._jobs[job_id]
                 job.status, job.stage, job.error = "cancelled", "Video generation cancelled", None
         except Exception as exc:
+            logger.exception("Video generation job %s failed", job_id)
             with self._lock:
                 job = self._jobs[job_id]
-                job.status, job.stage, job.error = "failed", "Video generation failed", str(exc)
+                job.status, job.stage, job.error = "failed", "Video generation failed", user_facing_generation_error(exc, "video")
         else:
             with self._lock:
                 job = self._jobs[job_id]
