@@ -26,7 +26,7 @@
 - Do not generate LTX directly at tiny ESP32 dimensions. `working_video_size()` creates a 32-pixel-aligned, aspect-matched working canvas (normally 384 pixels on the short side, max 704 on the long side), then frames are downscaled to the connected display's exact native size.
 - A video can be text-only or use a saved Creation Gallery image as its first frame. Preserve the `source_image_id` in video metadata so saved settings can restore that reference image.
 - Saved videos live in `<image library>\videos` with an adjacent JSON metadata file. The gallery groups both images and videos by the model name, shows tooltips, and lets the user restore saved video settings from a context menu.
-- Video thumbnails are extracted with the `ffmpeg` command when a video is saved. If it is unavailable, the gallery intentionally falls back to a video icon; keep this failure non-fatal.
+- Video thumbnails are extracted with the executable bundled by the `imageio-ffmpeg` Python dependency; do not rely on a system `ffmpeg` PATH installation. The installer verifies this executable after installing packages. Keep thumbnail failure non-fatal so a video can still be saved if extraction itself fails.
 
 ## ESP32 display contract
 

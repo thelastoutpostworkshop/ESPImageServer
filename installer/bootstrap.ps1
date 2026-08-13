@@ -144,6 +144,12 @@ try {
     if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--editable', $projectRoot)) -ne 0) {
         throw 'Unable to install ESPImageServer dependencies.'
     }
+    # Video thumbnails use the FFmpeg binary bundled by imageio-ffmpeg. Verify
+    # that the executable was installed now, rather than discovering a missing
+    # dependency after the user saves their first generated video.
+    if ((Invoke-LoggedExternal $venvPython @('-c', 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')) -ne 0) {
+        throw 'Unable to install the bundled FFmpeg tools needed for video thumbnails.'
+    }
 
     Set-InstallStatus 4 'Saving your server settings...'
     $modelCachePath = Join-Path $env:LOCALAPPDATA 'ESPImageServer\models'

@@ -7,6 +7,7 @@ def test_video_library_saves_video_and_metadata_when_thumbnail_extraction_fails(
     source = tmp_path / "source.mp4"
     source.write_bytes(b"not a real video")
     library = VideoLibrary(tmp_path / "gallery")
+    monkeypatch.setattr("esp_image_server.video_library.bundled_ffmpeg_executable", lambda: "ffmpeg-from-package.exe")
     monkeypatch.setattr("esp_image_server.video_library.subprocess.run", lambda *args, **kwargs: (_ for _ in ()).throw(OSError()))
 
     record = library.save(source, {"prompt": "test video"})

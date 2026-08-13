@@ -9,6 +9,21 @@ import shutil
 import subprocess
 from uuid import uuid4
 
+try:
+    import imageio_ffmpeg
+except ImportError:  # A failed installation still lets the user save videos.
+    imageio_ffmpeg = None
+
+
+def bundled_ffmpeg_executable() -> str | None:
+    """Return the FFmpeg binary installed with imageio-ffmpeg, if available."""
+    if imageio_ffmpeg is None:
+        return None
+    try:
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
 
 class VideoLibrary:
     def __init__(self, image_library_path: Path) -> None:
@@ -23,9 +38,12 @@ class VideoLibrary:
         shutil.copy2(source, destination)
         thumbnail_filename = f"{destination.stem}.jpg"
         thumbnail_path = self.path / thumbnail_filename
+        ffmpeg = bundled_ffmpeg_executable()
         try:
+            if ffmpeg is None:
+                raise OSError("imageio-ffmpeg is unavailable")
             subprocess.run(
-                ["ffmpeg", "-y", "-ss", "0.1", "-i", str(destination), "-frames:v", "1", "-q:v", "3", str(thumbnail_path)],
+                [ffmpeg, "-y", "-ss", "0.1", "-i", str(destination), "-frames:v", "1", "-q:v", "3", str(thumbnail_path)],
                 capture_output=True, check=True, timeout=30,
             )
         except (OSError, subprocess.SubprocessError):
