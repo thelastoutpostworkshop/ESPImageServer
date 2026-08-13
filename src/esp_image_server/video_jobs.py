@@ -50,6 +50,10 @@ class VideoJobStore:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def has_active_job(self) -> bool:
+        with self._lock:
+            return any(job.status in {"queued", "running", "cancelling"} for job in self._jobs.values())
+
     def cancel(self, job_id: str) -> VideoJob | None:
         with self._lock:
             job = self._jobs.get(job_id)

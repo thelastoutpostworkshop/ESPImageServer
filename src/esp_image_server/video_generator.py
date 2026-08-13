@@ -29,6 +29,23 @@ class LTXVideoGenerator:
     def ready(self) -> bool:
         return self._pipeline is not None
 
+    def unload(self) -> None:
+        """Release LTX-Video from the GPU until the next video request."""
+        with self._lock:
+            pipeline, self._pipeline = self._pipeline, None
+        if pipeline is None:
+            return
+        try:
+            pipeline.to("cpu")
+        finally:
+            del pipeline
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+
     def _load(self, progress: Callable[[int, int, str], None] | None = None) -> None:
         if self._pipeline is not None:
             return

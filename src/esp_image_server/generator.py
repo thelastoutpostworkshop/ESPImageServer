@@ -85,6 +85,23 @@ class DiffusersGenerator:
             self.settings = settings
         self.load()
 
+    def unload(self) -> None:
+        """Release the image pipeline so another GPU workload can use VRAM."""
+        with self._lock:
+            pipeline, self._pipeline = self._pipeline, None
+        if pipeline is None:
+            return
+        try:
+            pipeline.to("cpu")
+        finally:
+            del pipeline
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+
     def generate(
         self, prompt: str, width: int | None = None, height: int | None = None,
         progress: Callable[[int, int], None] | None = None, inference_steps: int | None = None,

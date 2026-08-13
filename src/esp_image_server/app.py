@@ -11,7 +11,7 @@ import logging
 import os
 from pathlib import Path
 import subprocess
-from threading import Timer
+from threading import Lock, Timer
 from typing import Protocol
 import webbrowser
 
@@ -84,6 +84,8 @@ class ImageGenerator(Protocol):
     def load(self) -> None: ...
 
     def activate_model(self, settings: Settings) -> None: ...
+
+    def unload(self) -> None: ...
 
     def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None) -> Image.Image: ...
 
@@ -179,6 +181,9 @@ def create_app(
     display_command_store = display_command_store or DisplayCommandStore()
     video_generator = video_generator or LTXVideoGenerator()
     video_jobs = video_jobs or VideoJobStore()
+    # Only one model family may own the GPU at a time. The lock covers the
+    # check, unload, and job creation so simultaneous requests cannot overlap.
+    generation_mode_lock = Lock()
     video_output_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "videos"
     sd_thumbnail_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
@@ -311,6 +316,11 @@ def create_app(
                 status_code=409,
                 detail="Wait for the current image generation to finish before changing models",
             )
+        if video_jobs.has_active_job():
+            raise HTTPException(
+                status_code=409,
+                detail="Wait for the current video generation to finish before loading an image model",
+            )
         try:
             selected_settings = model_settings(settings, model_id)
         except ValueError as exc:
@@ -318,6 +328,7 @@ def create_app(
         if model_id == active_model_id and generator.ready:
             return {"status": "active", "model_id": model_id}
         try:
+            video_generator.unload()
             await run_in_threadpool(generator.activate_model, selected_settings)
             model_selection_store.set(model_id)
         except Exception:
@@ -740,7 +751,10 @@ def create_app(
 
     @app.post("/generate", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
     async def generate(request: GenerateRequest) -> Response:
+        if video_jobs.has_active_job():
+            raise HTTPException(status_code=409, detail="Wait for the current video generation to finish before generating an image")
         try:
+            await run_in_threadpool(video_generator.unload)
             jpeg = await run_in_threadpool(generate_jpeg, request)
         except RuntimeError as exc:
             logger.exception("Image generation failed")
@@ -752,7 +766,14 @@ def create_app(
 
     @app.post("/generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
-        job = generation_jobs.create(lambda progress, is_cancelled: generate_jpeg(request, progress, is_cancelled))
+        with generation_mode_lock:
+            if video_jobs.has_active_job():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Wait for the current video generation to finish before generating an image",
+                )
+            video_generator.unload()
+            job = generation_jobs.create(lambda progress, is_cancelled: generate_jpeg(request, progress, is_cancelled))
         return job.as_dict()
 
     @app.get("/generation-jobs/{job_id}")
@@ -794,18 +815,25 @@ def create_app(
             raise HTTPException(status_code=409, detail="LTX-Video requires a compatible NVIDIA GPU; this server is running image generation on CPU.")
         if (request.num_frames - 1) % 8:
             raise HTTPException(status_code=422, detail="Video frame count must be 1 plus a multiple of 8 (for example 17, 25, or 33).")
-        source_image_path = image_library.find_path(request.source_image_id) if request.source_image_id else None
-        if request.source_image_id and source_image_path is None:
-            raise HTTPException(status_code=404, detail="The selected Creation Gallery image was not found")
-        profile = active_display_store.get()
-        output_width = profile.width if profile else request.width
-        output_height = profile.height if profile else request.height
-        filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
-        output_path = video_output_path / filename
-        job = video_jobs.create(lambda progress, cancelled: video_generator.generate(
-            request.prompt, output_width, output_height, request.num_frames, request.fps,
-            request.steps, request.seed, output_path, progress, cancelled, source_image_path,
-        ))
+        with generation_mode_lock:
+            if generation_jobs.has_active_job():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Wait for the current image generation to finish before generating a video",
+                )
+            generator.unload()
+            source_image_path = image_library.find_path(request.source_image_id) if request.source_image_id else None
+            if request.source_image_id and source_image_path is None:
+                raise HTTPException(status_code=404, detail="The selected Creation Gallery image was not found")
+            profile = active_display_store.get()
+            output_width = profile.width if profile else request.width
+            output_height = profile.height if profile else request.height
+            filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
+            output_path = video_output_path / filename
+            job = video_jobs.create(lambda progress, cancelled: video_generator.generate(
+                request.prompt, output_width, output_height, request.num_frames, request.fps,
+                request.steps, request.seed, output_path, progress, cancelled, source_image_path,
+            ))
         return job.as_dict()
 
     @app.get("/video-generation-jobs/{job_id}")

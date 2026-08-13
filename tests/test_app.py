@@ -37,6 +37,9 @@ class FakeGenerator:
         self.ready = False
         self.load()
 
+    def unload(self) -> None:
+        self.ready = False
+
     def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None, cancelled=None) -> Image.Image:
         assert prompt == "a tiny robot"
         self.last_size = (width, height)
