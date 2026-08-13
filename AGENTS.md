@@ -16,6 +16,17 @@
 - Models are managed through `/models`; model selection is persistent on the server.
 - Image generation uses background jobs at `/generation-jobs`. Jobs support progress polling and `DELETE /generation-jobs/{id}` cancellation.
 - Generated JPEGs are stored in the configured local image library. Its `image_library_index.json` is kept separately in `%LOCALAPPDATA%\ESPImageServer` so the visible image folder contains only user images.
+- Image models expose a negative-prompt field only when supported: DreamShaper 8, SSD-1B, and SDXL. SD-Turbo deliberately does not receive a negative prompt.
+- Image and video models share the GPU. Starting one kind of job unloads the other model and clears CUDA cache; do not remove this handoff or allow concurrent image/video generation jobs.
+
+## Video generation and Creation Gallery
+
+- Video generation uses one-worker jobs at `/video-generation-jobs`, with progress polling and cancellation matching image jobs.
+- The selectable local LTX checkpoints are `ltxv-2b-0.9.6-distilled-04-25` (fast: 4–8 steps, CFG 1.0) and `ltxv-2b-0.9.6-dev-04-25` (quality: 10–40 steps, CFG 3.0). They are loaded lazily and swapped safely by `LTXVideoGenerator`.
+- Do not generate LTX directly at tiny ESP32 dimensions. `working_video_size()` creates a 32-pixel-aligned, aspect-matched working canvas (normally 384 pixels on the short side, max 704 on the long side), then frames are downscaled to the connected display's exact native size.
+- A video can be text-only or use a saved Creation Gallery image as its first frame. Preserve the `source_image_id` in video metadata so saved settings can restore that reference image.
+- Saved videos live in `<image library>\videos` with an adjacent JSON metadata file. The gallery groups both images and videos by the model name, shows tooltips, and lets the user restore saved video settings from a context menu.
+- Video thumbnails are extracted with the `ffmpeg` command when a video is saved. If it is unavailable, the gallery intentionally falls back to a video icon; keep this failure non-fatal.
 
 ## ESP32 display contract
 
@@ -44,6 +55,8 @@
   - `pyproject.toml`
   - `src/esp_image_server/app.py`
   - `installer/ESPImageServer.iss` (`AppVersion` and `OutputBaseFilename`)
+  - `desktop/package.json`
+  - the root-package entries in `desktop/package-lock.json`
 - Build the frontend first:
 
   ```powershell
@@ -68,7 +81,7 @@
 ## Verification
 
 - Frontend: `npm --prefix frontend run build`.
-- Backend tests: `pytest` when the project Python environment and dependencies are available. If they are not, report that clearly; do not install unrelated dependencies without approval.
+- Backend tests: use `& .\.venv\Scripts\python.exe -m pytest` when the project virtual environment is available. If it is not, report that clearly; do not install unrelated dependencies without approval.
 - Firmware: use the Arduino CLI profile in `JC4827W543_ai/sketch.yaml`. Compile the relevant target before handoff when practical.
 
 ## Collaboration preferences
