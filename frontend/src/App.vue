@@ -1191,7 +1191,7 @@ onUnmounted(() => {
     </v-app-bar>
 
     <v-navigation-drawer v-model="drawer" width="272" border :temporary="mobile">
-      <v-list-item class="py-4" title="ESPImageServer" subtitle="Local AI image generation" />
+      <v-list-item class="py-4" title="ESPImageServer" subtitle="Local AI image & video generation" />
       <v-divider />
       <v-list nav density="comfortable">
         <v-list-item title="Generate image" :active="page === 'generate'" @click="openGeneratePage">
