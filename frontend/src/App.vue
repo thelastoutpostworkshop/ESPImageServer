@@ -1029,7 +1029,7 @@ async function generateVideo() {
   generatingVideo.value = true
   videoError.value = ''
   videoProgress.value = 0
-  videoStage.value = 'Starting video generation. LTX-Video will download first if it is not already on this computer...'
+  videoStage.value = 'Starting video generation. The selected model will download first if it is not already on this computer...'
   completedVideoJobId.value = ''
   videoSavedToCreationLibrary.value = false
   try {

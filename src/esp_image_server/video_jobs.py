@@ -82,7 +82,7 @@ class VideoJobStore:
                 job.status, job.stage, job.step, job.steps = "running", stage, step, steps
 
         try:
-            progress(0, 0, "Preparing LTX-Video")
+            progress(0, 0, "Preparing the selected video model")
             path = work(progress, cancelled)
             if cancelled():
                 raise GenerationCancelled()

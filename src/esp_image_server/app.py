@@ -231,7 +231,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="1.0.17", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="1.0.18", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -852,7 +852,7 @@ def create_app(
     @app.get("/video-generation-info")
     def video_generation_info() -> dict[str, object]:
         return {
-            "model_name": "LTX-Video 2B distilled",
+            "model_name": "Local video generation",
             "model_id": video_generator.model_id,
             "ready": video_generator.ready,
             "requires_cuda": True,
@@ -863,7 +863,7 @@ def create_app(
     @app.post("/video-generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_video_generation_job(request: VideoGenerateRequest) -> dict[str, object]:
         if generator.device != "cuda":
-            raise HTTPException(status_code=409, detail="LTX-Video requires a compatible NVIDIA GPU; this server is running image generation on CPU.")
+            raise HTTPException(status_code=409, detail="Video generation requires a compatible NVIDIA GPU; this server is running image generation on CPU.")
         if (request.num_frames - 1) % 8:
             raise HTTPException(status_code=422, detail="Video frame count must be 1 plus a multiple of 8 (for example 17, 25, or 33).")
         video_model = VIDEO_MODELS.get(request.model_id)
