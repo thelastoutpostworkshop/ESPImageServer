@@ -672,6 +672,11 @@ async function saveImageToDisplaySdCard(savedImage = null) {
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     const command = await response.json()
+    if (command.status === 'already_saved') {
+      status.value = command.detail || 'This image is already on the display SD card.'
+      await loadDisplaySdCard()
+      return
+    }
     status.value = 'Save request sent to the display. Waiting for its SD card...'
     for (let attempt = 0; attempt < 15; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))

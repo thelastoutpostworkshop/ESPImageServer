@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from threading import Lock
 from uuid import uuid4
 
@@ -13,8 +12,8 @@ class DisplayCommandStore:
         self._pending: dict[str, object] | None = None
         self._completed: dict[str, dict[str, object]] = {}
 
-    def queue_save(self, image_id: str | None = None) -> dict[str, object]:
-        command = self.queue("save_saved_image" if image_id else "save_latest", image_id=image_id)
+    def queue_save(self, filename: str, image_id: str | None = None) -> dict[str, object]:
+        command = self.queue("save_saved_image" if image_id else "save_latest", filename=filename, image_id=image_id)
         filename = str(command["filename"])
         command["thumbnail_url"] = f"/display-sd-card/thumbnails/{filename}"
         with self._lock:
@@ -30,8 +29,6 @@ class DisplayCommandStore:
                 "type": command_type,
                 "status": "pending",
             }
-            if command_type.startswith("save_"):
-                command["filename"] = f"esp-image-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.jpg"
             command.update({key: value for key, value in values.items() if value is not None})
             self._pending = command
             self._completed[command_id] = command
@@ -44,6 +41,16 @@ class DisplayCommandStore:
     def sd_card_report(self) -> dict[str, object]:
         with self._lock:
             return dict(getattr(self, "_sd_card_report", {"available": False, "files": []}))
+
+    def sd_card_has_file(self, filename: str) -> bool:
+        with self._lock:
+            report = getattr(self, "_sd_card_report", {})
+            if not report.get("available", False):
+                return False
+            files = report.get("files", [])
+            return isinstance(files, list) and any(
+                isinstance(item, dict) and item.get("name") == filename for item in files
+            )
 
     def next(self) -> dict[str, object] | None:
         with self._lock:

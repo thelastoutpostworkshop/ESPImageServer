@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+import hashlib
 from io import BytesIO
 import json
 import logging
@@ -200,7 +201,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.101", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.102", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -345,17 +346,21 @@ def create_app(
         latest_image = latest_image_store.get()
         if latest_image is None:
             raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
-        command = display_command_store.queue_save()
-        write_sd_thumbnail(str(command["filename"]), latest_image.jpeg)
-        return command
+        return queue_image_save(latest_image.jpeg)
 
     @app.post("/display-commands/save-saved-image/{image_id}", status_code=status.HTTP_202_ACCEPTED)
     def save_creation_library_image_to_display_sd_card(image_id: str) -> dict[str, object]:
         image_path = image_library.find_path(image_id)
         if image_path is None:
             raise HTTPException(status_code=404, detail="Saved image not found")
-        command = display_command_store.queue_save(image_id)
-        write_sd_thumbnail(str(command["filename"]), image_path.read_bytes())
+        return queue_image_save(image_path.read_bytes(), image_id)
+
+    def queue_image_save(jpeg: bytes, image_id: str | None = None) -> dict[str, object]:
+        filename = f"esp-image-{hashlib.sha256(jpeg).hexdigest()}.jpg"
+        if display_command_store.sd_card_has_file(filename):
+            return {"status": "already_saved", "filename": filename, "detail": "Image is already on the display SD card"}
+        command = display_command_store.queue_save(filename, image_id)
+        write_sd_thumbnail(filename, jpeg)
         return command
 
     def write_sd_thumbnail(filename: str, jpeg: bytes) -> None:
