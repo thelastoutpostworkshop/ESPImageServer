@@ -167,7 +167,6 @@ class LTXVideoGenerator:
             generation_options: dict[str, object] = {}
             if source_image_path is not None:
                 from diffusers import LTXImageToVideoPipeline
-                from PIL import Image
 
                 progress(0, 0, "Preparing your Creation Gallery image for animation")
                 with Image.open(source_image_path) as source_image:
