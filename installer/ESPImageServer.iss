@@ -2,8 +2,11 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "1.0.20"
+#define AppVersion "1.0.21"
 #define AppPublisher "ESPImageServer"
+#ifndef DesktopBuildOutput
+  #define DesktopBuildOutput "..\desktop\release\win-unpacked"
+#endif
 
 [Setup]
 AppId={{18AA2901-70A7-4C30-9C55-6B78F51F6CC0}
@@ -13,7 +16,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-1.0.20
+OutputBaseFilename=ESPImageServer-Setup-1.0.21
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -31,7 +34,7 @@ UninstallDisplayName={#AppName}
 [Files]
 Source: "..\src\*"; DestDir: "{app}\src"; Excludes: "__pycache__\*,*.pyc,*.egg-info\*"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\frontend\dist\*"; DestDir: "{app}\web"; Flags: recursesubdirs createallsubdirs ignoreversion
-Source: "..\desktop\release\win-unpacked\*"; DestDir: "{app}\desktop"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#DesktopBuildOutput}\*"; DestDir: "{app}\desktop"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion

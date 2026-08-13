@@ -19,12 +19,19 @@ if (-not (Test-Path -LiteralPath $innoSetup)) {
     throw "Inno Setup compiler was not found at: $innoSetup"
 }
 
-function Invoke-BuildStep([string]$Name, [scriptblock]$Command) {
-    Write-Host "`n==> $Name" -ForegroundColor Cyan
-    & $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Name failed with exit code $LASTEXITCODE."
+function Invoke-BuildStep([string]$Name, [scriptblock]$Command, [int]$RetryCount = 0) {
+    for ($attempt = 0; $attempt -le $RetryCount; $attempt++) {
+        Write-Host "`n==> $Name" -ForegroundColor Cyan
+        & $Command
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+        if ($attempt -lt $RetryCount) {
+            Write-Warning "$Name failed with exit code $LASTEXITCODE. Retrying in 3 seconds in case Windows is releasing a locked build file."
+            Start-Sleep -Seconds 3
+        }
     }
+    throw "$Name failed with exit code $LASTEXITCODE. Close ESPImageServer if it is running, then try again."
 }
 
 function Set-DerivedVersion([string]$Path, [string]$Pattern, [scriptblock]$Replacement, [string]$Description) {
@@ -72,8 +79,22 @@ try {
     }
 
     Invoke-BuildStep 'Building the web app' { npm --prefix frontend run build }
-    Invoke-BuildStep 'Building the Electron application' { npm --prefix desktop run build }
-    Invoke-BuildStep 'Compiling the installer' { & $innoSetup installer\ESPImageServer.iss }
+    # Build to a fresh staging directory every time. This avoids an antivirus
+    # scanner or previous Electron run keeping the old app.asar locked.
+    $desktopBuildOutput = Join-Path $projectRoot ("desktop\release\installer-staging-" + [guid]::NewGuid().ToString('N'))
+    $desktopAppOutput = Join-Path $desktopBuildOutput 'win-unpacked'
+    Invoke-BuildStep 'Building the Electron application' {
+        Push-Location (Join-Path $projectRoot 'desktop')
+        try {
+            & .\node_modules\.bin\electron-builder.cmd --win --x64 --dir "--config.directories.output=$desktopBuildOutput"
+        } finally {
+            Pop-Location
+        }
+    }
+    if (-not (Test-Path -LiteralPath $desktopAppOutput)) {
+        throw "Electron packaging completed but the expected staging folder was not found: $desktopAppOutput"
+    }
+    Invoke-BuildStep 'Compiling the installer' { & $innoSetup "/DDesktopBuildOutput=$desktopAppOutput" installer\ESPImageServer.iss }
 
     $installerPath = Join-Path $projectRoot "dist\ESPImageServer-Setup-$version.exe"
     if (-not (Test-Path -LiteralPath $installerPath)) {
