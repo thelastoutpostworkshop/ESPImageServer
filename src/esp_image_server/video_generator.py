@@ -34,6 +34,7 @@ class LTXVideoGenerator:
             import torch
             from diffusers import LTXPipeline
             from huggingface_hub import hf_hub_download, snapshot_download
+            from transformers import T5EncoderModel
         except ImportError as exc:
             raise RuntimeError("Video dependencies are missing. Reinstall ESPImageServer to add LTX-Video support.") from exc
         if not torch.cuda.is_available():
@@ -69,11 +70,26 @@ class LTXVideoGenerator:
             ],
         )
         if progress is not None:
+            progress(0, 0, "Checking or downloading the LTX text encoder (first download may take several minutes)")
+        text_encoder_root = snapshot_download(
+            repo_id=self.checkpoint_repository,
+            cache_dir=cache_dir,
+            local_dir=cache_dir / "ltx-video-text-encoder",
+            local_dir_use_symlinks=False,
+            allow_patterns="text_encoder/*",
+        )
+        text_encoder = T5EncoderModel.from_pretrained(
+            Path(text_encoder_root) / "text_encoder",
+            torch_dtype=torch.bfloat16,
+            local_files_only=True,
+        )
+        if progress is not None:
             progress(0, 0, "Loading LTX-Video into your NVIDIA graphics card")
         pipeline = LTXPipeline.from_single_file(
             checkpoint_path,
             config=config_path,
             torch_dtype=torch.bfloat16,
+            text_encoder=text_encoder,
         )
         pipeline.to("cuda")
         # Tiling is provided by the LTX VAE rather than the pipeline itself.

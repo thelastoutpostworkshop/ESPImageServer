@@ -39,7 +39,7 @@
 
 ## Installer and releases
 
-- For any app or installer-facing change, rebuild the installer automatically.
+- For any app or installer-facing change, do not rebuild the installer, the user will ask to rebuild it.
 - Increment the patch version consistently in:
   - `pyproject.toml`
   - `src/esp_image_server/app.py`
