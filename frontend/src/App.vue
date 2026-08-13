@@ -1277,7 +1277,7 @@ onUnmounted(() => {
         </v-row>
         </template>
 
-        <v-card v-else-if="page === 'video'" class="mx-auto" max-width="980">
+        <v-card v-else-if="page === 'video'" class="mx-auto" max-width="1400">
           <v-card-title class="text-h5 pt-5">Generate video <v-chip class="ml-2" size="small" color="warning" variant="tonal">Experimental</v-chip></v-card-title>
           <v-card-text>
             <v-alert type="warning" variant="tonal" density="compact" class="mb-4" icon="mdi-expansion-card-variant">
@@ -1286,6 +1286,8 @@ onUnmounted(() => {
             <v-alert v-if="health?.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
               Video generation cannot run in CPU mode. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, then restart ESPImageServer.
             </v-alert>
+            <v-row>
+              <v-col cols="12" lg="5">
             <v-form @submit.prevent="generateVideo">
               <div v-if="display?.connected" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
               <v-alert v-if="videoSourceImage" type="success" variant="tonal" density="compact" class="mb-4">
@@ -1297,10 +1299,10 @@ onUnmounted(() => {
               </v-alert>
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow />
               <v-row dense class="mt-1">
-                <v-col cols="12" sm="6" lg="3"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="videoFrameOptions" hint="Longer clips need more graphics-card memory." persistent-hint /></v-col>
-                <v-col cols="12" sm="6" lg="3"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
-                <v-col cols="12" sm="6" lg="3"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" hint="8 is recommended for the distilled model." persistent-hint :items="[4, 5, 6, 7, 8]" /></v-col>
-                <v-col cols="12" sm="6" lg="3"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
+                <v-col cols="12" sm="6"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="videoFrameOptions" hint="Longer clips need more graphics-card memory." persistent-hint /></v-col>
+                <v-col cols="12" sm="6"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
+                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" hint="8 is recommended for the distilled model." persistent-hint :items="[4, 5, 6, 7, 8]" /></v-col>
+                <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
               <v-btn type="submit" class="mt-4" color="primary" :disabled="generatingVideo || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
               <v-btn v-if="generatingVideo" class="ml-2 mt-4" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
@@ -1311,7 +1313,18 @@ onUnmounted(() => {
             </div>
             <v-alert v-else-if="videoStage" type="success" variant="tonal" density="compact" class="mt-4">{{ videoStage }}</v-alert>
             <v-alert v-if="videoError" type="error" variant="tonal" density="compact" class="mt-4">{{ videoError }}</v-alert>
-            <video v-if="videoUrl" :src="videoUrl" controls loop class="mt-6 w-100 rounded border" />
+              </v-col>
+              <v-col cols="12" lg="7">
+                <v-card class="generated-video-card h-100">
+                  <video v-if="videoUrl" :src="videoUrl" controls loop class="w-100 rounded" />
+                  <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
+                    <v-avatar color="primary" variant="tonal" size="64" class="mb-4"><v-icon size="34">mdi-movie-open-outline</v-icon></v-avatar>
+                    <div class="text-h6">Your generated video will appear here</div>
+                    <div class="text-body-2 text-medium-emphasis mt-2">Describe a scene, choose your settings, then select Generate video.</div>
+                  </v-sheet>
+                </v-card>
+              </v-col>
+            </v-row>
           </v-card-text>
           <v-card-actions v-if="videoUrl"><v-btn :href="videoUrl" download="esp-image-video.mp4" color="secondary" prepend-icon="mdi-download">Download MP4</v-btn></v-card-actions>
         </v-card>
