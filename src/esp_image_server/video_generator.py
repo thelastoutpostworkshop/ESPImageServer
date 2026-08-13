@@ -33,14 +33,13 @@ class LTXVideoGenerator:
         try:
             import torch
             from diffusers import LTXPipeline
-            from huggingface_hub import hf_hub_download
+            from huggingface_hub import hf_hub_download, snapshot_download
         except ImportError as exc:
             raise RuntimeError("Video dependencies are missing. Reinstall ESPImageServer to add LTX-Video support.") from exc
         if not torch.cuda.is_available():
             raise RuntimeError("LTX-Video requires a compatible NVIDIA GPU. Video generation is not available in CPU mode.")
-        options: dict[str, object] = {"torch_dtype": torch.bfloat16}
-        if cache_dir := os.getenv("ESP_IMAGE_MODEL_CACHE"):
-            options["cache_dir"] = cache_dir
+        cache_dir = Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
+        cache_dir.mkdir(parents=True, exist_ok=True)
         # Download with Hugging Face's cache API first. Passing its web URL to
         # from_single_file makes recent Diffusers versions mistake ``resolve``
         # for part of the filename.
@@ -49,16 +48,31 @@ class LTXVideoGenerator:
         checkpoint_path = hf_hub_download(
             repo_id=self.checkpoint_repository,
             filename=self.checkpoint_filename,
-            cache_dir=options.get("cache_dir"),
+            cache_dir=cache_dir,
         )
         # This original-format checkpoint contains the actual 2B distilled
         # model. Diffusers recognises its format and uses the 0.9.5 component
         # configuration.
         if progress is not None:
+            progress(0, 0, "Preparing LTX-Video configuration files")
+        # Keep the configuration in a normal application folder rather than a
+        # Hugging Face snapshot. This avoids Windows symlink creation, which is
+        # commonly denied for standard (non-developer-mode) user accounts.
+        config_path = snapshot_download(
+            repo_id=self.config_id,
+            cache_dir=cache_dir,
+            local_dir=cache_dir / "ltx-video-0.9.5-config",
+            local_dir_use_symlinks=False,
+            allow_patterns=[
+                "model_index.json", "scheduler/*", "text_encoder/config.json",
+                "tokenizer/*", "transformer/config.json", "vae/config.json",
+            ],
+        )
+        if progress is not None:
             progress(0, 0, "Loading LTX-Video into your NVIDIA graphics card")
         pipeline = LTXPipeline.from_single_file(
             checkpoint_path,
-            config=self.config_id,
+            config=config_path,
             torch_dtype=torch.bfloat16,
         )
         pipeline.to("cuda")
