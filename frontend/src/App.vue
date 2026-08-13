@@ -1283,15 +1283,12 @@ onUnmounted(() => {
             <v-alert v-if="health?.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
               Video generation cannot run in CPU mode. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, then restart ESPImageServer.
             </v-alert>
-            <v-alert :type="health?.device === 'cuda' ? 'success' : 'info'" variant="tonal" density="compact" class="mb-4">
-              <strong>Processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
-            </v-alert>
             <v-form @submit.prevent="generateVideo">
               <v-alert v-if="videoSourceImage" type="success" variant="tonal" density="compact" class="mb-4">
                 <div class="d-flex align-center">
                   <v-avatar rounded size="44" class="mr-3"><v-img :src="`/saved-images/${encodeURIComponent(videoSourceImage.id)}/thumbnail`" /></v-avatar>
                   <span>Animating the selected Creation Gallery image as the first frame.</span>
-                  <v-spacer /><v-btn size="small" variant="text" @click="videoSourceImage = null">Use text only</v-btn>
+                  <v-spacer /><v-btn icon="mdi-close" size="small" variant="text" aria-label="Stop using this image for the video" @click="videoSourceImage = null" />
                 </div>
               </v-alert>
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow />
