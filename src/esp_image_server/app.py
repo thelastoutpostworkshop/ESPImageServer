@@ -138,7 +138,7 @@ class VideoGenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=1_000)
     width: int = Field(default=512, ge=256, le=768, multiple_of=32)
     height: int = Field(default=320, ge=256, le=768, multiple_of=32)
-    num_frames: int = Field(default=25, ge=9, le=81)
+    num_frames: int = Field(default=25, ge=9, le=249)
     fps: int = Field(default=8, ge=4, le=24)
     steps: int = Field(default=8, ge=4, le=8)
     seed: int | None = Field(default=None, ge=0, le=4_294_967_295)

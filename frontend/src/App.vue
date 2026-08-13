@@ -12,6 +12,7 @@ const imageLibraryPaneSettingsKey = 'esp-image-server.image-library-pane-pinned'
 const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
 const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thumbnail-size'
+const videoFrameValues = [17, 25, 33, 41, 49, 57, 65, 73, 81]
 
 function loadImageLibraryWidth() {
   const savedWidth = Number(window.localStorage.getItem(imageLibraryWidthSettingsKey))
@@ -42,7 +43,7 @@ function loadVideoGenerationSettings() {
     const saved = JSON.parse(window.localStorage.getItem(videoGenerationSettingsKey) || '{}')
     return {
       prompt: typeof saved.prompt === 'string' ? saved.prompt : 'Gentle cinematic camera movement, subtle natural motion',
-      frames: [17, 25, 33].includes(saved.frames) ? saved.frames : 25,
+      frames: videoFrameValues.includes(saved.frames) ? saved.frames : 25,
       fps: [8, 12, 15, 24].includes(saved.fps) ? saved.fps : 8,
       steps: [4, 5, 6, 7, 8].includes(saved.steps) ? saved.steps : 8,
       seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed()
@@ -133,6 +134,10 @@ const generationBusy = computed(() => generating.value || health.value?.generati
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
+})))
+const videoFrameOptions = computed(() => videoFrameValues.map(frames => ({
+  title: `${frames} frames · ${(frames / Number(videoFps.value)).toFixed(1)} seconds`,
+  value: frames
 })))
 const rotationOptions = [
   { title: 'Normal (0°)', value: 0 },
@@ -1293,7 +1298,7 @@ onUnmounted(() => {
               </v-alert>
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow />
               <v-row dense class="mt-1">
-                <v-col cols="12" sm="6" lg="3"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="[{ title: '17 frames · about 2 seconds', value: 17 }, { title: '25 frames · about 3 seconds', value: 25 }, { title: '33 frames · about 4 seconds', value: 33 }]" /></v-col>
+                <v-col cols="12" sm="6" lg="3"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="videoFrameOptions" hint="Longer clips need more graphics-card memory." persistent-hint /></v-col>
                 <v-col cols="12" sm="6" lg="3"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
                 <v-col cols="12" sm="6" lg="3"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" hint="8 is recommended for the distilled model." persistent-hint :items="[4, 5, 6, 7, 8]" /></v-col>
                 <v-col cols="12" sm="6" lg="3"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
