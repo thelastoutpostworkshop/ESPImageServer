@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Callable
 
+import numpy as np
 from PIL import Image, ImageOps
 
 from .generation_jobs import GenerationCancelled
@@ -45,6 +46,27 @@ def working_wan_video_size(width: int, height: int) -> tuple[int, int]:
     working_width = max(256, round(width * scale / 16) * 16)
     working_height = max(256, round(height * scale / 16) * 16)
     return working_width, working_height
+
+
+def frame_to_rgb_image(frame: Image.Image | object) -> Image.Image:
+    """Convert Diffusers frame output to a Pillow-compatible RGB image.
+
+    LTX normally returns Pillow images, whereas Wan can return floating-point
+    NumPy arrays with RGB values in the 0..1 range. Pillow cannot construct an
+    RGB image directly from those float arrays, so normalize them first.
+    """
+    if isinstance(frame, Image.Image):
+        return frame.convert("RGB")
+
+    array = np.asarray(frame)
+    if np.issubdtype(array.dtype, np.floating):
+        array = np.nan_to_num(array, nan=0.0, posinf=1.0, neginf=0.0)
+        if array.size and array.min() >= 0.0 and array.max() <= 1.0:
+            array = array * 255.0
+        array = np.rint(np.clip(array, 0, 255)).astype(np.uint8)
+    elif array.dtype != np.uint8:
+        array = np.clip(array, 0, 255).astype(np.uint8)
+    return Image.fromarray(array).convert("RGB")
 
 
 class LTXVideoGenerator:
@@ -263,7 +285,7 @@ class LTXVideoGenerator:
                 progress(steps, steps, "Resizing video for your ESP32 display")
                 frames = [
                     ImageOps.fit(
-                        frame.convert("RGB") if isinstance(frame, Image.Image) else Image.fromarray(frame).convert("RGB"),
+                        frame_to_rgb_image(frame),
                         (width, height), method=Image.Resampling.LANCZOS,
                     )
                     for frame in frames
