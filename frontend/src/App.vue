@@ -46,10 +46,11 @@ function loadVideoGenerationSettings() {
       frames: videoFrameValues.includes(saved.frames) ? saved.frames : 25,
       fps: [8, 12, 15, 24].includes(saved.fps) ? saved.fps : 8,
       steps: [4, 5, 6, 7, 8].includes(saved.steps) ? saved.steps : 8,
+      modelId: saved.modelId === 'ltx-2b-0.9.6-dev' ? saved.modelId : 'ltx-2b-0.9.6-distilled',
       seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed()
     }
   } catch {
-    return { prompt: 'Gentle cinematic camera movement, subtle natural motion', frames: 25, fps: 8, steps: 8, seed: createRandomSeed() }
+    return { prompt: 'Gentle cinematic camera movement, subtle natural motion', frames: 25, fps: 8, steps: 8, modelId: 'ltx-2b-0.9.6-distilled', seed: createRandomSeed() }
   }
 }
 
@@ -73,6 +74,7 @@ const videoSeed = ref(savedVideoGenerationSettings.seed)
 const videoFrames = ref(savedVideoGenerationSettings.frames)
 const videoFps = ref(savedVideoGenerationSettings.fps)
 const videoSteps = ref(savedVideoGenerationSettings.steps)
+const videoModelId = ref(savedVideoGenerationSettings.modelId)
 const generatingVideo = ref(false)
 const cancellingVideo = ref(false)
 const activeVideoJobId = ref('')
@@ -139,6 +141,14 @@ const videoFrameOptions = computed(() => videoFrameValues.map(frames => ({
   title: `${frames} frames · ${(frames / Number(videoFps.value)).toFixed(1)} seconds`,
   value: frames
 })))
+const videoModels = [
+  { title: 'LTX-Video 2B distilled — fast', value: 'ltx-2b-0.9.6-distilled', description: 'Best for quick short animations. Uses less graphics-card memory.' },
+  { title: 'LTX-Video 2B quality — detailed', value: 'ltx-2b-0.9.6-dev', description: 'Best when detail matters more than speed. Much slower and needs more graphics-card memory.' }
+]
+const selectedVideoModel = computed(() => videoModels.find(model => model.value === videoModelId.value) || videoModels[0])
+const videoStepOptions = computed(() => videoModelId.value === 'ltx-2b-0.9.6-dev'
+  ? [10, 15, 20, 25, 30, 35, 40]
+  : [4, 5, 6, 7, 8])
 const rotationOptions = [
   { title: 'Normal (0°)', value: 0 },
   { title: 'Rotate 90° clockwise', value: 90 },
@@ -171,14 +181,19 @@ watch([prompt, steps, seed, activeModelId], () => {
   }))
 })
 
-watch([videoPrompt, videoFrames, videoFps, videoSteps, videoSeed], () => {
+watch([videoPrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed], () => {
   window.localStorage.setItem(videoGenerationSettingsKey, JSON.stringify({
     prompt: videoPrompt.value,
     frames: Number(videoFrames.value),
     fps: Number(videoFps.value),
     steps: Number(videoSteps.value),
+    modelId: videoModelId.value,
     seed: videoSeed.value === '' ? null : Number(videoSeed.value)
-  }))
+}))
+
+watch(videoModelId, modelId => {
+  videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' ? 30 : 8
+})
 })
 
 watch(metadataPanePinned, pinned => {
@@ -897,6 +912,7 @@ async function generateVideo() {
         num_frames: Number(videoFrames.value),
         fps: Number(videoFps.value),
         steps: Number(videoSteps.value),
+        model_id: videoModelId.value,
         seed: videoSeed.value === '' ? null : Number(videoSeed.value),
         source_image_id: videoSourceImage.value?.id || null
       })
@@ -1297,11 +1313,20 @@ onUnmounted(() => {
                   <v-spacer /><v-btn icon="mdi-close" size="small" variant="text" aria-label="Stop using this image for the video" @click="videoSourceImage = null" />
                 </div>
               </v-alert>
+              <v-select v-model="videoModelId" :items="videoModels" label="Video model" variant="outlined" density="comfortable" class="mb-3" />
+              <v-card variant="tonal" color="primary" class="mb-4">
+                <v-card-title class="text-subtitle-1">Which video model should I use?</v-card-title>
+                <v-card-text class="pt-0">
+                  <div class="font-weight-medium">{{ selectedVideoModel.title }}</div>
+                  <div class="text-body-2 mt-1">{{ selectedVideoModel.description }}</div>
+                  <div class="text-caption text-medium-emphasis mt-3">The 13B and FP8 LTX models are not shown because they are not a practical fit for an RTX 3060 Ti.</div>
+                </v-card-text>
+              </v-card>
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow />
               <v-row dense class="mt-1">
                 <v-col cols="12" sm="6"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="videoFrameOptions" hint="Longer clips need more graphics-card memory." persistent-hint /></v-col>
                 <v-col cols="12" sm="6"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
-                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" hint="8 is recommended for the distilled model." persistent-hint :items="[4, 5, 6, 7, 8]" /></v-col>
+                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
               <v-btn type="submit" class="mt-4" color="primary" :disabled="generatingVideo || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>

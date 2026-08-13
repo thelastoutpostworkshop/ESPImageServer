@@ -37,7 +37,7 @@ from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser
 from .models import MODELS, get_model, model_is_cached, model_settings
 from .model_settings import ModelSelectionStore
-from .video_generator import LTXVideoGenerator
+from .video_generator import LTXVideoGenerator, VIDEO_MODELS
 from .video_jobs import VideoJobStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -142,7 +142,8 @@ class VideoGenerateRequest(BaseModel):
     height: int = Field(default=320, ge=1, le=768)
     num_frames: int = Field(default=25, ge=9, le=249)
     fps: int = Field(default=8, ge=4, le=24)
-    steps: int = Field(default=8, ge=4, le=8)
+    steps: int = Field(default=8, ge=4, le=40)
+    model_id: str = Field(default="ltx-2b-0.9.6-distilled")
     seed: int | None = Field(default=None, ge=0, le=4_294_967_295)
     source_image_id: str | None = Field(default=None, min_length=1, max_length=64)
 
@@ -807,6 +808,7 @@ def create_app(
             "ready": video_generator.ready,
             "requires_cuda": True,
             "device": generator.device,
+            "models": [{"id": model_id, **model} for model_id, model in VIDEO_MODELS.items()],
         }
 
     @app.post("/video-generation-jobs", status_code=status.HTTP_202_ACCEPTED)
@@ -815,6 +817,13 @@ def create_app(
             raise HTTPException(status_code=409, detail="LTX-Video requires a compatible NVIDIA GPU; this server is running image generation on CPU.")
         if (request.num_frames - 1) % 8:
             raise HTTPException(status_code=422, detail="Video frame count must be 1 plus a multiple of 8 (for example 17, 25, or 33).")
+        video_model = VIDEO_MODELS.get(request.model_id)
+        if video_model is None:
+            raise HTTPException(status_code=422, detail="This video model is not available")
+        if not video_model["minimum_steps"] <= request.steps <= video_model["maximum_steps"]:
+            raise HTTPException(status_code=422, detail=(
+                f"{video_model['name']} supports {video_model['minimum_steps']} to {video_model['maximum_steps']} steps"
+            ))
         with generation_mode_lock:
             if generation_jobs.has_active_job():
                 raise HTTPException(
@@ -832,8 +841,9 @@ def create_app(
             output_path = video_output_path / filename
             job = video_jobs.create(lambda progress, cancelled: video_generator.generate(
                 request.prompt, output_width, output_height, request.num_frames, request.fps,
-                request.steps, request.seed, output_path, progress, cancelled, source_image_path,
-            ))
+            request.steps, request.seed, output_path, progress, cancelled, source_image_path,
+            request.model_id,
+        ))
         return job.as_dict()
 
     @app.get("/video-generation-jobs/{job_id}")

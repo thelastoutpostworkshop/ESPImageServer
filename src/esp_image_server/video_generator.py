@@ -4,12 +4,24 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 from typing import Callable
 
 from PIL import Image, ImageOps
 
 from .generation_jobs import GenerationCancelled
+
+
+VIDEO_MODELS = {
+    "ltx-2b-0.9.6-distilled": {
+        "name": "LTX-Video 2B distilled", "description": "Fast short animations with low graphics-card memory use.",
+        "checkpoint": "ltxv-2b-0.9.6-distilled-04-25.safetensors", "minimum_steps": 4, "maximum_steps": 8, "recommended_steps": 8,
+    },
+    "ltx-2b-0.9.6-dev": {
+        "name": "LTX-Video 2B quality", "description": "More detail and prompt accuracy, but much slower and more demanding.",
+        "checkpoint": "ltxv-2b-0.9.6-dev-04-25.safetensors", "minimum_steps": 10, "maximum_steps": 40, "recommended_steps": 30,
+    },
+}
 
 
 class LTXVideoGenerator:
@@ -18,12 +30,12 @@ class LTXVideoGenerator:
     # by the video page and produces substantially weaker results at short lengths.
     model_id = "Lightricks/LTX-Video · ltxv-2b-0.9.6-distilled-04-25"
     checkpoint_repository = "Lightricks/LTX-Video"
-    checkpoint_filename = "ltxv-2b-0.9.6-distilled-04-25.safetensors"
     config_id = "Lightricks/LTX-Video-0.9.5"
 
     def __init__(self) -> None:
         self._pipeline = None
-        self._lock = Lock()
+        self._loaded_model_id: str | None = None
+        self._lock = RLock()
 
     @property
     def ready(self) -> bool:
@@ -33,6 +45,7 @@ class LTXVideoGenerator:
         """Release LTX-Video from the GPU until the next video request."""
         with self._lock:
             pipeline, self._pipeline = self._pipeline, None
+            self._loaded_model_id = None
         if pipeline is None:
             return
         try:
@@ -46,9 +59,13 @@ class LTXVideoGenerator:
             except ImportError:
                 pass
 
-    def _load(self, progress: Callable[[int, int, str], None] | None = None) -> None:
-        if self._pipeline is not None:
+    def _load(self, model_id: str, progress: Callable[[int, int, str], None] | None = None) -> None:
+        if model_id not in VIDEO_MODELS:
+            raise ValueError("Unsupported video model")
+        if self._pipeline is not None and self._loaded_model_id == model_id:
             return
+        if self._pipeline is not None:
+            self.unload()
         try:
             import torch
             from diffusers import LTXPipeline
@@ -67,7 +84,7 @@ class LTXVideoGenerator:
             progress(0, 0, "Checking or downloading LTX-Video (first download may take several minutes)")
         checkpoint_path = hf_hub_download(
             repo_id=self.checkpoint_repository,
-            filename=self.checkpoint_filename,
+            filename=VIDEO_MODELS[model_id]["checkpoint"],
             cache_dir=cache_dir,
         )
         # This original-format checkpoint contains the actual 2B distilled
@@ -115,14 +132,16 @@ class LTXVideoGenerator:
         # This keeps memory use manageable on supported NVIDIA GPUs.
         pipeline.vae.enable_tiling()
         self._pipeline = pipeline
+        self._loaded_model_id = model_id
 
     def generate(
         self, prompt: str, width: int, height: int, num_frames: int, fps: int, steps: int,
         seed: int | None, output_path: Path, progress: Callable[[int, int, str], None],
         cancelled: Callable[[], bool], source_image_path: Path | None = None,
+        model_id: str = "ltx-2b-0.9.6-distilled",
     ) -> Path:
         with self._lock:
-            self._load(progress)
+            self._load(model_id, progress)
             import torch
             from diffusers.utils import export_to_video
             if cancelled():
