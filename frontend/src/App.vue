@@ -180,6 +180,15 @@ const savedImageGroups = computed(() => {
   }
   return [...groups].map(([modelName, images]) => ({ modelName, images }))
 })
+const savedVideoGroups = computed(() => {
+  const groups = new Map()
+  for (const savedVideo of savedVideos.value) {
+    const modelName = savedVideo.metadata?.model?.name || 'Other videos'
+    if (!groups.has(modelName)) groups.set(modelName, [])
+    groups.get(modelName).push(savedVideo)
+  }
+  return [...groups].map(([modelName, videos]) => ({ modelName, videos }))
+})
 
 watch([prompt, negativePrompt, steps, seed, activeModelId], () => {
   window.localStorage.setItem(generationSettingsKey, JSON.stringify({
@@ -1187,9 +1196,10 @@ onUnmounted(() => {
         </v-list>
         <div v-if="!savedImagesLoading && !savedImages.length" class="text-body-2 text-medium-emphasis">No generated images have been saved yet.</div>
         <template v-if="savedVideos.length">
-          <div class="text-subtitle-1 font-weight-bold mt-6 mb-2">Saved videos</div>
-          <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
-            <v-tooltip v-for="savedVideo in savedVideos" :key="savedVideo.id" location="end" max-width="300">
+          <section v-for="group in savedVideoGroups" :key="group.modelName" class="saved-image-group mt-6">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
+            <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
+            <v-tooltip v-for="savedVideo in group.videos" :key="savedVideo.id" location="end" max-width="300">
               <template #activator="{ props }">
                 <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
                   <v-img v-if="savedVideo.thumbnail_filename" :src="`/saved-videos/${encodeURIComponent(savedVideo.id)}/thumbnail`" aspect-ratio="1.33" cover />
@@ -1205,7 +1215,8 @@ onUnmounted(() => {
                 <div><strong>Created:</strong> {{ formatDateTime(savedVideo.created_at) }}</div>
               </div>
             </v-tooltip>
-          </div>
+            </div>
+          </section>
         </template>
         <v-alert v-if="metadataError" type="warning" variant="tonal" density="compact" class="mt-3">{{ metadataError }}</v-alert>
       </div>
