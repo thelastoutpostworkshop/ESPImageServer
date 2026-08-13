@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "0.1.110"
+#define AppVersion "0.1.111"
 #define AppPublisher "ESPImageServer"
 
 [Setup]
@@ -13,7 +13,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-0.1.110
+OutputBaseFilename=ESPImageServer-Setup-0.1.111
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

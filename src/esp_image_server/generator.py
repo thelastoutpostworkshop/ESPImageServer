@@ -21,8 +21,19 @@ class DiffusersGenerator:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._pipeline = None
-        self._device = "cpu"
+        # Models are loaded only once a user selects one.  Detect CUDA here as
+        # well so the UI can correctly offer video generation before any image
+        # model has been downloaded.
+        self._device = self._detect_device()
         self._lock = Lock()
+
+    @staticmethod
+    def _detect_device() -> str:
+        try:
+            import torch
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            return "cpu"
 
     @property
     def device(self) -> str:
