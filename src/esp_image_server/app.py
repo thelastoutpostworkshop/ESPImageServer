@@ -39,6 +39,7 @@ from .models import MODELS, get_model, model_is_cached, model_settings
 from .model_settings import ModelSelectionStore
 from .video_generator import LTXVideoGenerator, VIDEO_MODELS
 from .video_jobs import VideoJobStore
+from .video_library import VideoLibrary
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -192,6 +193,7 @@ def create_app(
     persisted_app_settings = app_settings_store.get()
     library_location = persisted_app_settings.get("image_library_location")
     image_library = image_library or ImageLibrary(Path(library_location) if isinstance(library_location, str) else None)
+    video_library = VideoLibrary(image_library.path)
     jpeg_quality = persisted_app_settings.get("jpeg_quality", settings.jpeg_quality)
     jpeg_quality = jpeg_quality if isinstance(jpeg_quality, int) and 1 <= jpeg_quality <= 100 else settings.jpeg_quality
     auto_save_images = persisted_app_settings.get("auto_save_images", True)
@@ -236,6 +238,7 @@ def create_app(
     app.state.display_command_store = display_command_store
     app.state.image_library = image_library
     app.state.video_jobs = video_jobs
+    app.state.video_library = video_library
     app.state.app_settings_store = app_settings_store
     app.mount(
         "/assets",
@@ -498,6 +501,7 @@ def create_app(
                 raise HTTPException(status_code=422, detail="Choose an absolute folder path for the image library")
             try:
                 image_library.relocate(location)
+                video_library.path = image_library.path / "videos"
             except (OSError, ValueError) as exc:
                 raise HTTPException(status_code=422, detail=f"Could not move the image library: {exc}") from exc
         if request.jpeg_quality is not None:
@@ -563,6 +567,17 @@ def create_app(
     @app.get("/saved-images")
     def saved_images() -> list[dict[str, object]]:
         return image_library.list()
+
+    @app.get("/saved-videos")
+    def saved_videos() -> list[dict[str, object]]:
+        return video_library.list()
+
+    @app.get("/saved-videos/{video_id}/video")
+    def saved_video(video_id: str) -> FileResponse:
+        video_path = video_library.find_path(video_id)
+        if video_path is None:
+            raise HTTPException(status_code=404, detail="Saved video not found")
+        return FileResponse(video_path, media_type="video/mp4", filename=video_path.name)
 
     @app.post("/creation-library/images", status_code=status.HTTP_201_CREATED)
     async def save_image_to_creation_library(request: Request) -> dict[str, object]:
@@ -849,7 +864,11 @@ def create_app(
                 request.prompt, output_width, output_height, request.num_frames, request.fps,
             request.steps, request.seed, output_path, progress, cancelled, source_image_path,
             request.model_id,
-        ))
+            ))
+            job.metadata = {
+                "model": {"id": request.model_id, "name": video_model["name"]}, "prompt": request.prompt,
+                "steps": request.steps, "seed": request.seed, "frames": request.num_frames, "fps": request.fps,
+            }
         return job.as_dict()
 
     @app.get("/video-generation-jobs/{job_id}")
@@ -858,6 +877,13 @@ def create_app(
         if job is None:
             raise HTTPException(status_code=404, detail="Video generation job not found")
         return job.as_dict()
+
+    @app.post("/video-generation-jobs/{job_id}/save", status_code=status.HTTP_201_CREATED)
+    def save_video_to_creation_library(job_id: str) -> dict[str, object]:
+        job = video_jobs.get(job_id)
+        if job is None or job.status != "complete" or job.video_path is None:
+            raise HTTPException(status_code=409, detail="Video is not ready to save")
+        return video_library.save(job.video_path, job.metadata or {})
 
     @app.delete("/video-generation-jobs/{job_id}")
     def cancel_video_generation_job(job_id: str) -> dict[str, object]:

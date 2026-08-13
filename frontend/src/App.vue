@@ -70,6 +70,10 @@ const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
 const videoUrl = ref('')
+const completedVideoJobId = ref('')
+const savingVideoToCreationLibrary = ref(false)
+const videoSavedToCreationLibrary = ref(false)
+const savedVideos = ref([])
 const videoSourceImage = ref(null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
@@ -359,6 +363,15 @@ async function loadSavedImages() {
     savedImages.value = []
   } finally {
     savedImagesLoading.value = false
+  }
+}
+
+async function loadSavedVideos() {
+  try {
+    const response = await fetch('/saved-videos')
+    savedVideos.value = response.ok ? await response.json() : []
+  } catch {
+    savedVideos.value = []
   }
 }
 
@@ -907,6 +920,8 @@ async function generateVideo() {
   videoError.value = ''
   videoProgress.value = 0
   videoStage.value = 'Starting video generation. LTX-Video will download first if it is not already on this computer...'
+  completedVideoJobId.value = ''
+  videoSavedToCreationLibrary.value = false
   try {
     const response = await fetch('/video-generation-jobs', {
       method: 'POST',
@@ -945,6 +960,7 @@ async function generateVideo() {
     if (!videoResponse.ok) throw new Error(`Request failed (${videoResponse.status})`)
     if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
     videoUrl.value = URL.createObjectURL(await videoResponse.blob())
+    completedVideoJobId.value = job.id
     videoStage.value = 'Video ready. It is saved locally and can be downloaded below.'
   } catch (requestError) {
     videoError.value = `Could not generate the video: ${requestError.message}`
@@ -953,6 +969,25 @@ async function generateVideo() {
     generatingVideo.value = false
     cancellingVideo.value = false
     activeVideoJobId.value = ''
+  }
+}
+
+async function saveVideoToCreationLibrary() {
+  if (!completedVideoJobId.value || savingVideoToCreationLibrary.value || videoSavedToCreationLibrary.value) return
+  savingVideoToCreationLibrary.value = true
+  try {
+    const response = await fetch(`/video-generation-jobs/${completedVideoJobId.value}/save`, { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    videoSavedToCreationLibrary.value = true
+    videoStage.value = 'Video saved to your Creation Gallery.'
+    await loadSavedVideos()
+  } catch (requestError) {
+    videoError.value = `Could not save the video to the Creation Gallery: ${requestError.message}`
+  } finally {
+    savingVideoToCreationLibrary.value = false
   }
 }
 
@@ -974,6 +1009,7 @@ onMounted(async () => {
   await loadDisplaySettings()
   await loadModels()
   await loadSavedImages()
+  await loadSavedVideos()
   await loadAppSettings()
   if (metadataPanePinned.value && !mobile.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
@@ -1124,6 +1160,16 @@ onUnmounted(() => {
           </v-list-item>
         </v-list>
         <div v-if="!savedImagesLoading && !savedImages.length" class="text-body-2 text-medium-emphasis">No generated images have been saved yet.</div>
+        <template v-if="savedVideos.length">
+          <div class="text-subtitle-1 font-weight-bold mt-6 mb-2">Saved videos</div>
+          <v-list density="compact" lines="two">
+            <v-list-item v-for="savedVideo in savedVideos" :key="savedVideo.id" prepend-icon="mdi-movie-open-outline">
+              <v-list-item-title>{{ savedVideo.metadata?.prompt || 'Generated video' }}</v-list-item-title>
+              <v-list-item-subtitle>{{ savedVideo.metadata?.model?.name || 'LTX-Video' }} · {{ formatDateTime(savedVideo.created_at) }}</v-list-item-subtitle>
+              <template #append><v-btn :href="`/saved-videos/${encodeURIComponent(savedVideo.id)}/video`" icon="mdi-download" size="small" variant="text" /></template>
+            </v-list-item>
+          </v-list>
+        </template>
         <v-alert v-if="metadataError" type="warning" variant="tonal" density="compact" class="mt-3">{{ metadataError }}</v-alert>
       </div>
     </v-navigation-drawer>
@@ -1364,7 +1410,12 @@ onUnmounted(() => {
               </v-col>
             </v-row>
           </v-card-text>
-          <v-card-actions v-if="videoUrl"><v-btn :href="videoUrl" download="esp-image-video.mp4" color="secondary" prepend-icon="mdi-download">Download MP4</v-btn></v-card-actions>
+          <v-card-actions v-if="videoUrl">
+            <v-btn :href="videoUrl" download="esp-image-video.mp4" color="secondary" prepend-icon="mdi-download">Download MP4</v-btn>
+            <v-btn color="primary" variant="tonal" prepend-icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" @click="saveVideoToCreationLibrary">
+              {{ videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery' }}
+            </v-btn>
+          </v-card-actions>
         </v-card>
 
         <v-card v-else-if="page === 'models'">

@@ -1,0 +1,45 @@
+"""Persistent Creation Gallery storage for generated MP4 files."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+import json
+from pathlib import Path
+import shutil
+from uuid import uuid4
+
+
+class VideoLibrary:
+    def __init__(self, image_library_path: Path) -> None:
+        self.path = image_library_path / "videos"
+
+    def save(self, source: Path, metadata: dict[str, object]) -> dict[str, object]:
+        self.path.mkdir(parents=True, exist_ok=True)
+        video_id = uuid4().hex
+        created_at = datetime.now(UTC).isoformat()
+        filename = f"{created_at[:19].replace(':', '-')}-{video_id[:8]}.mp4"
+        destination = self.path / filename
+        shutil.copy2(source, destination)
+        record = {"id": video_id, "filename": filename, "created_at": created_at, "metadata": metadata}
+        (destination.with_suffix(".json")).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        return record
+
+    def list(self, limit: int = 50) -> list[dict[str, object]]:
+        if not self.path.is_dir():
+            return []
+        records = []
+        for metadata_path in self.path.glob("*.json"):
+            try:
+                record = json.loads(metadata_path.read_text(encoding="utf-8"))
+                if isinstance(record, dict) and (self.path / str(record.get("filename", ""))).is_file():
+                    records.append(record)
+            except (OSError, ValueError, TypeError):
+                continue
+        return sorted(records, key=lambda record: str(record.get("created_at", "")), reverse=True)[:limit]
+
+    def find_path(self, video_id: str) -> Path | None:
+        for record in self.list(limit=10_000):
+            if record.get("id") == video_id:
+                path = self.path / str(record.get("filename", ""))
+                return path if path.is_file() else None
+        return None

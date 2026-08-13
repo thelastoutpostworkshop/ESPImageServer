@@ -28,6 +28,7 @@ class VideoJob:
     steps: int = 0
     video_path: Path | None = None
     error: str | None = None
+    metadata: dict[str, object] | None = None
     cancel_requested: bool = False
 
     def as_dict(self) -> dict[str, object]:
