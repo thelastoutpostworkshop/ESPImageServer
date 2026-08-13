@@ -231,7 +231,7 @@ def create_app(
             generation_jobs.close()
             video_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="1.0.14", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="1.0.15", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -873,6 +873,8 @@ def create_app(
             raise HTTPException(status_code=422, detail=(
                 f"{video_model['name']} supports {video_model['minimum_steps']} to {video_model['maximum_steps']} steps"
             ))
+        if request.source_image_id and video_model["family"] == "wan":
+            raise HTTPException(status_code=422, detail="Wan 2.1 T2V is text-to-video only; choose an LTX model to animate an image")
         with generation_mode_lock:
             if generation_jobs.has_active_job():
                 raise HTTPException(

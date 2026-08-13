@@ -158,11 +158,15 @@ const videoFrameOptions = computed(() => videoFrameValues.map(frames => ({
 const videoModels = [
   { title: 'LTX-Video 2B distilled — fast', value: 'ltx-2b-0.9.6-distilled', description: 'Best for quick short animations. Uses less graphics-card memory.' },
   { title: 'LTX-Video 2B quality — detailed', value: 'ltx-2b-0.9.6-dev', description: 'Best when detail matters more than speed. Much slower and needs more graphics-card memory.' }
+,
+  { title: 'Wan 2.1 T2V 1.3B - text-to-video', value: 'wan-2.1-t2v-1.3b', description: 'A detailed text-to-video alternative. Slower and uses system memory to work with 8 GB graphics cards.' }
 ]
 const selectedVideoModel = computed(() => videoModels.find(model => model.value === videoModelId.value) || videoModels[0])
-const videoStepOptions = computed(() => videoModelId.value === 'ltx-2b-0.9.6-dev'
-  ? [10, 15, 20, 25, 30, 35, 40]
-  : [4, 5, 6, 7, 8])
+const videoStepOptions = computed(() => {
+  if (videoModelId.value === 'ltx-2b-0.9.6-dev') return [10, 15, 20, 25, 30, 35, 40]
+  if (videoModelId.value === 'wan-2.1-t2v-1.3b') return [20, 25, 30, 35, 40, 45, 50]
+  return [4, 5, 6, 7, 8]
+})
 const rotationOptions = [
   { title: 'Normal (0°)', value: 0 },
   { title: 'Rotate 90° clockwise', value: 90 },
@@ -215,7 +219,8 @@ watch([videoPrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed],
 }))
 
 watch(videoModelId, modelId => {
-  videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' ? 30 : 8
+  videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' || modelId === 'wan-2.1-t2v-1.3b' ? 30 : 8
+  if (modelId === 'wan-2.1-t2v-1.3b') videoSourceImage.value = null
 })
 })
 
@@ -1506,6 +1511,9 @@ onUnmounted(() => {
               <v-col cols="12" lg="5">
             <v-form @submit.prevent="generateVideo">
               <div v-if="display?.connected" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
+              <v-alert v-if="videoModelId === 'wan-2.1-t2v-1.3b'" type="info" variant="tonal" density="compact" class="mb-4">
+                Wan 2.1 uses text only. It generates at a larger 480p-class working size, then is resized for your display. The first download can take several minutes.
+              </v-alert>
               <v-alert v-if="videoSourceImage" type="success" variant="tonal" density="compact" class="mb-4">
                 <div class="d-flex align-center">
                       <v-avatar rounded size="72" class="mr-4"><v-img :src="`/saved-images/${encodeURIComponent(videoSourceImage.id)}/thumbnail`" /></v-avatar>
@@ -1525,7 +1533,7 @@ onUnmounted(() => {
               <v-row dense class="mt-1">
                 <v-col cols="12" sm="6"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="videoFrameOptions" hint="Longer clips need more graphics-card memory." persistent-hint /></v-col>
                 <v-col cols="12" sm="6"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
-                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
+                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
               <v-btn type="submit" class="mt-4" color="primary" :disabled="generatingVideo || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>

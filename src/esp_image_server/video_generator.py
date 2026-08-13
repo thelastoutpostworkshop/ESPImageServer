@@ -1,4 +1,4 @@
-"""Lazy local LTX-Video 2B distilled adapter for short experimental clips."""
+"""Lazy local video generators for short clips on consumer NVIDIA GPUs."""
 
 from __future__ import annotations
 
@@ -15,11 +15,15 @@ from .generation_jobs import GenerationCancelled
 VIDEO_MODELS = {
     "ltx-2b-0.9.6-distilled": {
         "name": "LTX-Video 2B distilled", "description": "Fast short animations with low graphics-card memory use.",
-        "checkpoint": "ltxv-2b-0.9.6-distilled-04-25.safetensors", "minimum_steps": 4, "maximum_steps": 8, "recommended_steps": 8, "guidance_scale": 1.0,
+        "family": "ltx", "checkpoint": "ltxv-2b-0.9.6-distilled-04-25.safetensors", "minimum_steps": 4, "maximum_steps": 8, "recommended_steps": 8, "guidance_scale": 1.0,
     },
     "ltx-2b-0.9.6-dev": {
         "name": "LTX-Video 2B quality", "description": "More detail and prompt accuracy, but much slower and more demanding.",
-        "checkpoint": "ltxv-2b-0.9.6-dev-04-25.safetensors", "minimum_steps": 10, "maximum_steps": 40, "recommended_steps": 30, "guidance_scale": 3.0,
+        "family": "ltx", "checkpoint": "ltxv-2b-0.9.6-dev-04-25.safetensors", "minimum_steps": 10, "maximum_steps": 40, "recommended_steps": 30, "guidance_scale": 3.0,
+    },
+    "wan-2.1-t2v-1.3b": {
+        "name": "Wan 2.1 T2V 1.3B", "description": "Detailed text-to-video alternative. Slower, with CPU memory offload for 8 GB graphics cards.",
+        "family": "wan", "repository": "Wan-AI/Wan2.1-T2V-1.3B", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30, "guidance_scale": 6.0,
     },
 }
 
@@ -30,6 +34,15 @@ def working_video_size(width: int, height: int) -> tuple[int, int]:
     scale = min(384 / shortest, 704 / longest)
     working_width = max(256, round(width * scale / 32) * 32)
     working_height = max(256, round(height * scale / 32) * 32)
+    return working_width, working_height
+
+
+def working_wan_video_size(width: int, height: int) -> tuple[int, int]:
+    """Use Wan's 480p-class canvas while preserving the ESP32 aspect ratio."""
+    shortest, longest = min(width, height), max(width, height)
+    scale = min(480 / shortest, 832 / longest)
+    working_width = max(256, round(width * scale / 16) * 16)
+    working_height = max(256, round(height * scale / 16) * 16)
     return working_width, working_height
 
 
@@ -77,15 +90,36 @@ class LTXVideoGenerator:
             self.unload()
         try:
             import torch
-            from diffusers import LTXPipeline
-            from huggingface_hub import hf_hub_download, snapshot_download
-            from transformers import T5EncoderModel
         except ImportError as exc:
-            raise RuntimeError("Video dependencies are missing. Reinstall ESPImageServer to add LTX-Video support.") from exc
+            raise RuntimeError("Video dependencies are missing. Reinstall ESPImageServer to add video support.") from exc
         if not torch.cuda.is_available():
             raise RuntimeError("LTX-Video requires a compatible NVIDIA GPU. Video generation is not available in CPU mode.")
         cache_dir = Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
         cache_dir.mkdir(parents=True, exist_ok=True)
+        if VIDEO_MODELS[model_id]["family"] == "wan":
+            try:
+                from diffusers import WanPipeline
+            except ImportError as exc:
+                raise RuntimeError("Your installed Diffusers version does not support Wan 2.1. Reinstall ESPImageServer.") from exc
+            if progress is not None:
+                progress(0, 0, "Checking or downloading Wan 2.1 (first download may take several minutes)")
+            pipeline = WanPipeline.from_pretrained(
+                VIDEO_MODELS[model_id]["repository"], torch_dtype=torch.bfloat16, cache_dir=cache_dir,
+            )
+            if progress is not None:
+                progress(0, 0, "Loading Wan 2.1 with graphics-card memory offload")
+            pipeline.enable_model_cpu_offload()
+            pipeline.vae.enable_tiling()
+            pipeline.vae.enable_slicing()
+            self._pipeline = pipeline
+            self._loaded_model_id = model_id
+            return
+        try:
+            from diffusers import LTXPipeline
+            from huggingface_hub import hf_hub_download, snapshot_download
+            from transformers import T5EncoderModel
+        except ImportError as exc:
+            raise RuntimeError("LTX-Video dependencies are missing. Reinstall ESPImageServer to add video support.") from exc
         # Download with Hugging Face's cache API first. Passing its web URL to
         # from_single_file makes recent Diffusers versions mistake ``resolve``
         # for part of the filename.
@@ -165,6 +199,9 @@ class LTXVideoGenerator:
             generator = torch.Generator(device="cuda").manual_seed(seed) if seed is not None else None
             generation_pipeline = self._pipeline
             generation_options: dict[str, object] = {}
+            model = VIDEO_MODELS[model_id]
+            if model["family"] == "wan" and source_image_path is not None:
+                raise ValueError("Wan 2.1 T2V uses text only; choose an LTX model to animate a Creation Gallery image")
             if source_image_path is not None:
                 from diffusers import LTXImageToVideoPipeline
 
@@ -183,7 +220,10 @@ class LTXVideoGenerator:
             # Native ESP32 screens are far below LTX's useful working size.
             # Generate on an aspect-matched, 32-pixel-aligned canvas first,
             # then downscale the decoded frames to the display dimensions.
-            generation_width, generation_height = working_video_size(width, height)
+            generation_width, generation_height = (
+                working_wan_video_size(width, height)
+                if model["family"] == "wan" else working_video_size(width, height)
+            )
             frames = generation_pipeline(
                 prompt=prompt,
                 negative_prompt="worst quality, blurry, jittery, distorted, flickering",
@@ -191,7 +231,7 @@ class LTXVideoGenerator:
                 height=generation_height,
                 num_frames=num_frames,
                 num_inference_steps=steps,
-                guidance_scale=VIDEO_MODELS[model_id]["guidance_scale"],
+                guidance_scale=model["guidance_scale"],
                 generator=generator,
                 callback_on_step_end=on_step_end,
                 **generation_options,
