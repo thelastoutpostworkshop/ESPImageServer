@@ -201,7 +201,7 @@ def create_app(
                 mdns.close()
             generation_jobs.close()
 
-    app = FastAPI(title="ESPImageServer", version="0.1.102", lifespan=lifespan)
+    app = FastAPI(title="ESPImageServer", version="0.1.103", lifespan=lifespan)
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -356,8 +356,9 @@ def create_app(
         return queue_image_save(image_path.read_bytes(), image_id)
 
     def queue_image_save(jpeg: bytes, image_id: str | None = None) -> dict[str, object]:
-        filename = f"esp-image-{hashlib.sha256(jpeg).hexdigest()}.jpg"
-        if display_command_store.sd_card_has_file(filename):
+        image_hash = hashlib.sha256(jpeg).hexdigest()[:16]
+        filename = f"esp-image-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{image_hash}.jpg"
+        if display_command_store.sd_card_has_image_hash(image_hash):
             return {"status": "already_saved", "filename": filename, "detail": "Image is already on the display SD card"}
         command = display_command_store.queue_save(filename, image_id)
         write_sd_thumbnail(filename, jpeg)

@@ -42,14 +42,16 @@ class DisplayCommandStore:
         with self._lock:
             return dict(getattr(self, "_sd_card_report", {"available": False, "files": []}))
 
-    def sd_card_has_file(self, filename: str) -> bool:
+    def sd_card_has_image_hash(self, image_hash: str) -> bool:
         with self._lock:
             report = getattr(self, "_sd_card_report", {})
             if not report.get("available", False):
                 return False
             files = report.get("files", [])
             return isinstance(files, list) and any(
-                isinstance(item, dict) and item.get("name") == filename for item in files
+                isinstance(item, dict) and str(item.get("name", "")).startswith(f"esp-image-{image_hash}")
+                or isinstance(item, dict) and str(item.get("name", "")).endswith(f"-{image_hash}.jpg")
+                for item in files
             )
 
     def next(self) -> dict[str, object] | None:
