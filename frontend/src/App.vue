@@ -154,7 +154,8 @@ let modelSwitchAbortController
 let imageLibraryResizeStartX = 0
 let imageLibraryResizeStartWidth = 0
 const { mobile } = useDisplay()
-const imageGenerationActive = computed(() => generating.value || health.value?.image_generating === true)
+const selectedImageModelName = computed(() => models.value.find(model => model.id === activeModelId.value)?.name || 'image model')
+const imageGenerationActive = computed(() => generating.value || Boolean(generationStage.value) || health.value?.image_generating === true)
 const videoGenerationActive = computed(() => generatingVideo.value || health.value?.video_generating === true)
 const generationBusy = computed(() => imageGenerationActive.value || videoGenerationActive.value)
 const appBarStatus = computed(() => {
@@ -172,10 +173,17 @@ const appBarStatus = computed(() => {
     const job = health.value?.active_image_job
     const progress = generating.value ? generationProgress.value : job?.progress
     const cancelling = cancelling.value || job?.status === 'cancelling'
+    const downloadingModel = generationStage.value.startsWith('Downloading')
+    const loadingModel = generationStage.value.startsWith('Loading')
+    const activity = downloadingModel
+      ? `Downloading ${selectedImageModelName.value}`
+      : loadingModel
+        ? `Loading ${selectedImageModelName.value}`
+        : 'Generating image'
     return {
       color: 'primary', icon: 'mdi-image-outline', page: 'generate',
-      label: cancelling ? 'Cancelling image' : Number.isFinite(progress) && progress > 0 ? `Generating image · ${progress}%` : 'Preparing image',
-      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : 'Image'
+      label: cancelling ? 'Cancelling image' : Number.isFinite(progress) && progress > 0 ? `${activity} · ${progress}%` : generationStage.value || 'Preparing image',
+      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : downloadingModel ? 'Download' : 'Image'
     }
   }
   if (health.value?.status === 'ready') {
