@@ -146,7 +146,7 @@ class VideoGenerateRequest(BaseModel):
     height: int = Field(default=320, ge=1, le=768)
     num_frames: int = Field(default=25, ge=9, le=249)
     fps: int = Field(default=8, ge=4, le=24)
-    steps: int = Field(default=8, ge=4, le=40)
+    steps: int = Field(default=8, ge=4, le=50)
     model_id: str = Field(default="ltx-2b-0.9.6-distilled")
     seed: int | None = Field(default=None, ge=0, le=4_294_967_295)
     source_image_id: str | None = Field(default=None, min_length=1, max_length=64)
@@ -891,7 +891,7 @@ def create_app(
                 f"{video_model['name']} supports {video_model['minimum_steps']} to {video_model['maximum_steps']} steps"
             ))
         if request.source_image_id and video_model["family"] == "wan":
-            raise HTTPException(status_code=422, detail="Wan 2.1 T2V is text-to-video only; choose an LTX model to animate an image")
+            raise HTTPException(status_code=422, detail="Wan 2.1 T2V is text-to-video only; choose an LTX or HunyuanVideo model to animate an image")
         with generation_mode_lock:
             if generation_jobs.has_active_job():
                 raise HTTPException(

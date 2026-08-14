@@ -27,6 +27,10 @@ VIDEO_MODELS = {
         "name": "Wan 2.1 T2V 1.3B", "description": "Detailed text-to-video alternative. Slower, with CPU memory offload for 8 GB graphics cards.",
         "family": "wan", "repository": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30, "guidance_scale": 6.0,
     },
+    "hunyuanvideo-1.5-480p": {
+        "name": "HunyuanVideo 1.5 480p", "description": "High-quality text and image animation model for capable NVIDIA graphics cards.",
+        "family": "hunyuan", "repository": "hunyuanvideo-community/HunyuanVideo-1.5-480p_t2v", "image_repository": "hunyuanvideo-community/HunyuanVideo-1.5-480p_i2v", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30,
+    },
 }
 
 
@@ -46,6 +50,11 @@ def working_wan_video_size(width: int, height: int) -> tuple[int, int]:
     working_width = max(256, round(width * scale / 16) * 16)
     working_height = max(256, round(height * scale / 16) * 16)
     return working_width, working_height
+
+
+def working_hunyuan_video_size(width: int, height: int) -> tuple[int, int]:
+    """Use HunyuanVideo's 480p-class canvas while preserving the display aspect ratio."""
+    return working_wan_video_size(width, height)
 
 
 def frame_to_rgb_image(frame: Image.Image | object) -> Image.Image:
@@ -104,10 +113,15 @@ class LTXVideoGenerator:
             except ImportError:
                 pass
 
-    def _load(self, model_id: str, progress: Callable[[int, int, str], None] | None = None) -> None:
+    def _load(
+        self, model_id: str, progress: Callable[[int, int, str], None] | None = None,
+        image_to_video: bool = False,
+    ) -> None:
         if model_id not in VIDEO_MODELS:
             raise ValueError("Unsupported video model")
-        if self._pipeline is not None and self._loaded_model_id == model_id:
+        model = VIDEO_MODELS[model_id]
+        loaded_model_id = f"{model_id}:i2v" if model["family"] == "hunyuan" and image_to_video else model_id
+        if self._pipeline is not None and self._loaded_model_id == loaded_model_id:
             return
         if self._pipeline is not None:
             self.unload()
@@ -116,10 +130,32 @@ class LTXVideoGenerator:
         except ImportError as exc:
             raise RuntimeError("Video dependencies are missing. Reinstall ESPImageServer to add video support.") from exc
         if not torch.cuda.is_available():
-            raise RuntimeError("LTX-Video requires a compatible NVIDIA GPU. Video generation is not available in CPU mode.")
+            raise RuntimeError("Video generation requires a compatible NVIDIA GPU. Video generation is not available in CPU mode.")
         cache_dir = Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
         cache_dir.mkdir(parents=True, exist_ok=True)
-        if VIDEO_MODELS[model_id]["family"] == "wan":
+        if model["family"] == "hunyuan":
+            try:
+                from diffusers import HunyuanVideo15ImageToVideoPipeline, HunyuanVideo15Pipeline
+                from huggingface_hub import snapshot_download
+            except ImportError as exc:
+                raise RuntimeError("Your installed Diffusers version does not support HunyuanVideo 1.5. Reinstall ESPImageServer.") from exc
+            repository = model["image_repository"] if image_to_video else model["repository"]
+            if progress is not None:
+                progress(0, 0, "Checking or downloading HunyuanVideo 1.5 (first download may take several minutes)")
+            model_path = snapshot_download(
+                repository, cache_dir=cache_dir,
+                tqdm_class=huggingface_progress("HunyuanVideo 1.5", progress) if progress else None,
+            )
+            pipeline_class = HunyuanVideo15ImageToVideoPipeline if image_to_video else HunyuanVideo15Pipeline
+            if progress is not None:
+                progress(0, 0, "Loading HunyuanVideo 1.5 with graphics-card memory offload")
+            pipeline = pipeline_class.from_pretrained(model_path, torch_dtype=torch.float16)
+            pipeline.enable_model_cpu_offload()
+            pipeline.vae.enable_tiling()
+            self._pipeline = pipeline
+            self._loaded_model_id = loaded_model_id
+            return
+        if model["family"] == "wan":
             try:
                 from diffusers import AutoencoderKLWan, WanPipeline
                 from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
@@ -149,7 +185,7 @@ class LTXVideoGenerator:
             pipeline.vae.enable_tiling()
             pipeline.vae.enable_slicing()
             self._pipeline = pipeline
-            self._loaded_model_id = model_id
+            self._loaded_model_id = loaded_model_id
             return
         try:
             from diffusers import LTXPipeline
@@ -216,7 +252,7 @@ class LTXVideoGenerator:
         # This keeps memory use manageable on supported NVIDIA GPUs.
         pipeline.vae.enable_tiling()
         self._pipeline = pipeline
-        self._loaded_model_id = model_id
+        self._loaded_model_id = loaded_model_id
 
     def generate(
         self, prompt: str, width: int, height: int, num_frames: int, fps: int, steps: int,
@@ -225,7 +261,10 @@ class LTXVideoGenerator:
         model_id: str = "ltx-2b-0.9.6-distilled",
     ) -> Path:
         with self._lock:
-            self._load(model_id, progress)
+            model = VIDEO_MODELS.get(model_id)
+            if model is None:
+                raise ValueError("Unsupported video model")
+            self._load(model_id, progress, image_to_video=source_image_path is not None)
             import torch
             from diffusers.utils import export_to_video
             if cancelled():
@@ -240,23 +279,25 @@ class LTXVideoGenerator:
             generator = torch.Generator(device="cuda").manual_seed(seed) if seed is not None else None
             generation_pipeline = self._pipeline
             generation_options: dict[str, object] = {}
-            model = VIDEO_MODELS[model_id]
             if model["family"] == "wan" and source_image_path is not None:
-                raise ValueError("Wan 2.1 T2V uses text only; choose an LTX model to animate a Creation Gallery image")
+                raise ValueError("Wan 2.1 T2V uses text only; choose an LTX or HunyuanVideo model to animate a Creation Gallery image")
             if source_image_path is not None:
-                from diffusers import LTXImageToVideoPipeline
-
                 progress(0, 0, "Preparing your Creation Gallery image for animation")
                 with Image.open(source_image_path) as source_image:
                     source_frame = source_image.convert("RGB").copy()
-                generation_pipeline = LTXImageToVideoPipeline(
-                    scheduler=self._pipeline.scheduler,
-                    vae=self._pipeline.vae,
-                    text_encoder=self._pipeline.text_encoder,
-                    tokenizer=self._pipeline.tokenizer,
-                    transformer=self._pipeline.transformer,
-                )
-                generation_options = {"image": source_frame, "frame_rate": fps}
+                if model["family"] == "ltx":
+                    from diffusers import LTXImageToVideoPipeline
+
+                    generation_pipeline = LTXImageToVideoPipeline(
+                        scheduler=self._pipeline.scheduler,
+                        vae=self._pipeline.vae,
+                        text_encoder=self._pipeline.text_encoder,
+                        tokenizer=self._pipeline.tokenizer,
+                        transformer=self._pipeline.transformer,
+                    )
+                    generation_options = {"image": source_frame, "frame_rate": fps}
+                elif model["family"] == "hunyuan":
+                    generation_options = {"image": source_frame}
 
             # Native ESP32 screens are far below LTX's useful working size.
             # Generate on an aspect-matched, 32-pixel-aligned canvas first,
@@ -265,18 +306,32 @@ class LTXVideoGenerator:
                 working_wan_video_size(width, height)
                 if model["family"] == "wan" else working_video_size(width, height)
             )
-            frames = generation_pipeline(
-                prompt=prompt,
-                negative_prompt="worst quality, blurry, jittery, distorted, flickering",
-                width=generation_width,
-                height=generation_height,
-                num_frames=num_frames,
-                num_inference_steps=steps,
-                guidance_scale=model["guidance_scale"],
-                generator=generator,
-                callback_on_step_end=on_step_end,
-                **generation_options,
-            ).frames[0]
+            if model["family"] == "hunyuan":
+                generation_width, generation_height = working_hunyuan_video_size(width, height)
+                progress(0, 0, "Generating HunyuanVideo frames (progress is reported when encoding finishes)")
+                frames = generation_pipeline(
+                    prompt=prompt,
+                    negative_prompt="worst quality, blurry, jittery, distorted, flickering",
+                    width=generation_width,
+                    height=generation_height,
+                    num_frames=num_frames,
+                    num_inference_steps=steps,
+                    generator=generator,
+                    **generation_options,
+                ).frames[0]
+            else:
+                frames = generation_pipeline(
+                    prompt=prompt,
+                    negative_prompt="worst quality, blurry, jittery, distorted, flickering",
+                    width=generation_width,
+                    height=generation_height,
+                    num_frames=num_frames,
+                    num_inference_steps=steps,
+                    guidance_scale=model["guidance_scale"],
+                    generator=generator,
+                    callback_on_step_end=on_step_end,
+                    **generation_options,
+                ).frames[0]
             if cancelled():
                 raise GenerationCancelled()
             progress(steps, steps, "Decoding generated video frames")

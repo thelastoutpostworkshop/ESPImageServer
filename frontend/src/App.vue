@@ -13,7 +13,7 @@ const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
 const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thumbnail-size'
 const videoFrameValues = [17, 25, 33, 41, 49, 57, 65, 73, 81]
-const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b']
+const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b', 'hunyuanvideo-1.5-480p']
 
 function loadImageLibraryWidth() {
   const savedWidth = Number(window.localStorage.getItem(imageLibraryWidthSettingsKey))
@@ -46,7 +46,7 @@ function loadVideoGenerationSettings() {
     const modelId = videoModelIds.includes(saved.modelId) ? saved.modelId : 'ltx-2b-0.9.6-distilled'
     const validSteps = modelId === 'ltx-2b-0.9.6-dev'
       ? [10, 15, 20, 25, 30, 35, 40]
-      : modelId === 'wan-2.1-t2v-1.3b'
+      : modelId === 'wan-2.1-t2v-1.3b' || modelId === 'hunyuanvideo-1.5-480p'
         ? [20, 25, 30, 35, 40, 45, 50]
         : [4, 5, 6, 7, 8]
     return {
@@ -211,14 +211,14 @@ const videoFrameOptions = computed(() => videoFrameValues.map(frames => ({
 })))
 const videoModels = [
   { title: 'LTX-Video 2B distilled — fast', value: 'ltx-2b-0.9.6-distilled', description: 'Best for quick short animations. Uses less graphics-card memory.' },
-  { title: 'LTX-Video 2B quality — detailed', value: 'ltx-2b-0.9.6-dev', description: 'Best when detail matters more than speed. Much slower and needs more graphics-card memory.' }
-,
-  { title: 'Wan 2.1 T2V 1.3B - text-to-video', value: 'wan-2.1-t2v-1.3b', description: 'A detailed text-to-video alternative. Slower and uses system memory to work with 8 GB graphics cards.' }
+  { title: 'LTX-Video 2B quality — detailed', value: 'ltx-2b-0.9.6-dev', description: 'Best when detail matters more than speed. Much slower and needs more graphics-card memory.' },
+  { title: 'Wan 2.1 T2V 1.3B — text-to-video', value: 'wan-2.1-t2v-1.3b', description: 'A detailed text-to-video alternative. Slower and uses system memory to work with 8 GB graphics cards.' },
+  { title: 'HunyuanVideo 1.5 480p — quality', value: 'hunyuanvideo-1.5-480p', description: 'High-quality text-to-video and image animation. Slower and best on a capable NVIDIA graphics card.' }
 ]
 const selectedVideoModel = computed(() => videoModels.find(model => model.value === videoModelId.value) || videoModels[0])
 const videoStepOptions = computed(() => {
   if (videoModelId.value === 'ltx-2b-0.9.6-dev') return [10, 15, 20, 25, 30, 35, 40]
-  if (videoModelId.value === 'wan-2.1-t2v-1.3b') return [20, 25, 30, 35, 40, 45, 50]
+  if (videoModelId.value === 'wan-2.1-t2v-1.3b' || videoModelId.value === 'hunyuanvideo-1.5-480p') return [20, 25, 30, 35, 40, 45, 50]
   return [4, 5, 6, 7, 8]
 })
 const rotationOptions = [
@@ -274,7 +274,7 @@ watch([videoPrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed],
 }))
 
 watch(videoModelId, modelId => {
-  videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' || modelId === 'wan-2.1-t2v-1.3b' ? 30 : 8
+  videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' || modelId === 'wan-2.1-t2v-1.3b' || modelId === 'hunyuanvideo-1.5-480p' ? 30 : 8
   if (modelId === 'wan-2.1-t2v-1.3b') videoSourceImage.value = null
 })
 })
@@ -1659,6 +1659,9 @@ onUnmounted(() => {
               <div v-if="display?.connected" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
               <v-alert v-if="videoModelId === 'wan-2.1-t2v-1.3b'" type="info" variant="tonal" density="compact" class="mb-4">
                 Wan 2.1 uses text only. It generates at a larger 480p-class working size, then is resized for your display. The first download can take several minutes.
+              </v-alert>
+              <v-alert v-else-if="videoModelId === 'hunyuanvideo-1.5-480p'" type="info" variant="tonal" density="compact" class="mb-4">
+                HunyuanVideo 1.5 can create a video from text or animate a selected Creation Gallery image. It uses a 480p-class working size, then is resized for your display. Its first download can take several minutes.
               </v-alert>
               <v-alert v-if="videoSourceImage" type="success" variant="tonal" density="compact" class="mb-4">
                 <div class="d-flex align-center">
