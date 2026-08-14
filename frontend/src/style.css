@@ -30,6 +30,8 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 @media (max-width: 600px) {
   .app-container { padding-inline: 12px !important; }
   .app-bar .v-chip { margin-right: 4px !important; padding-inline: 8px; }
+  .app-bar__activity-chip { max-width: 96px; }
+  .app-bar__display-chip { min-width: 40px; }
   .v-card-title { white-space: normal; }
   .preview-placeholder { min-height: 260px; }
   .model-in-use { align-items: flex-start !important; }

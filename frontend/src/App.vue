@@ -93,6 +93,7 @@ const videoSteps = ref(savedVideoGenerationSettings.steps)
 const videoModelId = ref(savedVideoGenerationSettings.modelId)
 const generatingVideo = ref(false)
 const cancellingVideo = ref(false)
+const cancelVideoOnStart = ref(false)
 const activeVideoJobId = ref('')
 const videoProgress = ref(0)
 const videoStage = ref('')
@@ -153,27 +154,45 @@ let modelSwitchAbortController
 let imageLibraryResizeStartX = 0
 let imageLibraryResizeStartWidth = 0
 const { mobile } = useDisplay()
-const generationBusy = computed(() => generating.value || health.value?.generating === true)
+const imageGenerationActive = computed(() => generating.value || health.value?.image_generating === true)
+const videoGenerationActive = computed(() => generatingVideo.value || health.value?.video_generating === true)
+const generationBusy = computed(() => imageGenerationActive.value || videoGenerationActive.value)
 const appBarStatus = computed(() => {
-  if (generatingVideo.value || health.value?.video_generating === true) {
-    const progress = generatingVideo.value ? videoProgress.value : health.value?.active_video_job?.progress
+  if (videoGenerationActive.value) {
+    const job = health.value?.active_video_job
+    const progress = generatingVideo.value ? videoProgress.value : job?.progress
+    const cancelling = cancelVideoOnStart.value || cancellingVideo.value || job?.status === 'cancelling'
     return {
       color: 'primary', icon: 'mdi-movie-open-outline', page: 'video',
-      label: Number.isFinite(progress) && progress > 0 ? `Generating video · ${progress}%` : 'Preparing video'
+      label: cancelling ? 'Cancelling video' : Number.isFinite(progress) && progress > 0 ? `Generating video · ${progress}%` : 'Preparing video',
+      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : 'Video'
     }
   }
-  if (generating.value || health.value?.image_generating === true) {
-    const progress = generating.value ? generationProgress.value : health.value?.active_image_job?.progress
+  if (imageGenerationActive.value) {
+    const job = health.value?.active_image_job
+    const progress = generating.value ? generationProgress.value : job?.progress
+    const cancelling = cancelling.value || job?.status === 'cancelling'
     return {
       color: 'primary', icon: 'mdi-image-outline', page: 'generate',
-      label: Number.isFinite(progress) && progress > 0 ? `Generating image · ${progress}%` : 'Preparing image'
+      label: cancelling ? 'Cancelling image' : Number.isFinite(progress) && progress > 0 ? `Generating image · ${progress}%` : 'Preparing image',
+      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : 'Image'
     }
   }
   if (health.value?.status === 'ready') {
-    return { color: 'success', icon: 'mdi-server', page: '', label: 'Server ready' }
+    return { color: 'success', icon: 'mdi-server', page: '', label: 'Server ready', compactLabel: 'Ready' }
   }
-  return { color: 'warning', icon: 'mdi-server', page: '', label: 'Server loading' }
+  return { color: 'warning', icon: 'mdi-server', page: '', label: 'Server loading', compactLabel: 'Loading' }
 })
+const appBarCanCancel = computed(() => {
+  if (appBarStatus.value.page === 'video') {
+    return videoGenerationActive.value
+  }
+  if (appBarStatus.value.page === 'generate') {
+    return imageGenerationActive.value
+  }
+  return false
+})
+const appBarCancelling = computed(() => appBarStatus.value.page === 'video' ? cancelVideoOnStart.value || cancellingVideo.value : cancelling.value)
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
@@ -522,6 +541,46 @@ function openGeneratePage() {
 
 function openActiveGeneration() {
   if (appBarStatus.value.page) page.value = appBarStatus.value.page
+}
+
+async function cancelActiveGeneration() {
+  const isVideo = appBarStatus.value.page === 'video'
+  const jobId = isVideo
+    ? activeVideoJobId.value || health.value?.active_video_job?.id
+    : activeJobId.value || health.value?.active_image_job?.id
+  if (!isVideo && modelSwitchAbortController) {
+    cancelGeneration()
+    return
+  }
+  if (!jobId) {
+    if (isVideo && generatingVideo.value) cancelVideoOnStart.value = true
+    return
+  }
+  if (isVideo && jobId === activeVideoJobId.value) {
+    cancelVideoGeneration()
+    return
+  }
+  if (!isVideo && jobId === activeJobId.value) {
+    cancelGeneration()
+    return
+  }
+  if (isVideo) cancellingVideo.value = true
+  else cancelling.value = true
+  try {
+    const endpoint = isVideo ? `/video-generation-jobs/${jobId}` : `/generation-jobs/${jobId}`
+    const response = await fetch(endpoint, { method: 'DELETE' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    await loadServerStatus()
+  } catch (requestError) {
+    if (isVideo) videoError.value = `Could not cancel video generation: ${requestError.message}`
+    else error.value = `Could not cancel image generation: ${requestError.message}`
+  } finally {
+    if (isVideo) cancellingVideo.value = false
+    else cancelling.value = false
+  }
 }
 
 function openDisplayHelp() {
@@ -1102,6 +1161,10 @@ async function generateVideo() {
     }
     const job = await response.json()
     activeVideoJobId.value = job.id
+    if (cancelVideoOnStart.value) {
+      cancelVideoOnStart.value = false
+      await cancelVideoGeneration()
+    }
     let currentJob = job
     while (!['complete', 'failed', 'cancelled'].includes(currentJob.status)) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
@@ -1130,6 +1193,7 @@ async function generateVideo() {
   } finally {
     generatingVideo.value = false
     cancellingVideo.value = false
+    cancelVideoOnStart.value = false
     activeVideoJobId.value = ''
   }
 }
@@ -1212,11 +1276,12 @@ onUnmounted(() => {
     <v-app-bar color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
-      <v-chip class="mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : undefined" @click="openActiveGeneration">
-        {{ appBarStatus.label }}
+      <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : undefined" @click="openActiveGeneration">
+        <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
-      <v-chip :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :title="!display?.connected ? 'Open display connection help' : undefined" @click="!display?.connected && openDisplayHelp()">
-        {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
+      <v-btn v-if="appBarCanCancel" class="mr-1" color="warning" icon="mdi-cancel" size="small" variant="text" :loading="appBarCancelling" :disabled="appBarCancelling" aria-label="Cancel active generation" title="Cancel active generation" @click="cancelActiveGeneration" />
+      <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="!display?.connected ? 'Open display connection help' : undefined" @click="!display?.connected && openDisplayHelp()">
+        <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}</span>
       </v-chip>
       <v-spacer />
       <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
@@ -1426,6 +1491,10 @@ onUnmounted(() => {
         <v-col cols="12" lg="5">
         <v-card class="generation-card">
           <v-card-text>
+            <v-alert v-if="videoGenerationActive" type="info" variant="tonal" density="compact" class="mb-4">
+              Video generation is using the graphics card. Wait for it to finish before generating an image.
+              <template #append><v-btn size="small" variant="text" @click="openActiveGeneration">View video</v-btn></template>
+            </v-alert>
             <v-form @submit.prevent="generate">
               <v-select
                 :model-value="activeModelId"
@@ -1572,6 +1641,10 @@ onUnmounted(() => {
             <v-alert v-if="health?.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
               Video generation cannot run in CPU mode. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, then restart ESPImageServer.
             </v-alert>
+            <v-alert v-if="imageGenerationActive" type="info" variant="tonal" density="compact" class="mb-4">
+              Image generation is using the graphics card. Wait for it to finish before generating a video.
+              <template #append><v-btn size="small" variant="text" @click="openActiveGeneration">View image</v-btn></template>
+            </v-alert>
             <v-row>
               <v-col cols="12" lg="5">
             <v-form @submit.prevent="generateVideo">
@@ -1601,7 +1674,7 @@ onUnmounted(() => {
                 <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
-              <v-btn type="submit" class="mt-4" color="primary" :disabled="generatingVideo || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
+              <v-btn type="submit" class="mt-4" color="primary" :disabled="generationBusy || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
               <v-btn v-if="generatingVideo" class="ml-2 mt-4" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
             </v-form>
             <div v-if="generatingVideo" class="mt-5">
