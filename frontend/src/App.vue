@@ -1198,7 +1198,6 @@ onUnmounted(() => {
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
       <div class="app-bar__brand mr-4">
         <span class="font-weight-bold">ESPImageServer</span>
-        <span v-if="serverInfo?.version" class="text-caption text-medium-emphasis">v{{ serverInfo.version }}</span>
       </div>
       <v-chip class="mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon">
         {{ appBarStatus.label }}
@@ -1211,7 +1210,14 @@ onUnmounted(() => {
     </v-app-bar>
 
     <v-navigation-drawer v-model="drawer" width="272" border :temporary="mobile">
-      <v-list-item class="py-4" title="ESPImageServer" subtitle="Local AI image & video generation" />
+      <v-list-item class="py-4" subtitle="Local AI image & video generation">
+        <template #title>
+          <div class="d-flex align-baseline ga-2">
+            <span>ESPImageServer</span>
+            <span v-if="serverInfo?.version" class="text-caption text-medium-emphasis">v{{ serverInfo.version }}</span>
+          </div>
+        </template>
+      </v-list-item>
       <v-divider />
       <v-list nav density="comfortable">
         <v-list-item title="Generate image" :active="page === 'generate'" @click="openGeneratePage">
