@@ -73,6 +73,10 @@ const displayConnectedSnackbar = ref(false)
 const displayConnectedMessage = ref('')
 const displayRotation = ref(0)
 const models = ref([])
+const availableVideoModels = ref([])
+const removingVideoModelId = ref('')
+const removeVideoModelDialog = ref(false)
+const videoModelToRemove = ref(null)
 const status = ref('')
 const error = ref('')
 const imageUrl = ref('')
@@ -356,6 +360,40 @@ async function loadModels() {
     }
   } catch {
     models.value = []
+  }
+}
+
+async function loadVideoModels() {
+  try {
+    const response = await fetch('/video-models')
+    availableVideoModels.value = response.ok ? await response.json() : []
+  } catch {
+    availableVideoModels.value = []
+  }
+}
+
+function confirmRemoveVideoModel(model) {
+  videoModelToRemove.value = model
+  removeVideoModelDialog.value = true
+}
+
+async function removeVideoModel() {
+  const model = videoModelToRemove.value
+  if (!model || removingVideoModelId.value) return
+  removingVideoModelId.value = model.id
+  try {
+    const response = await fetch(`/video-models/${encodeURIComponent(model.id)}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    removeVideoModelDialog.value = false
+    videoStage.value = `${model.name} was removed to free disk space.`
+    await loadVideoModels()
+  } catch (requestError) {
+    videoError.value = `Could not remove ${model.name}: ${requestError.message}`
+  } finally {
+    removingVideoModelId.value = ''
   }
 }
 
@@ -1242,6 +1280,7 @@ onMounted(async () => {
   await loadDisplay()
   await loadDisplaySettings()
   await loadModels()
+  await loadVideoModels()
   await loadSavedImages()
   await loadSavedVideos()
   await loadAppSettings()
@@ -1250,6 +1289,7 @@ onMounted(async () => {
     loadServerStatus()
     loadDisplay()
     loadModels()
+    loadVideoModels()
     loadDisplaySdCard()
   }, 5000)
 })
@@ -1492,6 +1532,20 @@ onUnmounted(() => {
       </v-card>
     </v-dialog>
 
+    <v-dialog v-model="removeVideoModelDialog" max-width="480" width="calc(100% - 32px)">
+      <v-card title="Remove video model">
+        <v-card-text>
+          Remove <strong>{{ videoModelToRemove?.name }}</strong> from this computer? It can be downloaded again when needed.
+          <div v-if="videoModelToRemove?.removal_note" class="text-body-2 text-medium-emphasis mt-3">{{ videoModelToRemove.removal_note }}</div>
+        </v-card-text>
+        <v-card-actions class="px-6 pb-5">
+          <v-spacer />
+          <v-btn variant="text" :disabled="Boolean(removingVideoModelId)" @click="removeVideoModelDialog = false">Keep model</v-btn>
+          <v-btn color="error" variant="flat" :loading="Boolean(removingVideoModelId)" @click="removeVideoModel">Remove model</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
         <template v-if="page === 'generate'">
@@ -1682,7 +1736,7 @@ onUnmounted(() => {
               <v-row dense class="mt-1">
                 <v-col cols="12" sm="6"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="videoFrameOptions" hint="Longer clips need more graphics-card memory." persistent-hint /></v-col>
                 <v-col cols="12" sm="6"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
-                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
+                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'hunyuanvideo-1.5-480p' ? '30 is recommended for HunyuanVideo 1.5.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
               <v-btn type="submit" class="mt-4" color="primary" :disabled="generationBusy || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
@@ -1772,6 +1826,39 @@ onUnmounted(() => {
           <v-card-text class="text-caption text-medium-emphasis pt-3">
             NVIDIA models can still run without a compatible GPU, but generation may be impractically slow.
           </v-card-text>
+          <v-divider class="mt-3" />
+          <v-card-title class="text-h5 pt-5">Video models</v-card-title>
+          <v-card-text class="text-body-1">
+            Video models download the first time you use them. Remove downloaded models here to recover disk space; you can download them again later.
+          </v-card-text>
+          <v-table v-if="!mobile" class="model-table" hover density="comfortable">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Best for</th>
+                <th>Image animation</th>
+                <th>Status</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="model in availableVideoModels" :key="model.id">
+                <td><div class="d-flex align-center ga-3 py-2"><v-avatar color="deep-purple" variant="tonal" size="36"><v-icon size="20">mdi-movie-open-outline</v-icon></v-avatar><div class="font-weight-bold">{{ model.name }}</div></div></td>
+                <td class="model-table__description">{{ model.description }}</td>
+                <td><v-chip :color="model.supports_image ? 'success' : 'secondary'" variant="tonal" size="small">{{ model.supports_image ? 'Supported' : 'Text only' }}</v-chip></td>
+                <td><v-chip :color="model.installed ? 'success' : 'secondary'" variant="tonal" size="small" :prepend-icon="model.installed ? 'mdi-check-circle' : 'mdi-download'">{{ model.installed ? 'Downloaded' : 'Downloads when used' }}</v-chip></td>
+                <td class="text-right"><v-btn v-if="model.installed" color="error" variant="text" size="small" prepend-icon="mdi-delete-outline" :loading="removingVideoModelId === model.id" :disabled="videoGenerationActive" @click="confirmRemoveVideoModel(model)">Remove</v-btn></td>
+              </tr>
+            </tbody>
+          </v-table>
+          <v-list v-else class="model-list" lines="three">
+            <v-list-item v-for="model in availableVideoModels" :key="model.id">
+              <template #prepend><v-avatar color="deep-purple" variant="tonal" size="36"><v-icon size="20">mdi-movie-open-outline</v-icon></v-avatar></template>
+              <v-list-item-title class="font-weight-bold">{{ model.name }}</v-list-item-title>
+              <v-list-item-subtitle>{{ model.description }}</v-list-item-subtitle>
+              <template #append><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingVideoModelId === model.id" :disabled="videoGenerationActive" :aria-label="`Remove ${model.name}`" @click="confirmRemoveVideoModel(model)" /></template>
+            </v-list-item>
+          </v-list>
         </v-card>
 
         <v-card v-else-if="page === 'about'">

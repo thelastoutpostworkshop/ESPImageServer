@@ -37,7 +37,7 @@ from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser
 from .models import MODELS, get_model, model_is_cached, model_settings
 from .model_settings import ModelSelectionStore
-from .video_generator import LTXVideoGenerator, VIDEO_MODELS
+from .video_generator import LTXVideoGenerator, VIDEO_MODELS, remove_cached_video_model, video_model_is_cached
 from .video_jobs import VideoJobStore
 from .video_library import VideoLibrary
 from .version import APP_VERSION
@@ -876,6 +876,34 @@ def create_app(
             "device": generator.device,
             "models": [{"id": model_id, **model} for model_id, model in VIDEO_MODELS.items()],
         }
+
+    @app.get("/video-models")
+    def list_video_models() -> list[dict[str, object]]:
+        return [
+            {
+                "id": model_id,
+                "name": model["name"],
+                "description": model["description"],
+                "family": model["family"],
+                "minimum_steps": model["minimum_steps"],
+                "maximum_steps": model["maximum_steps"],
+                "recommended_steps": model["recommended_steps"],
+                "installed": video_model_is_cached(model_id),
+                "supports_image": model["family"] != "wan",
+                "removal_note": "Removes shared LTX-Video files used by both LTX choices." if model["family"] == "ltx" else "",
+            }
+            for model_id, model in VIDEO_MODELS.items()
+        ]
+
+    @app.delete("/video-models/{model_id}")
+    def remove_video_model(model_id: str) -> dict[str, object]:
+        if model_id not in VIDEO_MODELS:
+            raise HTTPException(status_code=404, detail="Video model not found")
+        if video_jobs.has_active_job():
+            raise HTTPException(status_code=409, detail="Wait for the current video generation to finish before removing a video model")
+        video_generator.unload()
+        removed = remove_cached_video_model(model_id)
+        return {"removed": removed}
 
     @app.post("/video-generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_video_generation_job(request: VideoGenerateRequest) -> dict[str, object]:

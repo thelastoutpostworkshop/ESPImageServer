@@ -2,7 +2,7 @@ import numpy as np
 from PIL import Image
 
 from esp_image_server.video_generator import (
-    VIDEO_MODELS, frame_to_rgb_image, working_hunyuan_video_size,
+    VIDEO_MODELS, frame_to_rgb_image, remove_cached_video_model, video_model_is_cached, working_hunyuan_video_size,
     working_video_size, working_wan_video_size,
 )
 
@@ -28,6 +28,17 @@ def test_hunyuan_video_supports_text_and_image_generation() -> None:
     assert model["repository"] == "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v"
     assert model["image_repository"] == "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v"
     assert working_hunyuan_video_size(480, 272) == working_wan_video_size(480, 272)
+
+
+def test_removing_hunyuan_removes_both_text_and_image_cache_entries(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ESP_IMAGE_MODEL_CACHE", str(tmp_path))
+    model = VIDEO_MODELS["hunyuanvideo-1.5-480p"]
+    for repository in (model["repository"], model["image_repository"]):
+        (tmp_path / f"models--{repository.replace('/', '--')}" / "snapshots" / "main").mkdir(parents=True)
+
+    assert video_model_is_cached("hunyuanvideo-1.5-480p") is True
+    assert remove_cached_video_model("hunyuanvideo-1.5-480p") is True
+    assert video_model_is_cached("hunyuanvideo-1.5-480p") is False
 
 
 def test_wan_float_frame_arrays_are_converted_to_pillow_images() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 from threading import RLock
 from typing import Callable
 
@@ -32,6 +33,51 @@ VIDEO_MODELS = {
         "family": "hunyuan", "repository": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v", "image_repository": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30,
     },
 }
+
+
+def video_model_cache_dir() -> Path:
+    return Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
+
+
+def video_model_is_cached(model_id: str) -> bool:
+    """Return whether the selected video model's primary checkpoint is cached."""
+    model = VIDEO_MODELS[model_id]
+    cache_dir = video_model_cache_dir()
+    if model["family"] == "ltx":
+        checkpoint = model["checkpoint"]
+        return any((cache_dir / "models--Lightricks--LTX-Video").glob(f"snapshots/**/{checkpoint}"))
+    repositories = [model["repository"]]
+    if model["family"] == "hunyuan":
+        repositories.append(model["image_repository"])
+    return any(
+        (cache_dir / ("models--" + repository.replace("/", "--")) / "snapshots").is_dir()
+        for repository in repositories
+    )
+
+
+def remove_cached_video_model(model_id: str) -> bool:
+    """Remove a video model's downloaded files without touching user creations."""
+    model = VIDEO_MODELS[model_id]
+    cache_dir = video_model_cache_dir()
+    if model["family"] == "ltx":
+        paths = [
+            cache_dir / "models--Lightricks--LTX-Video",
+            cache_dir / "ltx-video-0.9.5-config",
+            cache_dir / "ltx-video-text-encoder",
+        ]
+    elif model["family"] == "hunyuan":
+        paths = [
+            cache_dir / ("models--" + model["repository"].replace("/", "--")),
+            cache_dir / ("models--" + model["image_repository"].replace("/", "--")),
+        ]
+    else:
+        paths = [cache_dir / ("models--" + model["repository"].replace("/", "--"))]
+    removed = False
+    for path in paths:
+        if path.is_dir():
+            shutil.rmtree(path)
+            removed = True
+    return removed
 
 
 def working_video_size(width: int, height: int) -> tuple[int, int]:
@@ -131,7 +177,7 @@ class LTXVideoGenerator:
             raise RuntimeError("Video dependencies are missing. Reinstall ESPImageServer to add video support.") from exc
         if not torch.cuda.is_available():
             raise RuntimeError("Video generation requires a compatible NVIDIA GPU. Video generation is not available in CPU mode.")
-        cache_dir = Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
+        cache_dir = video_model_cache_dir()
         cache_dir.mkdir(parents=True, exist_ok=True)
         if model["family"] == "hunyuan":
             try:
