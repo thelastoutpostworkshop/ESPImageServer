@@ -13,6 +13,7 @@ const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
 const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thumbnail-size'
 const videoFrameValues = [17, 25, 33, 41, 49, 57, 65, 73, 81]
+const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b']
 
 function loadImageLibraryWidth() {
   const savedWidth = Number(window.localStorage.getItem(imageLibraryWidthSettingsKey))
@@ -42,12 +43,18 @@ function loadGenerationSettings() {
 function loadVideoGenerationSettings() {
   try {
     const saved = JSON.parse(window.localStorage.getItem(videoGenerationSettingsKey) || '{}')
+    const modelId = videoModelIds.includes(saved.modelId) ? saved.modelId : 'ltx-2b-0.9.6-distilled'
+    const validSteps = modelId === 'ltx-2b-0.9.6-dev'
+      ? [10, 15, 20, 25, 30, 35, 40]
+      : modelId === 'wan-2.1-t2v-1.3b'
+        ? [20, 25, 30, 35, 40, 45, 50]
+        : [4, 5, 6, 7, 8]
     return {
       prompt: typeof saved.prompt === 'string' ? saved.prompt : 'Gentle cinematic camera movement, subtle natural motion',
       frames: videoFrameValues.includes(saved.frames) ? saved.frames : 25,
       fps: [8, 12, 15, 24].includes(saved.fps) ? saved.fps : 8,
-      steps: [4, 5, 6, 7, 8].includes(saved.steps) ? saved.steps : 8,
-      modelId: saved.modelId === 'ltx-2b-0.9.6-dev' ? saved.modelId : 'ltx-2b-0.9.6-distilled',
+      steps: validSteps.includes(saved.steps) ? saved.steps : modelId === 'ltx-2b-0.9.6-distilled' ? 8 : 30,
+      modelId,
       seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed()
     }
   } catch {
@@ -202,6 +209,7 @@ const savedVideoGroups = computed(() => {
 watch([prompt, negativePrompt, steps, seed, activeModelId], () => {
   window.localStorage.setItem(generationSettingsKey, JSON.stringify({
     prompt: prompt.value,
+    negativePrompt: negativePrompt.value,
     steps: Number(steps.value),
     seed: seed.value === '' ? null : Number(seed.value),
     modelId: activeModelId.value
