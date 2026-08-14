@@ -1196,9 +1196,6 @@ onUnmounted(() => {
     <v-app-bar color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
-      <div class="app-bar__brand mr-4">
-        <span class="font-weight-bold">ESPImageServer</span>
-      </div>
       <v-chip class="mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon">
         {{ appBarStatus.label }}
       </v-chip>
