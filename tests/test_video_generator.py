@@ -25,8 +25,8 @@ def test_wan_uses_the_official_diffusers_repository() -> None:
 
 def test_hunyuan_video_supports_text_and_image_generation() -> None:
     model = VIDEO_MODELS["hunyuanvideo-1.5-480p"]
-    assert model["repository"] == "hunyuanvideo-community/HunyuanVideo-1.5-480p_t2v"
-    assert model["image_repository"] == "hunyuanvideo-community/HunyuanVideo-1.5-480p_i2v"
+    assert model["repository"] == "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v"
+    assert model["image_repository"] == "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v"
     assert working_hunyuan_video_size(480, 272) == working_wan_video_size(480, 272)
 
 

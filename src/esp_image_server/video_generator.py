@@ -29,7 +29,7 @@ VIDEO_MODELS = {
     },
     "hunyuanvideo-1.5-480p": {
         "name": "HunyuanVideo 1.5 480p", "description": "High-quality text and image animation model for capable NVIDIA graphics cards.",
-        "family": "hunyuan", "repository": "hunyuanvideo-community/HunyuanVideo-1.5-480p_t2v", "image_repository": "hunyuanvideo-community/HunyuanVideo-1.5-480p_i2v", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30,
+        "family": "hunyuan", "repository": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v", "image_repository": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30,
     },
 }
 
