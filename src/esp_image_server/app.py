@@ -266,6 +266,8 @@ def create_app(
             "status": "ready" if generator.ready else "loading",
             "device": generator.device,
             "generating": generation_jobs.has_active_job(),
+            "image_generating": generation_jobs.has_active_job(),
+            "video_generating": video_jobs.has_active_job(),
         }
 
     @app.get("/server-info")

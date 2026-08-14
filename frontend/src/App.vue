@@ -154,6 +154,18 @@ let imageLibraryResizeStartX = 0
 let imageLibraryResizeStartWidth = 0
 const { mobile } = useDisplay()
 const generationBusy = computed(() => generating.value || health.value?.generating === true)
+const appBarStatus = computed(() => {
+  if (generatingVideo.value || health.value?.video_generating === true) {
+    return { color: 'primary', icon: 'mdi-movie-open-outline', label: 'Generating video' }
+  }
+  if (generating.value || health.value?.image_generating === true) {
+    return { color: 'primary', icon: 'mdi-image-outline', label: 'Generating image' }
+  }
+  if (health.value?.status === 'ready') {
+    return { color: 'success', icon: 'mdi-server', label: 'Server ready' }
+  }
+  return { color: 'warning', icon: 'mdi-server', label: 'Server loading' }
+})
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
@@ -1188,8 +1200,8 @@ onUnmounted(() => {
         <span class="font-weight-bold">ESPImageServer</span>
         <span v-if="serverInfo?.version" class="text-caption text-medium-emphasis">v{{ serverInfo.version }}</span>
       </div>
-      <v-chip class="mr-2" :color="health?.status === 'ready' ? 'success' : 'warning'" variant="tonal" prepend-icon="mdi-server">
-        {{ health?.status === 'ready' ? 'Server ready' : 'Server loading' }}
+      <v-chip class="mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon">
+        {{ appBarStatus.label }}
       </v-chip>
       <v-chip :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
         {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
