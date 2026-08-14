@@ -262,12 +262,16 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict[str, object]:
+        image_job = generation_jobs.active_job()
+        video_job = video_jobs.active_job()
         return {
             "status": "ready" if generator.ready else "loading",
             "device": generator.device,
-            "generating": generation_jobs.has_active_job(),
-            "image_generating": generation_jobs.has_active_job(),
-            "video_generating": video_jobs.has_active_job(),
+            "generating": image_job is not None,
+            "image_generating": image_job is not None,
+            "video_generating": video_job is not None,
+            "active_image_job": image_job.as_dict() if image_job else None,
+            "active_video_job": video_job.as_dict() if video_job else None,
         }
 
     @app.get("/server-info")

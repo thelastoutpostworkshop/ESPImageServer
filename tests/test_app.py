@@ -99,6 +99,8 @@ def test_health_reports_that_no_generation_is_active() -> None:
     assert response.json()["generating"] is False
     assert response.json()["image_generating"] is False
     assert response.json()["video_generating"] is False
+    assert response.json()["active_image_job"] is None
+    assert response.json()["active_video_job"] is None
 
 
 def test_generation_job_reports_progress_and_returns_its_image() -> None:

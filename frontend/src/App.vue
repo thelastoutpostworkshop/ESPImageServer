@@ -156,15 +156,23 @@ const { mobile } = useDisplay()
 const generationBusy = computed(() => generating.value || health.value?.generating === true)
 const appBarStatus = computed(() => {
   if (generatingVideo.value || health.value?.video_generating === true) {
-    return { color: 'primary', icon: 'mdi-movie-open-outline', label: 'Generating video' }
+    const progress = generatingVideo.value ? videoProgress.value : health.value?.active_video_job?.progress
+    return {
+      color: 'primary', icon: 'mdi-movie-open-outline', page: 'video',
+      label: Number.isFinite(progress) && progress > 0 ? `Generating video · ${progress}%` : 'Preparing video'
+    }
   }
   if (generating.value || health.value?.image_generating === true) {
-    return { color: 'primary', icon: 'mdi-image-outline', label: 'Generating image' }
+    const progress = generating.value ? generationProgress.value : health.value?.active_image_job?.progress
+    return {
+      color: 'primary', icon: 'mdi-image-outline', page: 'generate',
+      label: Number.isFinite(progress) && progress > 0 ? `Generating image · ${progress}%` : 'Preparing image'
+    }
   }
   if (health.value?.status === 'ready') {
-    return { color: 'success', icon: 'mdi-server', label: 'Server ready' }
+    return { color: 'success', icon: 'mdi-server', page: '', label: 'Server ready' }
   }
-  return { color: 'warning', icon: 'mdi-server', label: 'Server loading' }
+  return { color: 'warning', icon: 'mdi-server', page: '', label: 'Server loading' }
 })
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
@@ -510,6 +518,14 @@ function openGeneratePage() {
   if (display.value?.connected) {
     sendDisplaySdCardCommand('/display-sd-card/mode/live_images')
   }
+}
+
+function openActiveGeneration() {
+  if (appBarStatus.value.page) page.value = appBarStatus.value.page
+}
+
+function openDisplayHelp() {
+  page.value = 'about'
 }
 
 function openSDCardPage() {
@@ -1196,10 +1212,10 @@ onUnmounted(() => {
     <v-app-bar color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
-      <v-chip class="mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon">
+      <v-chip class="mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : undefined" @click="openActiveGeneration">
         {{ appBarStatus.label }}
       </v-chip>
-      <v-chip :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard">
+      <v-chip :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :title="!display?.connected ? 'Open display connection help' : undefined" @click="!display?.connected && openDisplayHelp()">
         {{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}
       </v-chip>
       <v-spacer />
@@ -1688,6 +1704,9 @@ onUnmounted(() => {
               :subtitle="serverInfo?.processing || 'Loading processing information...'"
             />
             <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display" :subtitle="displayMessage" />
+            <v-alert v-if="!display?.connected" type="info" variant="tonal" density="compact" class="ma-4">
+              Turn on the ESP32, connect it to the same local network as this computer, and confirm its configured server address points here. The display will appear automatically after it registers.
+            </v-alert>
           </v-list>
         </v-card>
 
