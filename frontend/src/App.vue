@@ -543,7 +543,7 @@ async function loadDisplaySdCard() {
 function openGeneratePage() {
   page.value = 'generate'
   if (display.value?.connected) {
-    sendDisplaySdCardCommand('/display-sd-card/mode/live_images')
+    sendDisplaySdCardCommand('/display-sd-card/mode/live_images', 'POST', false)
   }
 }
 
@@ -599,11 +599,11 @@ function openSDCardPage() {
   page.value = 'sd-card'
   loadDisplaySdCard()
   if (display.value?.connected) {
-    sendDisplaySdCardCommand('/display-sd-card/mode/sd_card')
+    sendDisplaySdCardCommand('/display-sd-card/mode/sd_card', 'POST', false)
   }
 }
 
-async function sendDisplaySdCardCommand(endpoint, method = 'POST') {
+async function sendDisplaySdCardCommand(endpoint, method = 'POST', notify = true) {
   error.value = ''
   try {
     const response = await fetch(endpoint, { method })
@@ -611,7 +611,7 @@ async function sendDisplaySdCardCommand(endpoint, method = 'POST') {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
-    showSDCardSnackbar('Request sent to the display.')
+    if (notify) showSDCardSnackbar('Request sent to the display.')
     window.setTimeout(loadDisplaySdCard, 3500)
   } catch (requestError) {
     error.value = `Could not update the display SD card: ${requestError.message}`
