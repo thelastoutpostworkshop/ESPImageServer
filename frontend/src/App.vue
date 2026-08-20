@@ -138,6 +138,7 @@ const savedImages = ref([])
 const savedImagesLoading = ref(false)
 const imageLibraryLocation = ref('')
 const jpegQuality = ref(85)
+const videoJpegQuality = ref(10)
 const autoSaveImages = ref(true)
 const confirmDeletion = ref(true)
 const autoSaveSaving = ref(false)
@@ -779,6 +780,7 @@ async function loadAppSettings() {
     const settings = await response.json()
     imageLibraryLocation.value = settings.image_library_location
     jpegQuality.value = settings.jpeg_quality
+    videoJpegQuality.value = settings.video_jpeg_quality
     autoSaveImages.value = settings.auto_save_images !== false
     confirmDeletion.value = settings.confirm_deletion !== false
   } catch {
@@ -797,6 +799,7 @@ async function saveAppSettings() {
       body: JSON.stringify({
         image_library_location: imageLibraryLocation.value,
         jpeg_quality: Number(jpegQuality.value),
+        video_jpeg_quality: Number(videoJpegQuality.value),
         auto_save_images: autoSaveImages.value,
         confirm_deletion: confirmDeletion.value
       })
@@ -808,10 +811,11 @@ async function saveAppSettings() {
     const settings = await response.json()
     imageLibraryLocation.value = settings.image_library_location
     jpegQuality.value = settings.jpeg_quality
+    videoJpegQuality.value = settings.video_jpeg_quality
     autoSaveImages.value = settings.auto_save_images !== false
     confirmDeletion.value = settings.confirm_deletion !== false
     await loadSavedImages()
-    settingsStatus.value = 'Settings saved. JPEG quality is used for new images.'
+    settingsStatus.value = 'Settings saved. Image and video quality settings apply to future exports.'
   } catch (requestError) {
     settingsError.value = `Could not save settings: ${requestError.message}`
   } finally {
@@ -2076,6 +2080,19 @@ onUnmounted(() => {
               />
               <div class="text-body-2 text-medium-emphasis mb-5">
                 Higher quality produces larger files and can take a little longer for the ESP32 to download. This applies to newly generated images only.
+              </div>
+              <v-slider
+                v-model="videoJpegQuality"
+                label="Video JPEG quality"
+                min="2"
+                max="20"
+                step="1"
+                thumb-label
+                color="primary"
+                class="mt-2"
+              />
+              <div class="text-body-2 text-medium-emphasis mb-5">
+                Used when saving videos to the display SD card. Lower values retain more detail but create larger files; 10 is recommended.
               </div>
               <v-switch
                 v-model="confirmDeletion"

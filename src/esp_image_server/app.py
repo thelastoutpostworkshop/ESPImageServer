@@ -114,6 +114,7 @@ class AppSettingsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     image_library_location: str | None = Field(default=None, min_length=1)
     jpeg_quality: int | None = Field(default=None, ge=1, le=100)
+    video_jpeg_quality: int | None = Field(default=None, ge=2, le=31)
     auto_save_images: bool | None = None
     confirm_deletion: bool | None = None
 
@@ -199,6 +200,8 @@ def create_app(
     video_library = VideoLibrary(image_library.path)
     jpeg_quality = persisted_app_settings.get("jpeg_quality", settings.jpeg_quality)
     jpeg_quality = jpeg_quality if isinstance(jpeg_quality, int) and 1 <= jpeg_quality <= 100 else settings.jpeg_quality
+    video_jpeg_quality = persisted_app_settings.get("video_jpeg_quality", 10)
+    video_jpeg_quality = video_jpeg_quality if isinstance(video_jpeg_quality, int) and 2 <= video_jpeg_quality <= 31 else 10
     auto_save_images = persisted_app_settings.get("auto_save_images", True)
     auto_save_images = auto_save_images if isinstance(auto_save_images, bool) else True
     confirm_deletion = persisted_app_settings.get("confirm_deletion", True)
@@ -566,13 +569,14 @@ def create_app(
         return {
             "image_library_location": str(image_library.path),
             "jpeg_quality": jpeg_quality,
+            "video_jpeg_quality": video_jpeg_quality,
             "auto_save_images": auto_save_images,
             "confirm_deletion": confirm_deletion,
         }
 
     @app.put("/app-settings")
     def update_app_settings(request: AppSettingsRequest) -> dict[str, object]:
-        nonlocal jpeg_quality, auto_save_images, confirm_deletion
+        nonlocal jpeg_quality, video_jpeg_quality, auto_save_images, confirm_deletion
         if request.image_library_location is not None:
             location = Path(request.image_library_location)
             if not location.is_absolute():
@@ -584,6 +588,8 @@ def create_app(
                 raise HTTPException(status_code=422, detail=f"Could not move the image library: {exc}") from exc
         if request.jpeg_quality is not None:
             jpeg_quality = request.jpeg_quality
+        if request.video_jpeg_quality is not None:
+            video_jpeg_quality = request.video_jpeg_quality
         if request.auto_save_images is not None:
             auto_save_images = request.auto_save_images
         if request.confirm_deletion is not None:
@@ -591,6 +597,7 @@ def create_app(
         app_settings_store.set({
             "image_library_location": str(image_library.path),
             "jpeg_quality": jpeg_quality,
+            "video_jpeg_quality": video_jpeg_quality,
             "auto_save_images": auto_save_images,
             "confirm_deletion": confirm_deletion,
         })
@@ -671,12 +678,13 @@ def create_app(
             raise HTTPException(status_code=503, detail="Bundled FFmpeg is unavailable")
         output_dir = video_output_path / "display-mjpeg"
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{video_id}-{width}x{height}-{fps}fps.mjpeg"
+        output_path = output_dir / f"{video_id}-{width}x{height}-{fps}fps-q{video_jpeg_quality}.mjpeg"
         try:
             if not output_path.is_file() or output_path.stat().st_mtime < video_path.stat().st_mtime:
                 subprocess.run(
                     [ffmpeg, "-y", "-loglevel", "error", "-i", str(video_path), "-vf", f"scale={width}:{height}",
-                     "-r", str(fps), "-an", "-c:v", "mjpeg", "-q:v", "5", "-f", "mjpeg", str(output_path)],
+                     "-r", str(fps), "-an", "-c:v", "mjpeg", "-pix_fmt", "yuvj420p", "-color_range", "pc",
+                     "-q:v", str(video_jpeg_quality), "-f", "mjpeg", str(output_path)],
                     capture_output=True, check=True, timeout=300,
                 )
         except (OSError, subprocess.SubprocessError) as exc:

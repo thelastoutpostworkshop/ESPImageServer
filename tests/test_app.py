@@ -1,4 +1,5 @@
 from io import BytesIO
+from pathlib import Path
 from threading import Event
 import time
 
@@ -335,17 +336,20 @@ def test_saved_image_can_be_deleted_from_the_creation_library(tmp_path) -> None:
     assert missing.status_code == 404
 
 
-def test_deletion_confirmation_setting_is_saved(tmp_path) -> None:
+def test_deletion_confirmation_and_video_quality_settings_are_saved(tmp_path) -> None:
     app_settings = AppSettingsStore(tmp_path / "app_settings.json")
     app = create_app(Settings(), FakeGenerator(), app_settings_store=app_settings, enable_mdns=False)
 
     with TestClient(app) as client:
         initial = client.get("/app-settings")
-        updated = client.put("/app-settings", json={"confirm_deletion": False})
+        updated = client.put("/app-settings", json={"confirm_deletion": False, "video_jpeg_quality": 15})
 
     assert initial.json()["confirm_deletion"] is True
+    assert initial.json()["video_jpeg_quality"] == 10
     assert updated.json()["confirm_deletion"] is False
+    assert updated.json()["video_jpeg_quality"] == 15
     assert app_settings.get()["confirm_deletion"] is False
+    assert app_settings.get()["video_jpeg_quality"] == 15
 
 
 def test_saved_video_can_be_deleted_from_the_creation_library(tmp_path, monkeypatch) -> None:
@@ -378,11 +382,20 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
     record = videos.save(source, {"prompt": "a tiny robot", "fps": 12})
     Image.new("RGB", (64, 64), "blue").save(videos.path / record["thumbnail_filename"], format="JPEG")
     app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+    ffmpeg_commands: list[list[str]] = []
+
+    def fake_display_conversion(command, **_kwargs):
+        ffmpeg_commands.append(command)
+        Path(command[-1]).write_bytes(b"\xff\xd8\xff\xd9")
+
+    monkeypatch.setattr("esp_image_server.app.bundled_ffmpeg_executable", lambda: "ffmpeg.exe")
+    monkeypatch.setattr("esp_image_server.app.subprocess.run", fake_display_conversion)
 
     with TestClient(app) as client:
         queued = client.post(f"/display-commands/save-saved-video/{record['id']}")
         command = client.get("/display-commands/next")
         thumbnail = client.get(f"/display-sd-card/thumbnails/{command.json()['filename']}")
+        mjpeg = client.get(f"/saved-videos/{record['id']}/mjpeg-download?width=480&height=272&fps=12")
 
     assert queued.status_code == 202
     assert command.json()["type"] == "save_saved_video"
@@ -391,6 +404,10 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
     assert command.json()["filename"].endswith("-fps12.mjpeg")
     assert thumbnail.status_code == 200
     assert thumbnail.headers["content-type"] == "image/jpeg"
+    assert mjpeg.status_code == 200
+    assert "-pix_fmt" in ffmpeg_commands[0]
+    assert ffmpeg_commands[0][ffmpeg_commands[0].index("-pix_fmt") + 1] == "yuvj420p"
+    assert ffmpeg_commands[0][ffmpeg_commands[0].index("-q:v") + 1] == "10"
 
 
 def test_selecting_a_saved_image_makes_it_available_to_the_esp32(tmp_path) -> None:
