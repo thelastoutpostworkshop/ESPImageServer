@@ -135,10 +135,19 @@ class DisplayCommandAcknowledgement(BaseModel):
 
 class DisplaySDCardReport(BaseModel):
     available: bool
-    mode: str = Field(pattern="^(live_images|sd_card)$")
+    mode: str = Field(pattern="^(server_controlled|offline_slideshow|live_images|sd_card)$")
     total_bytes: int = Field(ge=0)
     used_bytes: int = Field(ge=0)
     files: list[dict[str, object]] = Field(default_factory=list)
+    offline_experience: str = Field(default="slideshow", pattern="^slideshow$")
+    slideshow_interval_seconds: int = Field(default=15, ge=5, le=3600)
+    slideshow_order: str = Field(default="newest_first", pattern="^(newest_first|oldest_first)$")
+
+
+class DisplayExperienceRequest(BaseModel):
+    offline_experience: str = Field(default="slideshow", pattern="^slideshow$")
+    slideshow_interval_seconds: int = Field(ge=5, le=3600)
+    slideshow_order: str = Field(pattern="^(newest_first|oldest_first)$")
 
 
 class VideoGenerateRequest(BaseModel):
@@ -509,6 +518,26 @@ def create_app(
     def report_display_sd_card(report: DisplaySDCardReport) -> Response:
         display_command_store.report_sd_card(report.model_dump())
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/display-experience")
+    def get_display_experience() -> dict[str, object]:
+        report = display_command_store.sd_card_report()
+        return {
+            "connected": bool(report.get("available", False)),
+            "current_mode": report.get("mode", "server_controlled"),
+            "offline_experience": report.get("offline_experience", "slideshow"),
+            "slideshow_interval_seconds": report.get("slideshow_interval_seconds", 15),
+            "slideshow_order": report.get("slideshow_order", "newest_first"),
+        }
+
+    @app.put("/display-experience", status_code=status.HTTP_202_ACCEPTED)
+    def set_display_experience(request: DisplayExperienceRequest) -> dict[str, object]:
+        return display_command_store.queue(
+            "set_display_experience",
+            offline_experience=request.offline_experience,
+            slideshow_interval_seconds=request.slideshow_interval_seconds,
+            slideshow_order=request.slideshow_order,
+        )
 
     @app.post("/display-sd-card/mode/{mode}", status_code=status.HTTP_202_ACCEPTED)
     def set_display_mode(mode: str) -> dict[str, object]:

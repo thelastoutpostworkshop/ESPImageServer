@@ -245,13 +245,22 @@ def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
                 "files": [{"name": "image.jpg", "size": 128}],
             },
         )
+        reported_experience = client.get("/display-experience")
         queued = client.post("/display-sd-card/mode/live_images")
         command = client.get("/display-commands/next")
+        experience = client.put("/display-experience", json={"offline_experience": "slideshow", "slideshow_interval_seconds": 30, "slideshow_order": "oldest_first"})
+        experience_command = client.get("/display-commands/next")
 
     assert report.status_code == 204
+    assert reported_experience.json()["current_mode"] == "sd_card"
+    assert reported_experience.json()["slideshow_interval_seconds"] == 15
     assert queued.status_code == 202
     assert command.json()["type"] == "set_mode"
     assert command.json()["mode"] == "live_images"
+    assert experience.status_code == 202
+    assert experience_command.json()["type"] == "set_display_experience"
+    assert experience_command.json()["slideshow_interval_seconds"] == 30
+    assert experience_command.json()["slideshow_order"] == "oldest_first"
 
 
 def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:

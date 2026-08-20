@@ -137,6 +137,11 @@ const savingToDisplaySdCard = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardLoading = ref(false)
 const sdCardItemsPerPage = ref(loadSDCardItemsPerPage())
+const displayExperience = ref({ current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_seconds: 15, slideshow_order: 'newest_first' })
+const displayExperienceLoading = ref(false)
+const displayExperienceSaving = ref(false)
+const displayExperienceError = ref('')
+const displayExperienceStatus = ref('')
 const displayingSdCardFile = ref('')
 const sdCardSnackbar = ref(false)
 const sdCardSnackbarMessage = ref('')
@@ -675,9 +680,6 @@ async function loadDisplaySdCard() {
 
 function openGeneratePage() {
   page.value = 'generate'
-  if (display.value?.connected) {
-    sendDisplaySdCardCommand('/display-sd-card/mode/live_images', 'POST', false)
-  }
 }
 
 function openActiveGeneration() {
@@ -731,8 +733,49 @@ function openDisplayHelp() {
 function openSDCardPage() {
   page.value = 'sd-card'
   loadDisplaySdCard()
-  if (display.value?.connected) {
-    sendDisplaySdCardCommand('/display-sd-card/mode/sd_card', 'POST', false)
+}
+
+async function loadDisplayExperience() {
+  displayExperienceLoading.value = true
+  displayExperienceError.value = ''
+  try {
+    const response = await fetch('/display-experience')
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    displayExperience.value = await response.json()
+  } catch (requestError) {
+    displayExperienceError.value = `Could not load display experience: ${requestError.message}`
+  } finally {
+    displayExperienceLoading.value = false
+  }
+}
+
+function openDisplayExperiencePage() {
+  page.value = 'display-experience'
+  loadDisplayExperience()
+}
+
+async function saveDisplayExperience() {
+  displayExperienceSaving.value = true
+  displayExperienceError.value = ''
+  displayExperienceStatus.value = ''
+  try {
+    const response = await fetch('/display-experience', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        offline_experience: 'slideshow',
+        slideshow_interval_seconds: Number(displayExperience.value.slideshow_interval_seconds),
+        slideshow_order: displayExperience.value.slideshow_order
+      })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    displayExperienceStatus.value = 'Display experience saved. The display will use it when ESPImageServer is unavailable.'
+  } catch (requestError) {
+    displayExperienceError.value = `Could not save display experience: ${requestError.message}`
+  } finally {
+    displayExperienceSaving.value = false
   }
 }
 
@@ -1453,6 +1496,7 @@ onUnmounted(() => {
         </v-list-item>
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="page = 'video'" />
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
+        <v-list-item prepend-icon="mdi-monitor-cog" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
         <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="page = 'settings'" />
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
@@ -1996,6 +2040,45 @@ onUnmounted(() => {
               Turn on the ESP32, connect it to the same local network as this computer, and confirm its configured server address points here. The display will appear automatically after it registers.
             </v-alert>
           </v-list>
+        </v-card>
+
+        <v-card v-else-if="page === 'display-experience'" class="settings-card">
+          <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
+          <v-card-text>
+            <v-progress-linear v-if="displayExperienceLoading" indeterminate color="primary" class="mb-4" />
+            <v-chip :color="displayExperience.current_mode === 'offline_slideshow' ? 'warning' : 'success'" variant="tonal" class="mb-5" :prepend-icon="displayExperience.current_mode === 'offline_slideshow' ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
+              {{ displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow active' : 'Server controlled' }}
+            </v-chip>
+            <p class="text-body-1 mb-5">When the display cannot reach ESPImageServer for a short time, it will use this saved experience. It returns to normal server control automatically when the connection is restored.</p>
+            <v-form @submit.prevent="saveDisplayExperience">
+              <v-select
+                :model-value="'slideshow'"
+                label="When ESPImageServer is unavailable"
+                :items="[{ title: 'SD Card Slideshow', value: 'slideshow' }]"
+                variant="outlined"
+                readonly
+                class="mb-3"
+              />
+              <v-select
+                v-model="displayExperience.slideshow_interval_seconds"
+                label="Change image every"
+                :items="[{ title: '5 seconds', value: 5 }, { title: '15 seconds', value: 15 }, { title: '30 seconds', value: 30 }, { title: '1 minute', value: 60 }]"
+                variant="outlined"
+                class="mb-3"
+              />
+              <v-select
+                v-model="displayExperience.slideshow_order"
+                label="Order"
+                :items="[{ title: 'Newest first', value: 'newest_first' }, { title: 'Oldest first', value: 'oldest_first' }]"
+                variant="outlined"
+                class="mb-3"
+              />
+              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!display?.connected" prepend-icon="mdi-content-save">Save display experience</v-btn>
+              <div v-if="!display?.connected" class="text-caption text-medium-emphasis mt-3">Connect the display to save these settings.</div>
+              <v-alert v-if="displayExperienceStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ displayExperienceStatus }}</v-alert>
+              <v-alert v-if="displayExperienceError" type="error" variant="tonal" density="compact" class="mt-4">{{ displayExperienceError }}</v-alert>
+            </v-form>
+          </v-card-text>
         </v-card>
 
         <v-card v-else-if="page === 'sd-card'">
