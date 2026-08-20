@@ -12,7 +12,7 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .model-in-use { background: rgba(var(--v-theme-primary), 0.10); }
 .model-list__active { background: rgba(var(--v-theme-success), 0.08); }
 .metadata-list .v-list-item-subtitle { white-space: normal; }
-.saved-image-library { max-height: calc(100vh - 350px); overflow-y: auto; padding-right: 4px; }
+.saved-image-library { padding-right: 4px; }
 .saved-image-group + .saved-image-group { margin-top: 18px; }
 .saved-image-grid { display: grid; grid-template-columns: repeat(auto-fill, var(--thumbnail-size)); gap: 8px; }
 .saved-image-thumbnail { width: var(--thumbnail-size); cursor: pointer; overflow: hidden; }
