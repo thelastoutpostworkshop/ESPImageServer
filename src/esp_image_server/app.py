@@ -436,11 +436,11 @@ def create_app(
             raise HTTPException(status_code=404, detail="Saved video not found")
         record = next((item for item in video_library.list(limit=10_000) if item.get("id") == video_id), {})
         metadata = record.get("metadata", {}) if isinstance(record, dict) else {}
-        fps = metadata.get("fps", 8) if isinstance(metadata, dict) else 8
+        fps = metadata.get("fps", 15) if isinstance(metadata, dict) else 15
         try:
             fps = max(1, min(24, int(fps)))
         except (TypeError, ValueError):
-            fps = 8
+            fps = 15
         filename = f"esp-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{video_id[:8]}-fps{fps}.mjpeg"
         thumbnail_path = video_library.find_thumbnail_path(video_id)
         if thumbnail_path is not None:
