@@ -88,6 +88,7 @@ const savedVideos = ref([])
 const savedVideoContextMenu = ref(false)
 const savedVideoContextMenuPosition = ref([0, 0])
 const contextMenuSavedVideo = ref(null)
+const playingSavedVideo = ref(false)
 const videoSourceImage = ref(null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
@@ -530,6 +531,40 @@ async function useSavedVideoSettings(metadata, setting) {
   page.value = 'video'
   videoStage.value = setting === 'all' ? 'Saved video settings restored.' : `Saved video ${setting} restored.`
   if (!metadataPanePinned.value) metadataPane.value = false
+}
+
+async function playSavedVideoOnDisplay() {
+  const savedVideo = contextMenuSavedVideo.value
+  if (!savedVideo || playingSavedVideo.value) return
+  playingSavedVideo.value = true
+  savedVideoContextMenu.value = false
+  error.value = ''
+  status.value = ''
+  try {
+    const response = await fetch(`/display-commands/play-saved-video/${encodeURIComponent(savedVideo.id)}`, { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const command = await response.json()
+    status.value = 'Video request sent to the display. Streaming will start shortly.'
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 1000))
+      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      if (!commandResponse.ok) continue
+      const result = await commandResponse.json()
+      if (result.status === 'complete') {
+        status.value = 'Video playback finished on the display.'
+        return
+      }
+      if (result.status === 'failed') throw new Error(result.detail || 'The display could not play this video')
+    }
+    status.value = 'The display is still playing the video.'
+  } catch (requestError) {
+    error.value = `Could not play the video on the display: ${requestError.message}`
+  } finally {
+    playingSavedVideo.value = false
+  }
 }
 
 function confirmDeleteSavedVideo() {
@@ -1498,6 +1533,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
+        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" title="Play on display" :disabled="!display?.connected || playingSavedVideo" @click="playSavedVideoOnDisplay" />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Gallery" @click="confirmDeleteSavedVideo" />

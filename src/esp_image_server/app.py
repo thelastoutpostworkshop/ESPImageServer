@@ -17,7 +17,7 @@ import webbrowser
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image
@@ -39,7 +39,7 @@ from .models import MODELS, get_model, model_is_cached, model_settings
 from .model_settings import ModelSelectionStore
 from .video_generator import LTXVideoGenerator, VIDEO_MODELS, remove_cached_video_model, video_model_is_cached
 from .video_jobs import VideoJobStore
-from .video_library import VideoLibrary
+from .video_library import VideoLibrary, bundled_ffmpeg_executable
 from .version import APP_VERSION
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -411,6 +411,24 @@ def create_app(
             raise HTTPException(status_code=404, detail="Saved image not found")
         return queue_image_save(image_path.read_bytes(), image_id)
 
+    @app.post("/display-commands/play-saved-video/{video_id}", status_code=status.HTTP_202_ACCEPTED)
+    def play_saved_video_on_display(video_id: str) -> dict[str, object]:
+        """Ask the display to stream one saved video as JPEG frames."""
+        video_path = video_library.find_path(video_id)
+        if video_path is None:
+            raise HTTPException(status_code=404, detail="Saved video not found")
+        record = next((item for item in video_library.list(limit=10_000) if item.get("id") == video_id), {})
+        metadata = record.get("metadata", {}) if isinstance(record, dict) else {}
+        fps = metadata.get("fps", 8) if isinstance(metadata, dict) else 8
+        try:
+            fps = max(1, min(24, int(fps)))
+        except (TypeError, ValueError):
+            fps = 8
+        return display_command_store.queue(
+            "play_saved_video", video_id=video_id,
+            video_url=f"/saved-videos/{video_id}/mjpeg", fps=fps,
+        )
+
     def queue_image_save(jpeg: bytes, image_id: str | None = None) -> dict[str, object]:
         image_hash = hashlib.sha256(jpeg).hexdigest()[:16]
         filename = f"esp-image-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{image_hash}.jpg"
@@ -602,6 +620,36 @@ def create_app(
         if video_path is None:
             raise HTTPException(status_code=404, detail="Saved video not found")
         return FileResponse(video_path, media_type="video/mp4", filename=video_path.name)
+
+    @app.get("/saved-videos/{video_id}/mjpeg")
+    def saved_video_mjpeg(video_id: str, width: int = Query(ge=1, le=1024), height: int = Query(ge=1, le=1024), fps: int = Query(default=8, ge=1, le=24)) -> StreamingResponse:
+        """Transcode a saved MP4 into a raw concatenation of display-sized JPEGs."""
+        video_path = video_library.find_path(video_id)
+        if video_path is None:
+            raise HTTPException(status_code=404, detail="Saved video not found")
+        ffmpeg = bundled_ffmpeg_executable()
+        if ffmpeg is None:
+            raise HTTPException(status_code=503, detail="Bundled FFmpeg is unavailable")
+
+        def stream_mjpeg():
+            process = subprocess.Popen(
+                [ffmpeg, "-loglevel", "error", "-i", str(video_path), "-vf", f"scale={width}:{height}",
+                 "-r", str(fps), "-an", "-f", "mjpeg", "-q:v", "5", "pipe:1"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            )
+            try:
+                assert process.stdout is not None
+                while chunk := process.stdout.read(16 * 1024):
+                    yield chunk
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+
+        return StreamingResponse(stream_mjpeg(), media_type="video/x-motion-jpeg", headers={"Cache-Control": "no-store"})
 
     @app.get("/saved-videos/{video_id}/thumbnail", response_class=Response)
     def saved_video_thumbnail(video_id: str) -> FileResponse:
