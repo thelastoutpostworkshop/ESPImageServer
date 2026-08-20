@@ -35,7 +35,7 @@ from .image_processor import to_jpeg
 from .image_library import ImageLibrary
 from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser
-from .models import MODELS, get_model, model_is_cached, model_settings
+from .models import MODELS, get_model, model_is_cached, model_settings, remove_cached_model
 from .model_settings import ModelSelectionStore
 from .video_generator import LTXVideoGenerator, VIDEO_MODELS, remove_cached_video_model, video_model_is_cached
 from .video_jobs import VideoJobStore
@@ -360,6 +360,20 @@ def create_app(
         active_model_id = model_id
         logger.info("Active image model changed to %s", model_id)
         return {"status": "active", "model_id": model_id}
+
+    @app.delete("/models/{model_id:path}")
+    def remove_image_model(model_id: str) -> dict[str, object]:
+        try:
+            model = get_model(model_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Image model not found") from exc
+        if generation_jobs.has_active_job():
+            raise HTTPException(status_code=409, detail="Wait for the current image generation to finish before removing an image model")
+        if video_jobs.has_active_job():
+            raise HTTPException(status_code=409, detail="Wait for the current video generation to finish before removing an image model")
+        generator.unload()
+        removed = remove_cached_model(model, active_settings.model_cache_dir)
+        return {"removed": removed}
 
     @app.get("/model-loading-status")
     def get_model_loading_status() -> dict[str, object]:

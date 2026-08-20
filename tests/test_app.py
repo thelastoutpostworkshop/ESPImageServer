@@ -266,6 +266,24 @@ def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
     assert store.get() == "segmind/SSD-1B"
 
 
+def test_image_model_cache_can_be_removed(tmp_path) -> None:
+    cache_dir = tmp_path / "models"
+    model_cache = cache_dir / "models--stabilityai--sd-turbo" / "snapshots" / "main"
+    model_cache.mkdir(parents=True)
+    app = create_app(Settings(model_cache_dir=cache_dir), FakeGenerator(), enable_mdns=False)
+
+    with TestClient(app) as client:
+        before = client.get("/models")
+        removed = client.delete("/models/stabilityai/sd-turbo")
+        after = client.get("/models")
+
+    assert next(model for model in before.json() if model["id"] == "stabilityai/sd-turbo")["installed"] is True
+    assert removed.status_code == 200
+    assert removed.json() == {"removed": True}
+    assert not (cache_dir / "models--stabilityai--sd-turbo").exists()
+    assert next(model for model in after.json() if model["id"] == "stabilityai/sd-turbo")["installed"] is False
+
+
 def test_upgrade_preserves_image_library_model_and_rotation(tmp_path, monkeypatch) -> None:
     """Existing per-user settings must be used when a newer app starts."""
     app_data = tmp_path / "ESPImageServer"

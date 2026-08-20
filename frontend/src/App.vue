@@ -74,6 +74,9 @@ const displayConnectedMessage = ref('')
 const displayRotation = ref(0)
 const models = ref([])
 const availableVideoModels = ref([])
+const removingImageModelId = ref('')
+const removeImageModelDialog = ref(false)
+const imageModelToRemove = ref(null)
 const removingVideoModelId = ref('')
 const removeVideoModelDialog = ref(false)
 const videoModelToRemove = ref(null)
@@ -370,6 +373,31 @@ async function loadVideoModels() {
     availableVideoModels.value = response.ok ? await response.json() : []
   } catch {
     availableVideoModels.value = []
+  }
+}
+
+function confirmRemoveImageModel(model) {
+  imageModelToRemove.value = model
+  removeImageModelDialog.value = true
+}
+
+async function removeImageModel() {
+  const model = imageModelToRemove.value
+  if (!model || removingImageModelId.value) return
+  removingImageModelId.value = model.id
+  try {
+    const response = await fetch(`/models/${encodeURIComponent(model.id)}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    removeImageModelDialog.value = false
+    status.value = `${model.name} was removed to free disk space.`
+    await loadModels()
+  } catch (requestError) {
+    error.value = `Could not remove ${model.name}: ${requestError.message}`
+  } finally {
+    removingImageModelId.value = ''
   }
 }
 
@@ -1582,6 +1610,20 @@ onUnmounted(() => {
       </v-card>
     </v-dialog>
 
+    <v-dialog v-model="removeImageModelDialog" max-width="480" width="calc(100% - 32px)">
+      <v-card title="Remove image model">
+        <v-card-text>
+          Remove <strong>{{ imageModelToRemove?.name }}</strong> from this computer? It can be downloaded again when needed.
+          <div v-if="imageModelToRemove?.active" class="text-body-2 text-medium-emphasis mt-3">This is the selected model. It will be unloaded and downloaded again the next time you generate an image.</div>
+        </v-card-text>
+        <v-card-actions class="px-6 pb-5">
+          <v-spacer />
+          <v-btn variant="text" :disabled="Boolean(removingImageModelId)" @click="removeImageModelDialog = false">Keep model</v-btn>
+          <v-btn color="error" variant="flat" :loading="Boolean(removingImageModelId)" @click="removeImageModel">Remove model</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
         <template v-if="page === 'generate'">
@@ -1817,6 +1859,7 @@ onUnmounted(() => {
                 <th>Best for</th>
                 <th>Hardware</th>
                 <th>Status</th>
+                <th class="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1844,6 +1887,7 @@ onUnmounted(() => {
                     {{ model.installed ? 'Downloaded' : 'Downloads when selected' }}
                   </v-chip>
                 </td>
+                <td class="text-right"><v-btn v-if="model.installed" color="error" variant="text" size="small" prepend-icon="mdi-delete-outline" :loading="removingImageModelId === model.id" :disabled="generationBusy" @click="confirmRemoveImageModel(model)">Remove</v-btn></td>
               </tr>
             </tbody>
           </v-table>
@@ -1856,7 +1900,7 @@ onUnmounted(() => {
               </template>
               <v-list-item-title class="font-weight-bold">{{ model.name }}</v-list-item-title>
               <v-list-item-subtitle>{{ model.speed }} · {{ model.hardware }}</v-list-item-subtitle>
-              <template #append><v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip></template>
+              <template #append><div class="d-flex align-center"><v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingImageModelId === model.id" :disabled="generationBusy" :aria-label="`Remove ${model.name}`" @click="confirmRemoveImageModel(model)" /></div></template>
             </v-list-item>
           </v-list>
           <v-card-text class="text-caption text-medium-emphasis pt-3">
