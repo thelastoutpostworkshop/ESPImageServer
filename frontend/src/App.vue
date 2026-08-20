@@ -91,7 +91,7 @@ const savedVideos = ref([])
 const savedVideoContextMenu = ref(false)
 const savedVideoContextMenuPosition = ref([0, 0])
 const contextMenuSavedVideo = ref(null)
-const playingSavedVideo = ref(false)
+const savingVideoToDisplaySdCard = ref(false)
 const videoSourceImage = ref(null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
@@ -581,37 +581,37 @@ async function useSavedVideoSettings(metadata, setting) {
   if (!metadataPanePinned.value) metadataPane.value = false
 }
 
-async function playSavedVideoOnDisplay() {
+async function saveSavedVideoToDisplaySdCard() {
   const savedVideo = contextMenuSavedVideo.value
-  if (!savedVideo || playingSavedVideo.value) return
-  playingSavedVideo.value = true
+  if (!savedVideo || savingVideoToDisplaySdCard.value) return
+  savingVideoToDisplaySdCard.value = true
   savedVideoContextMenu.value = false
   error.value = ''
   status.value = ''
   try {
-    const response = await fetch(`/display-commands/play-saved-video/${encodeURIComponent(savedVideo.id)}`, { method: 'POST' })
+    const response = await fetch(`/display-commands/save-saved-video/${encodeURIComponent(savedVideo.id)}`, { method: 'POST' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     const command = await response.json()
-    status.value = 'Video request sent to the display. Streaming will start shortly.'
+    status.value = 'Video save request sent to the display. It will be converted to MJPEG and copied to the SD card.'
     for (let attempt = 0; attempt < 90; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
       const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
       if (result.status === 'complete') {
-        status.value = 'Video playback finished on the display.'
+        status.value = 'Video saved to the display SD card. Open the SD Card page to play it.'
         return
       }
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not play this video')
     }
-    status.value = 'The display is still playing the video.'
+    status.value = 'The display is still preparing the video for its SD card.'
   } catch (requestError) {
-    error.value = `Could not play the video on the display: ${requestError.message}`
+    error.value = `Could not save the video to the display SD card: ${requestError.message}`
   } finally {
-    playingSavedVideo.value = false
+    savingVideoToDisplaySdCard.value = false
   }
 }
 
@@ -741,6 +741,8 @@ async function sendDisplaySdCardCommand(endpoint, method = 'POST', notify = true
 
 async function showSDCardFileOnDisplay(filename) {
   if (displayingSdCardFile.value) return
+  const isVideo = filename.endsWith('.mjpeg')
+  const fileLabel = isVideo ? 'video' : 'image'
   displayingSdCardFile.value = filename
   error.value = ''
   status.value = ''
@@ -757,14 +759,14 @@ async function showSDCardFileOnDisplay(filename) {
       if (!commandResponse.ok) throw new Error(`Could not check display status (${commandResponse.status})`)
       const result = await commandResponse.json()
       if (result.status === 'complete') {
-        showSDCardSnackbar('Image is now showing on the display.')
+        showSDCardSnackbar(isVideo ? 'Video is now playing from the SD card.' : 'Image is now showing on the display.')
         return
       }
-      if (result.status === 'failed') throw new Error(result.detail || 'The display could not show this image')
+      if (result.status === 'failed') throw new Error(result.detail || `The display could not show this ${fileLabel}`)
     }
-    showSDCardSnackbar('The display is still processing the image.')
+    showSDCardSnackbar(`The display is still processing the ${fileLabel}.`)
   } catch (requestError) {
-    error.value = `Could not show image on the display: ${requestError.message}`
+    error.value = `Could not show ${fileLabel} on the display: ${requestError.message}`
   } finally {
     displayingSdCardFile.value = ''
   }
@@ -1581,7 +1583,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" title="Play on display" :disabled="!display?.connected || playingSavedVideo" @click="playSavedVideoOnDisplay" />
+        <v-list-item color="primary" prepend-icon="mdi-sd" title="Save to display SD card" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="saveSavedVideoToDisplaySdCard" />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Gallery" @click="confirmDeleteSavedVideo" />
@@ -2036,7 +2038,7 @@ onUnmounted(() => {
                 </div>
               </template>
               <template #no-data>
-                <div class="py-8 text-center text-medium-emphasis">No saved SD card images yet.</div>
+                <div class="py-8 text-center text-medium-emphasis">No saved SD card images or videos yet.</div>
               </template>
             </v-data-table>
           </v-card-text>

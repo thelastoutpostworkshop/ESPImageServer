@@ -367,7 +367,7 @@ def test_saved_video_can_be_deleted_from_the_creation_library(tmp_path, monkeypa
     assert missing.status_code == 404
 
 
-def test_saved_video_can_be_queued_for_mjpeg_playback(tmp_path, monkeypatch) -> None:
+def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) -> None:
     library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
     videos = VideoLibrary(library.path)
     source = tmp_path / "generated.mp4"
@@ -378,13 +378,14 @@ def test_saved_video_can_be_queued_for_mjpeg_playback(tmp_path, monkeypatch) -> 
     app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
 
     with TestClient(app) as client:
-        queued = client.post(f"/display-commands/play-saved-video/{record['id']}")
+        queued = client.post(f"/display-commands/save-saved-video/{record['id']}")
         command = client.get("/display-commands/next")
 
     assert queued.status_code == 202
-    assert command.json()["type"] == "play_saved_video"
-    assert command.json()["video_url"] == f"/saved-videos/{record['id']}/mjpeg"
+    assert command.json()["type"] == "save_saved_video"
+    assert command.json()["video_url"] == f"/saved-videos/{record['id']}/mjpeg-download"
     assert command.json()["fps"] == 12
+    assert command.json()["filename"].endswith("-fps12.mjpeg")
 
 
 def test_selecting_a_saved_image_makes_it_available_to_the_esp32(tmp_path) -> None:
