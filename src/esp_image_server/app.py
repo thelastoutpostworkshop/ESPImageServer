@@ -135,7 +135,7 @@ class DisplayCommandAcknowledgement(BaseModel):
 
 class DisplaySDCardReport(BaseModel):
     available: bool
-    mode: str = Field(pattern="^(server_controlled|offline_slideshow|live_images|sd_card)$")
+    mode: str = Field(pattern="^(server_controlled|offline_slideshow|preview_slideshow|live_images|sd_card)$")
     total_bytes: int = Field(ge=0)
     used_bytes: int = Field(ge=0)
     files: list[dict[str, object]] = Field(default_factory=list)
@@ -538,6 +538,18 @@ def create_app(
             slideshow_interval_seconds=request.slideshow_interval_seconds,
             slideshow_order=request.slideshow_order,
         )
+
+    @app.post("/display-experience/preview", status_code=status.HTTP_202_ACCEPTED)
+    def preview_display_experience(request: DisplayExperienceRequest) -> dict[str, object]:
+        return display_command_store.queue(
+            "preview_display_experience",
+            slideshow_interval_seconds=request.slideshow_interval_seconds,
+            slideshow_order=request.slideshow_order,
+        )
+
+    @app.delete("/display-experience/preview", status_code=status.HTTP_202_ACCEPTED)
+    def stop_display_experience_preview() -> dict[str, object]:
+        return display_command_store.queue("stop_display_experience_preview")
 
     @app.post("/display-sd-card/mode/{mode}", status_code=status.HTTP_202_ACCEPTED)
     def set_display_mode(mode: str) -> dict[str, object]:

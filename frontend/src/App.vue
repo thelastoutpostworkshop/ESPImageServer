@@ -140,6 +140,7 @@ const sdCardItemsPerPage = ref(loadSDCardItemsPerPage())
 const displayExperience = ref({ current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_seconds: 15, slideshow_order: 'newest_first' })
 const displayExperienceLoading = ref(false)
 const displayExperienceSaving = ref(false)
+const displayExperiencePreviewing = ref(false)
 const displayExperienceError = ref('')
 const displayExperienceStatus = ref('')
 const displayingSdCardFile = ref('')
@@ -318,6 +319,10 @@ watch(imageLibraryThumbnailSize, size => {
 
 watch(sdCardItemsPerPage, itemsPerPage => {
   window.localStorage.setItem(sdCardItemsPerPageSettingsKey, String(itemsPerPage))
+})
+
+watch(page, (nextPage, previousPage) => {
+  if (previousPage === 'display-experience' && nextPage !== 'display-experience') void stopDisplayExperiencePreview()
 })
 
 const displayMessage = computed(() => {
@@ -776,6 +781,36 @@ async function saveDisplayExperience() {
     displayExperienceError.value = `Could not save display experience: ${requestError.message}`
   } finally {
     displayExperienceSaving.value = false
+  }
+}
+
+async function previewDisplayExperience() {
+  if (displayExperiencePreviewing.value) return
+  displayExperienceError.value = ''
+  try {
+    const response = await fetch('/display-experience/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        offline_experience: 'slideshow',
+        slideshow_interval_seconds: Number(displayExperience.value.slideshow_interval_seconds),
+        slideshow_order: displayExperience.value.slideshow_order
+      })
+    })
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    displayExperiencePreviewing.value = true
+    displayExperienceStatus.value = 'Slideshow preview is starting on the display.'
+  } catch (requestError) {
+    displayExperienceError.value = `Could not start preview: ${requestError.message}`
+  }
+}
+
+async function stopDisplayExperiencePreview() {
+  if (!displayExperiencePreviewing.value) return
+  displayExperiencePreviewing.value = false
+  try {
+    await fetch('/display-experience/preview', { method: 'DELETE', keepalive: true })
+  } catch {
+    // The firmware will return to server control on its next successful command poll.
   }
 }
 
@@ -2074,6 +2109,7 @@ onUnmounted(() => {
                 class="mb-3"
               />
               <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!display?.connected" prepend-icon="mdi-content-save">Save display experience</v-btn>
+              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!display?.connected || displayExperiencePreviewing" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview slideshow</v-btn>
               <div v-if="!display?.connected" class="text-caption text-medium-emphasis mt-3">Connect the display to save these settings.</div>
               <v-alert v-if="displayExperienceStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ displayExperienceStatus }}</v-alert>
               <v-alert v-if="displayExperienceError" type="error" variant="tonal" density="compact" class="mt-4">{{ displayExperienceError }}</v-alert>

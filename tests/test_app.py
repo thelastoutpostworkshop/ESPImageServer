@@ -250,6 +250,10 @@ def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
         command = client.get("/display-commands/next")
         experience = client.put("/display-experience", json={"offline_experience": "slideshow", "slideshow_interval_seconds": 30, "slideshow_order": "oldest_first"})
         experience_command = client.get("/display-commands/next")
+        preview = client.post("/display-experience/preview", json={"offline_experience": "slideshow", "slideshow_interval_seconds": 5, "slideshow_order": "newest_first"})
+        preview_command = client.get("/display-commands/next")
+        stop_preview = client.delete("/display-experience/preview")
+        stop_preview_command = client.get("/display-commands/next")
 
     assert report.status_code == 204
     assert reported_experience.json()["current_mode"] == "sd_card"
@@ -261,6 +265,10 @@ def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
     assert experience_command.json()["type"] == "set_display_experience"
     assert experience_command.json()["slideshow_interval_seconds"] == 30
     assert experience_command.json()["slideshow_order"] == "oldest_first"
+    assert preview.status_code == 202
+    assert preview_command.json()["type"] == "preview_display_experience"
+    assert stop_preview.status_code == 202
+    assert stop_preview_command.json()["type"] == "stop_display_experience_preview"
 
 
 def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
