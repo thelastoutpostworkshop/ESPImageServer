@@ -140,13 +140,13 @@ class DisplaySDCardReport(BaseModel):
     used_bytes: int = Field(ge=0)
     files: list[dict[str, object]] = Field(default_factory=list)
     offline_experience: str = Field(default="slideshow", pattern="^slideshow$")
-    slideshow_interval_seconds: int = Field(default=15, ge=5, le=3600)
+    slideshow_interval_ms: int = Field(default=15_000, ge=500, le=3_600_000)
     slideshow_order: str = Field(default="newest_first", pattern="^(newest_first|oldest_first)$")
 
 
 class DisplayExperienceRequest(BaseModel):
     offline_experience: str = Field(default="slideshow", pattern="^slideshow$")
-    slideshow_interval_seconds: int = Field(ge=5, le=3600)
+    slideshow_interval_ms: int = Field(ge=500, le=3_600_000)
     slideshow_order: str = Field(pattern="^(newest_first|oldest_first)$")
 
 
@@ -526,7 +526,7 @@ def create_app(
             "connected": bool(report.get("available", False)),
             "current_mode": report.get("mode", "server_controlled"),
             "offline_experience": report.get("offline_experience", "slideshow"),
-            "slideshow_interval_seconds": report.get("slideshow_interval_seconds", 15),
+            "slideshow_interval_ms": report.get("slideshow_interval_ms", 15_000),
             "slideshow_order": report.get("slideshow_order", "newest_first"),
         }
 
@@ -535,7 +535,7 @@ def create_app(
         return display_command_store.queue(
             "set_display_experience",
             offline_experience=request.offline_experience,
-            slideshow_interval_seconds=request.slideshow_interval_seconds,
+            slideshow_interval_ms=request.slideshow_interval_ms,
             slideshow_order=request.slideshow_order,
         )
 
@@ -543,7 +543,7 @@ def create_app(
     def preview_display_experience(request: DisplayExperienceRequest) -> dict[str, object]:
         return display_command_store.queue(
             "preview_display_experience",
-            slideshow_interval_seconds=request.slideshow_interval_seconds,
+            slideshow_interval_ms=request.slideshow_interval_ms,
             slideshow_order=request.slideshow_order,
         )
 

@@ -248,22 +248,22 @@ def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
         reported_experience = client.get("/display-experience")
         queued = client.post("/display-sd-card/mode/live_images")
         command = client.get("/display-commands/next")
-        experience = client.put("/display-experience", json={"offline_experience": "slideshow", "slideshow_interval_seconds": 30, "slideshow_order": "oldest_first"})
+        experience = client.put("/display-experience", json={"offline_experience": "slideshow", "slideshow_interval_ms": 2300, "slideshow_order": "oldest_first"})
         experience_command = client.get("/display-commands/next")
-        preview = client.post("/display-experience/preview", json={"offline_experience": "slideshow", "slideshow_interval_seconds": 5, "slideshow_order": "newest_first"})
+        preview = client.post("/display-experience/preview", json={"offline_experience": "slideshow", "slideshow_interval_ms": 500, "slideshow_order": "newest_first"})
         preview_command = client.get("/display-commands/next")
         stop_preview = client.delete("/display-experience/preview")
         stop_preview_command = client.get("/display-commands/next")
 
     assert report.status_code == 204
     assert reported_experience.json()["current_mode"] == "sd_card"
-    assert reported_experience.json()["slideshow_interval_seconds"] == 15
+    assert reported_experience.json()["slideshow_interval_ms"] == 15000
     assert queued.status_code == 202
     assert command.json()["type"] == "set_mode"
     assert command.json()["mode"] == "live_images"
     assert experience.status_code == 202
     assert experience_command.json()["type"] == "set_display_experience"
-    assert experience_command.json()["slideshow_interval_seconds"] == 30
+    assert experience_command.json()["slideshow_interval_ms"] == 2300
     assert experience_command.json()["slideshow_order"] == "oldest_first"
     assert preview.status_code == 202
     assert preview_command.json()["type"] == "preview_display_experience"

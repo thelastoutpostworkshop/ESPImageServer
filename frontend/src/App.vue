@@ -137,7 +137,8 @@ const savingToDisplaySdCard = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardLoading = ref(false)
 const sdCardItemsPerPage = ref(loadSDCardItemsPerPage())
-const displayExperience = ref({ current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_seconds: 15, slideshow_order: 'newest_first' })
+const displayExperience = ref({ current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_ms: 15000, slideshow_order: 'newest_first' })
+const displayExperienceIntervalSeconds = ref(15)
 const displayExperienceLoading = ref(false)
 const displayExperienceSaving = ref(false)
 const displayExperiencePreviewing = ref(false)
@@ -747,6 +748,7 @@ async function loadDisplayExperience() {
     const response = await fetch('/display-experience')
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
     displayExperience.value = await response.json()
+    displayExperienceIntervalSeconds.value = Number(displayExperience.value.slideshow_interval_ms) / 1000
   } catch (requestError) {
     displayExperienceError.value = `Could not load display experience: ${requestError.message}`
   } finally {
@@ -768,7 +770,7 @@ async function saveDisplayExperience() {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         offline_experience: 'slideshow',
-        slideshow_interval_seconds: Number(displayExperience.value.slideshow_interval_seconds),
+        slideshow_interval_ms: Math.round(Number(displayExperienceIntervalSeconds.value) * 1000),
         slideshow_order: displayExperience.value.slideshow_order
       })
     })
@@ -792,7 +794,7 @@ async function previewDisplayExperience() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         offline_experience: 'slideshow',
-        slideshow_interval_seconds: Number(displayExperience.value.slideshow_interval_seconds),
+        slideshow_interval_ms: Math.round(Number(displayExperienceIntervalSeconds.value) * 1000),
         slideshow_order: displayExperience.value.slideshow_order
       })
     })
@@ -2094,13 +2096,20 @@ onUnmounted(() => {
                 readonly
                 class="mb-3"
               />
-              <v-select
-                v-model="displayExperience.slideshow_interval_seconds"
+              <v-text-field
+                v-model.number="displayExperienceIntervalSeconds"
                 label="Change image every"
-                :items="[{ title: '5 seconds', value: 5 }, { title: '15 seconds', value: 15 }, { title: '30 seconds', value: 30 }, { title: '1 minute', value: 60 }]"
+                type="number"
+                min="0.5"
+                max="3600"
+                step="0.1"
+                suffix="seconds"
                 variant="outlined"
-                class="mb-3"
+                class="mb-1"
               />
+              <div class="d-flex flex-wrap ga-2 mb-3">
+                <v-btn v-for="preset in [{ label: '1s', value: 1 }, { label: '2s', value: 2 }, { label: '5s', value: 5 }, { label: '15s', value: 15 }, { label: '30s', value: 30 }, { label: '1 min', value: 60 }]" :key="preset.label" size="small" variant="tonal" @click="displayExperienceIntervalSeconds = preset.value">{{ preset.label }}</v-btn>
+              </div>
               <v-select
                 v-model="displayExperience.slideshow_order"
                 label="Order"
