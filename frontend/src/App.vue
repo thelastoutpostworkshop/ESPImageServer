@@ -541,6 +541,26 @@ function openSavedVideoContextMenu(event, savedVideo) {
   window.requestAnimationFrame(() => { savedVideoContextMenu.value = true })
 }
 
+async function openSavedVideo(savedVideo) {
+  videoError.value = ''
+  videoStage.value = 'Loading saved video...'
+  page.value = 'video'
+  try {
+    const response = await fetch(`/saved-videos/${encodeURIComponent(savedVideo.id)}/video`)
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
+    videoUrl.value = URL.createObjectURL(await response.blob())
+    completedVideoJobId.value = ''
+    videoSavedToCreationLibrary.value = true
+    videoStage.value = 'Viewing saved video from the Creation Gallery.'
+    if (!metadataPanePinned.value) metadataPane.value = false
+  } catch (requestError) {
+    videoUrl.value = ''
+    videoError.value = `Could not open this saved video: ${requestError.message}`
+    videoStage.value = ''
+  }
+}
+
 async function useSavedVideoSettings(metadata, setting) {
   if (!metadata) return
   savedVideoContextMenu.value = false
@@ -1507,7 +1527,7 @@ onUnmounted(() => {
             <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
             <v-tooltip v-for="savedVideo in group.videos" :key="savedVideo.id" location="end" max-width="300">
               <template #activator="{ props }">
-                <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
+                <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
                   <v-img v-if="savedVideo.thumbnail_filename" :src="`/saved-videos/${encodeURIComponent(savedVideo.id)}/thumbnail`" aspect-ratio="1.33" cover />
                   <v-sheet v-else class="d-flex align-center justify-center" height="120"><v-icon size="40">mdi-movie-open-outline</v-icon></v-sheet>
                   <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
