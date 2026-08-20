@@ -323,6 +323,7 @@ def create_app(
             {
                 "id": model.model_id,
                 "name": model.name,
+                "model_card_url": f"https://huggingface.co/{model.model_id}",
                 "description": model.description,
                 "recommendation": model.recommendation,
                 "hardware": model.hardware,
@@ -1013,6 +1014,7 @@ def create_app(
             {
                 "id": model_id,
                 "name": model["name"],
+                "model_card_url": f"https://huggingface.co/{model.get('repository', 'Lightricks/LTX-Video')}",
                 "description": model["description"],
                 "family": model["family"],
                 "minimum_steps": model["minimum_steps"],

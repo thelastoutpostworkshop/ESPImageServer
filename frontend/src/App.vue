@@ -2004,6 +2004,7 @@ onUnmounted(() => {
                     <div>
                       <div class="font-weight-bold">{{ model.name }}</div>
                       <div class="text-caption text-medium-emphasis">{{ model.speed }}</div>
+                      <a :href="model.model_card_url" target="_blank" rel="noopener noreferrer" class="text-caption text-primary">License &amp; usage <v-icon size="12">mdi-open-in-new</v-icon></a>
                     </div>
                   </div>
                 </td>
@@ -2031,6 +2032,7 @@ onUnmounted(() => {
                 </v-avatar>
               </template>
               <v-list-item-title class="font-weight-bold">{{ model.name }}</v-list-item-title>
+              <v-list-item-subtitle><a :href="model.model_card_url" target="_blank" rel="noopener noreferrer" class="text-primary">License &amp; usage <v-icon size="12">mdi-open-in-new</v-icon></a></v-list-item-subtitle>
               <v-list-item-subtitle>{{ model.speed }} · {{ model.hardware }}</v-list-item-subtitle>
               <template #append><div class="d-flex align-center"><v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingImageModelId === model.id" :disabled="generationBusy" :aria-label="`Remove ${model.name}`" @click="confirmRemoveImageModel(model)" /></div></template>
             </v-list-item>
@@ -2055,7 +2057,7 @@ onUnmounted(() => {
             </thead>
             <tbody>
               <tr v-for="model in availableVideoModels" :key="model.id">
-                <td><div class="d-flex align-center ga-3 py-2"><v-avatar color="deep-purple" variant="tonal" size="36"><v-icon size="20">mdi-movie-open-outline</v-icon></v-avatar><div class="font-weight-bold">{{ model.name }}</div></div></td>
+                <td><div class="d-flex align-center ga-3 py-2"><v-avatar color="deep-purple" variant="tonal" size="36"><v-icon size="20">mdi-movie-open-outline</v-icon></v-avatar><div><div class="font-weight-bold">{{ model.name }}</div><a :href="model.model_card_url" target="_blank" rel="noopener noreferrer" class="text-caption text-primary">License &amp; usage <v-icon size="12">mdi-open-in-new</v-icon></a></div></div></td>
                 <td class="model-table__description">{{ model.description }}</td>
                 <td><v-chip :color="model.supports_image ? 'success' : 'secondary'" variant="tonal" size="small">{{ model.supports_image ? 'Supported' : 'Text only' }}</v-chip></td>
                 <td><v-chip :color="model.installed ? 'success' : 'secondary'" variant="tonal" size="small" :prepend-icon="model.installed ? 'mdi-check-circle' : 'mdi-download'">{{ model.installed ? 'Downloaded' : 'Downloads when used' }}</v-chip></td>
@@ -2067,7 +2069,7 @@ onUnmounted(() => {
             <v-list-item v-for="model in availableVideoModels" :key="model.id">
               <template #prepend><v-avatar color="deep-purple" variant="tonal" size="36"><v-icon size="20">mdi-movie-open-outline</v-icon></v-avatar></template>
               <v-list-item-title class="font-weight-bold">{{ model.name }}</v-list-item-title>
-              <v-list-item-subtitle>{{ model.description }}</v-list-item-subtitle>
+              <v-list-item-subtitle>{{ model.description }}<br><a :href="model.model_card_url" target="_blank" rel="noopener noreferrer" class="text-primary">License &amp; usage <v-icon size="12">mdi-open-in-new</v-icon></a></v-list-item-subtitle>
               <template #append><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingVideoModelId === model.id" :disabled="videoGenerationActive" :aria-label="`Remove ${model.name}`" @click="confirmRemoveVideoModel(model)" /></template>
             </v-list-item>
           </v-list>

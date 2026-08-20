@@ -281,6 +281,7 @@ def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
 
     assert models.status_code == 200
     assert len(models.json()) == 4
+    assert next(model for model in models.json() if model["id"] == "stabilityai/sd-turbo")["model_card_url"] == "https://huggingface.co/stabilityai/sd-turbo"
     assert selected.status_code == 200
     assert store.get() == "segmind/SSD-1B"
 
