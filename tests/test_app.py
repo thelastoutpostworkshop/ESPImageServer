@@ -368,6 +368,7 @@ def test_saved_video_can_be_deleted_from_the_creation_library(tmp_path, monkeypa
 
 
 def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
     library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
     videos = VideoLibrary(library.path)
     source = tmp_path / "generated.mp4"
@@ -375,17 +376,21 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
     monkeypatch.setattr("esp_image_server.video_library.bundled_ffmpeg_executable", lambda: "ffmpeg.exe")
     monkeypatch.setattr("esp_image_server.video_library.subprocess.run", lambda *args, **kwargs: None)
     record = videos.save(source, {"prompt": "a tiny robot", "fps": 12})
+    Image.new("RGB", (64, 64), "blue").save(videos.path / record["thumbnail_filename"], format="JPEG")
     app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
 
     with TestClient(app) as client:
         queued = client.post(f"/display-commands/save-saved-video/{record['id']}")
         command = client.get("/display-commands/next")
+        thumbnail = client.get(f"/display-sd-card/thumbnails/{command.json()['filename']}")
 
     assert queued.status_code == 202
     assert command.json()["type"] == "save_saved_video"
     assert command.json()["video_url"] == f"/saved-videos/{record['id']}/mjpeg-download"
     assert command.json()["fps"] == 12
     assert command.json()["filename"].endswith("-fps12.mjpeg")
+    assert thumbnail.status_code == 200
+    assert thumbnail.headers["content-type"] == "image/jpeg"
 
 
 def test_selecting_a_saved_image_makes_it_available_to_the_esp32(tmp_path) -> None:

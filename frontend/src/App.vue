@@ -1988,7 +1988,7 @@ onUnmounted(() => {
             Display SD Card
             <v-spacer />
             <v-chip v-if="displaySdCard.available" color="success" size="small" variant="tonal" prepend-icon="mdi-sd">
-              Card ready · {{ displaySdCard.files?.length || 0 }} images
+              Card ready · {{ displaySdCard.files?.length || 0 }} files
             </v-chip>
           </v-card-title>
           <v-card-text>
@@ -2013,7 +2013,7 @@ onUnmounted(() => {
                   <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(item.name)}`" cover />
                 </v-avatar>
                 <v-avatar v-else color="surface-variant" rounded="sm" size="56">
-                  <v-icon>mdi-image-outline</v-icon>
+                  <v-icon>{{ item.type === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline' }}</v-icon>
                 </v-avatar>
               </template>
               <template #item.name="{ item }">

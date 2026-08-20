@@ -439,6 +439,9 @@ def create_app(
         except (TypeError, ValueError):
             fps = 8
         filename = f"esp-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{video_id[:8]}-fps{fps}.mjpeg"
+        thumbnail_path = video_library.find_thumbnail_path(video_id)
+        if thumbnail_path is not None:
+            write_sd_thumbnail(filename, thumbnail_path.read_bytes())
         return display_command_store.queue(
             "save_saved_video", filename=filename, video_id=video_id,
             video_url=f"/saved-videos/{video_id}/mjpeg-download", fps=fps,
@@ -461,11 +464,31 @@ def create_app(
         with Image.open(BytesIO(jpeg)) as source:
             thumbnail_path.write_bytes(to_jpeg(source, width=160, height=120, quality=70))
 
+    def restore_sd_video_thumbnail(filename: str) -> None:
+        """Rebuild the server thumbnail cache for an MJPEG file already on the card."""
+        if not filename.endswith(".mjpeg") or "-fps" not in filename:
+            return
+        video_prefix = filename.rsplit("-fps", 1)[0].rsplit("-", 1)[-1]
+        record = next(
+            (item for item in video_library.list(limit=10_000) if str(item.get("id", "")).startswith(video_prefix)),
+            None,
+        )
+        if record is None:
+            return
+        thumbnail_path = video_library.find_thumbnail_path(str(record["id"]))
+        if thumbnail_path is not None:
+            write_sd_thumbnail(filename, thumbnail_path.read_bytes())
+
     @app.get("/display-sd-card")
     def get_display_sd_card() -> dict[str, object]:
         report = display_command_store.sd_card_report()
         files = report.get("files", [])
         if isinstance(files, list):
+            for file in files:
+                if isinstance(file, dict):
+                    filename = Path(str(file.get("name", ""))).name
+                    if filename.endswith(".mjpeg") and not (sd_thumbnail_path / filename).is_file():
+                        restore_sd_video_thumbnail(filename)
             report["files"] = [
                 {**file, "thumbnail_available": (sd_thumbnail_path / Path(str(file.get("name", ""))).name).is_file()}
                 for file in files if isinstance(file, dict)
