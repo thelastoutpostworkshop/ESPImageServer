@@ -135,17 +135,17 @@ class DisplayCommandAcknowledgement(BaseModel):
 
 class DisplaySDCardReport(BaseModel):
     available: bool
-    mode: str = Field(pattern="^(server_controlled|offline_slideshow|preview_slideshow|live_images|sd_card)$")
+    mode: str = Field(pattern="^(server_controlled|offline_slideshow|offline_video_loop|preview_slideshow|preview_video_loop|live_images|sd_card)$")
     total_bytes: int = Field(ge=0)
     used_bytes: int = Field(ge=0)
     files: list[dict[str, object]] = Field(default_factory=list)
-    offline_experience: str = Field(default="slideshow", pattern="^slideshow$")
+    offline_experience: str = Field(default="slideshow", pattern="^(slideshow|video_loop)$")
     slideshow_interval_ms: int = Field(default=15_000, ge=500, le=3_600_000)
     slideshow_order: str = Field(default="newest_first", pattern="^(newest_first|oldest_first)$")
 
 
 class DisplayExperienceRequest(BaseModel):
-    offline_experience: str = Field(default="slideshow", pattern="^slideshow$")
+    offline_experience: str = Field(default="slideshow", pattern="^(slideshow|video_loop)$")
     slideshow_interval_ms: int = Field(ge=500, le=3_600_000)
     slideshow_order: str = Field(pattern="^(newest_first|oldest_first)$")
 
@@ -543,6 +543,7 @@ def create_app(
     def preview_display_experience(request: DisplayExperienceRequest) -> dict[str, object]:
         return display_command_store.queue(
             "preview_display_experience",
+            offline_experience=request.offline_experience,
             slideshow_interval_ms=request.slideshow_interval_ms,
             slideshow_order=request.slideshow_order,
         )

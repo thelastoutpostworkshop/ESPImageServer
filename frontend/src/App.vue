@@ -769,7 +769,7 @@ async function saveDisplayExperience() {
     const response = await fetch('/display-experience', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        offline_experience: 'slideshow',
+        offline_experience: displayExperience.value.offline_experience,
         slideshow_interval_ms: Math.round(Number(displayExperienceIntervalSeconds.value) * 1000),
         slideshow_order: displayExperience.value.slideshow_order
       })
@@ -793,14 +793,14 @@ async function previewDisplayExperience() {
     const response = await fetch('/display-experience/preview', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        offline_experience: 'slideshow',
+        offline_experience: displayExperience.value.offline_experience,
         slideshow_interval_ms: Math.round(Number(displayExperienceIntervalSeconds.value) * 1000),
         slideshow_order: displayExperience.value.slideshow_order
       })
     })
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
     displayExperiencePreviewing.value = true
-    displayExperienceStatus.value = 'Slideshow preview is starting on the display.'
+    displayExperienceStatus.value = `${displayExperience.value.offline_experience === 'video_loop' ? 'Video loop' : 'Slideshow'} preview is starting on the display.`
   } catch (requestError) {
     displayExperienceError.value = `Could not start preview: ${requestError.message}`
   }
@@ -2083,20 +2083,19 @@ onUnmounted(() => {
           <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
           <v-card-text>
             <v-progress-linear v-if="displayExperienceLoading" indeterminate color="primary" class="mb-4" />
-            <v-chip :color="displayExperience.current_mode === 'offline_slideshow' ? 'warning' : 'success'" variant="tonal" class="mb-5" :prepend-icon="displayExperience.current_mode === 'offline_slideshow' ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
-              {{ displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow active' : 'Server controlled' }}
+            <v-chip :color="displayExperience.current_mode.startsWith('offline_') ? 'warning' : 'success'" variant="tonal" class="mb-5" :prepend-icon="displayExperience.current_mode.startsWith('offline_') ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
+              {{ displayExperience.current_mode === 'offline_video_loop' ? 'Offline video loop active' : displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow active' : 'Server controlled' }}
             </v-chip>
             <p class="text-body-1 mb-5">When the display cannot reach ESPImageServer for a short time, it will use this saved experience. It returns to normal server control automatically when the connection is restored.</p>
             <v-form @submit.prevent="saveDisplayExperience">
               <v-select
-                :model-value="'slideshow'"
+                v-model="displayExperience.offline_experience"
                 label="When ESPImageServer is unavailable"
-                :items="[{ title: 'SD Card Slideshow', value: 'slideshow' }]"
+                :items="[{ title: 'SD Card Slideshow', value: 'slideshow' }, { title: 'SD Card Video Loop', value: 'video_loop' }]"
                 variant="outlined"
-                readonly
                 class="mb-3"
               />
-              <v-text-field
+              <v-text-field v-if="displayExperience.offline_experience === 'slideshow'"
                 v-model.number="displayExperienceIntervalSeconds"
                 label="Change image every"
                 type="number"
@@ -2107,7 +2106,7 @@ onUnmounted(() => {
                 variant="outlined"
                 class="mb-1"
               />
-              <div class="d-flex flex-wrap ga-2 mb-3">
+              <div v-if="displayExperience.offline_experience === 'slideshow'" class="d-flex flex-wrap ga-2 mb-3">
                 <v-btn v-for="preset in [{ label: '1s', value: 1 }, { label: '2s', value: 2 }, { label: '5s', value: 5 }, { label: '15s', value: 15 }, { label: '30s', value: 30 }, { label: '1 min', value: 60 }]" :key="preset.label" size="small" variant="tonal" @click="displayExperienceIntervalSeconds = preset.value">{{ preset.label }}</v-btn>
               </div>
               <v-select
@@ -2118,7 +2117,7 @@ onUnmounted(() => {
                 class="mb-3"
               />
               <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!display?.connected" prepend-icon="mdi-content-save">Save display experience</v-btn>
-              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!display?.connected || displayExperiencePreviewing" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview slideshow</v-btn>
+              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!display?.connected || displayExperiencePreviewing" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }}</v-btn>
               <div v-if="!display?.connected" class="text-caption text-medium-emphasis mt-3">Connect the display to save these settings.</div>
               <v-alert v-if="displayExperienceStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ displayExperienceStatus }}</v-alert>
               <v-alert v-if="displayExperienceError" type="error" variant="tonal" density="compact" class="mt-4">{{ displayExperienceError }}</v-alert>
