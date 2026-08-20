@@ -12,6 +12,7 @@ const imageLibraryPaneSettingsKey = 'esp-image-server.image-library-pane-pinned'
 const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
 const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thumbnail-size'
+const sdCardItemsPerPageSettingsKey = 'esp-image-server.sd-card-items-per-page'
 const videoFrameValues = [17, 25, 33, 41, 49, 57, 65, 73, 81]
 const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b', 'hunyuanvideo-1.5-480p']
 
@@ -23,6 +24,11 @@ function loadImageLibraryWidth() {
 function loadImageLibraryThumbnailSize() {
   const savedSize = Number(window.localStorage.getItem(imageLibraryThumbnailSizeSettingsKey))
   return Number.isFinite(savedSize) && savedSize >= 100 && savedSize <= 220 ? savedSize : 160
+}
+
+function loadSDCardItemsPerPage() {
+  const savedValue = Number(window.localStorage.getItem(sdCardItemsPerPageSettingsKey))
+  return Number.isInteger(savedValue) && savedValue >= 1 && savedValue <= 100 ? savedValue : 10
 }
 
 function loadGenerationSettings() {
@@ -130,6 +136,7 @@ const deleteSavedVideoDontAskAgain = ref(false)
 const savingToDisplaySdCard = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardLoading = ref(false)
+const sdCardItemsPerPage = ref(loadSDCardItemsPerPage())
 const displayingSdCardFile = ref('')
 const sdCardSnackbar = ref(false)
 const sdCardSnackbarMessage = ref('')
@@ -302,6 +309,10 @@ watch(imageLibraryWidth, width => {
 
 watch(imageLibraryThumbnailSize, size => {
   window.localStorage.setItem(imageLibraryThumbnailSizeSettingsKey, String(size))
+})
+
+watch(sdCardItemsPerPage, itemsPerPage => {
+  window.localStorage.setItem(sdCardItemsPerPageSettingsKey, String(itemsPerPage))
 })
 
 const displayMessage = computed(() => {
@@ -2007,7 +2018,7 @@ onUnmounted(() => {
               :headers="sdCardTableHeaders"
               :items="displaySdCard.files || []"
               :loading="displaySdCardLoading"
-              :items-per-page="10"
+              v-model:items-per-page="sdCardItemsPerPage"
               hover
               density="comfortable"
               class="sd-card-table border rounded"
