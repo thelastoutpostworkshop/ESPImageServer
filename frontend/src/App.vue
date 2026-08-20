@@ -778,7 +778,21 @@ async function saveDisplayExperience() {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
-    displayExperienceStatus.value = 'Display experience saved. The display will use it when ESPImageServer is unavailable.'
+    const command = await response.json()
+    displayExperienceStatus.value = 'Saving to the display…'
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 500))
+      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      if (!commandResponse.ok) continue
+      const result = await commandResponse.json()
+      if (result.status === 'complete') {
+        displayExperienceStatus.value = 'Display experience saved. The display will use it when ESPImageServer is unavailable.'
+        await loadDisplayExperience()
+        return
+      }
+      if (result.status === 'failed') throw new Error(result.detail || 'The display could not save this experience')
+    }
+    displayExperienceStatus.value = 'The display has not confirmed the save yet. Keep ESPImageServer open until it does.'
   } catch (requestError) {
     displayExperienceError.value = `Could not save display experience: ${requestError.message}`
   } finally {
