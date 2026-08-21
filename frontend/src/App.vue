@@ -188,6 +188,7 @@ const imageGenerationActive = computed(() => generating.value || Boolean(generat
 const videoGenerationActive = computed(() => generatingVideo.value || health.value?.video_generating === true)
 const generationBusy = computed(() => imageGenerationActive.value || videoGenerationActive.value)
 const activeGenerationQueue = computed(() => generationQueue.value.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)))
+const finishedGenerationQueue = computed(() => generationQueue.value.filter(job => !['queued', 'running', 'cancelling'].includes(job.status)))
 const appBarStatus = computed(() => {
   if (videoGenerationActive.value) {
     const job = health.value?.active_video_job
@@ -1841,7 +1842,19 @@ onUnmounted(() => {
               <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
             </v-list-item>
           </v-list>
-          <v-card-text v-else class="text-medium-emphasis py-8 text-center">No image or video jobs are waiting.</v-card-text>
+          <v-card-text v-if="!activeGenerationQueue.length" class="text-medium-emphasis py-6 text-center">No image or video jobs are waiting.</v-card-text>
+          <template v-if="finishedGenerationQueue.length">
+            <v-divider />
+            <div class="px-4 pt-4 text-overline text-medium-emphasis">Recent jobs</div>
+            <v-list density="comfortable" lines="two">
+              <v-list-item v-for="job in finishedGenerationQueue" :key="job.id">
+                <template #prepend><v-icon :color="job.status === 'complete' ? 'success' : job.status === 'failed' ? 'error' : 'warning'" :icon="job.status === 'complete' ? 'mdi-check-circle' : job.status === 'failed' ? 'mdi-alert-circle' : 'mdi-cancel'" /></template>
+                <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
+                <v-list-item-subtitle>{{ job.status === 'complete' ? `${job.kind === 'video' ? 'Video' : 'Image'} generation complete` : job.error || job.stage }}</v-list-item-subtitle>
+                <template #append><v-chip :color="job.status === 'complete' ? 'success' : job.status === 'failed' ? 'error' : 'warning'" size="small" variant="tonal">{{ job.status === 'complete' ? 'Complete' : job.status === 'failed' ? 'Failed' : 'Cancelled' }}</v-chip></template>
+              </v-list-item>
+            </v-list>
+          </template>
         </v-card>
         <v-card v-if="page === 'diagnostics'" class="mx-auto" max-width="960">
           <v-card-title class="d-flex align-center text-h6">
