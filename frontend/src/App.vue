@@ -1864,8 +1864,8 @@ onUnmounted(() => {
         <v-card class="generation-card">
           <v-card-text>
             <v-alert v-if="videoGenerationActive" type="info" variant="tonal" density="compact" class="mb-4">
-              Video generation is using the graphics card. Wait for it to finish before generating an image.
-              <template #append><v-btn size="small" variant="text" @click="openActiveGeneration">View video</v-btn></template>
+              Video generation is using the graphics card. You can add an image to the queue; it will start when the video finishes.
+              <template #append><v-btn size="small" variant="text" @click="page = 'queue'">View queue</v-btn></template>
             </v-alert>
             <v-form @submit.prevent="generate">
               <v-select
@@ -1949,7 +1949,7 @@ onUnmounted(() => {
                 </v-col>
               </v-row>
               <v-btn type="submit" color="primary" :disabled="models.length === 0" prepend-icon="mdi-image-plus">
-                Generate image
+                {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
               </v-btn>
               <v-btn v-if="generating" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
                 {{ activeJobId ? 'Cancel generation' : 'Cancel' }}
@@ -2014,8 +2014,8 @@ onUnmounted(() => {
               Video generation cannot run in CPU mode. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, then restart ESPImageServer.
             </v-alert>
             <v-alert v-if="imageGenerationActive" type="info" variant="tonal" density="compact" class="mb-4">
-              Image generation is using the graphics card. Wait for it to finish before generating a video.
-              <template #append><v-btn size="small" variant="text" @click="openActiveGeneration">View image</v-btn></template>
+              Image generation is using the graphics card. You can add a video to the queue; it will start when the image finishes.
+              <template #append><v-btn size="small" variant="text" @click="page = 'queue'">View queue</v-btn></template>
             </v-alert>
             <v-row>
               <v-col cols="12" lg="5">
@@ -2049,7 +2049,7 @@ onUnmounted(() => {
                 <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'hunyuanvideo-1.5-480p' ? '30 is recommended for HunyuanVideo 1.5.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
-              <v-btn type="submit" class="mt-4" color="primary" :disabled="health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
+              <v-btn type="submit" class="mt-4" color="primary" :disabled="health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">{{ generationBusy ? 'Add video to queue' : 'Generate video' }}</v-btn>
               <v-btn v-if="generatingVideo" class="ml-2 mt-4" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
             </v-form>
             <div v-if="generatingVideo" class="mt-5">
