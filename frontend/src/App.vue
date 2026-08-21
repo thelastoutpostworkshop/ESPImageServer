@@ -167,6 +167,8 @@ const cancelling = ref(false)
 const activeJobId = ref('')
 const activeImageJobRunning = ref(false)
 const generationQueue = ref([])
+const displayedImageGenerationJobId = ref('')
+const displayedVideoGenerationJobId = ref('')
 const cancellingQueueJobId = ref('')
 const activityPanelOpen = ref(window.localStorage.getItem('esp-image-server.activity-panel-open') === 'true')
 const activityPanelTab = ref('logs')
@@ -184,6 +186,10 @@ let statusTimer
 let modelSwitchAbortController
 let imageLibraryResizeStartX = 0
 let imageLibraryResizeStartWidth = 0
+let imagePreviewRequestId = 0
+let videoPreviewRequestId = 0
+let loadingImageGenerationJobId = ''
+let loadingVideoGenerationJobId = ''
 const { mobile } = useDisplay()
 const selectedImageModelName = computed(() => models.value.find(model => model.id === activeModelId.value)?.name || 'image model')
 const imageGenerationActive = computed(() => generating.value || Boolean(generationStage.value) || health.value?.image_generating === true)
@@ -191,6 +197,8 @@ const videoGenerationActive = computed(() => generatingVideo.value || health.val
 const generationBusy = computed(() => imageGenerationActive.value || videoGenerationActive.value)
 const activeGenerationQueue = computed(() => generationQueue.value.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)))
 const finishedGenerationQueue = computed(() => generationQueue.value.filter(job => !['queued', 'running', 'cancelling'].includes(job.status)))
+const activeImageQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'image') || null)
+const activeVideoQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'video') || null)
 const appBarStatus = computed(() => {
   if (videoGenerationActive.value) {
     const job = health.value?.active_video_job
@@ -479,10 +487,117 @@ async function loadServerStatus() {
 async function loadGenerationQueue() {
   try {
     const response = await fetch('/generation-queue', { cache: 'no-store' })
-    generationQueue.value = response.ok ? await response.json() : []
+    const jobs = response.ok ? await response.json() : []
+    generationQueue.value = jobs
+    void loadLatestCompletedGenerationResults(jobs)
   } catch {
     generationQueue.value = []
   }
+}
+
+function latestCompletedGenerationJob(jobs, kind) {
+  return [...jobs].reverse().find(job => job.kind === kind && job.status === 'complete') || null
+}
+
+function resultPanelQueueStatus(job) {
+  if (!job) return ''
+  if (job.status === 'queued') return job.queue_position ? `Queued · position ${job.queue_position}` : 'Queued'
+  if (job.status === 'cancelling') return 'Cancelling'
+  return Number.isFinite(job.progress) && job.progress > 0 ? `Generating · ${job.progress}%` : 'Starting'
+}
+
+async function updateImagePreview(imageBlob, {
+  requestId = ++imagePreviewRequestId,
+  jobId = '',
+  metadata = null,
+  savedToLibrary = false,
+  savedImage = null
+} = {}) {
+  const nextImageUrl = URL.createObjectURL(imageBlob)
+  let nextPreviewUrl
+  try {
+    nextPreviewUrl = await createDisplayPreview(imageBlob)
+  } catch (requestError) {
+    URL.revokeObjectURL(nextImageUrl)
+    throw requestError
+  }
+  if (requestId !== imagePreviewRequestId) {
+    URL.revokeObjectURL(nextImageUrl)
+    URL.revokeObjectURL(nextPreviewUrl)
+    return false
+  }
+  if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  imageUrl.value = nextImageUrl
+  previewUrl.value = nextPreviewUrl
+  previewFittedFor.value = display.value?.connected ? display.value : null
+  generatedMetadata.value = metadata
+  selectedSavedImage.value = savedImage
+  currentImageSavedToLibrary.value = savedToLibrary
+  if (jobId) displayedImageGenerationJobId.value = jobId
+  return true
+}
+
+async function updateVideoPreview(videoBlob, {
+  requestId = ++videoPreviewRequestId,
+  jobId = '',
+  savedToLibrary = false
+} = {}) {
+  const nextVideoUrl = URL.createObjectURL(videoBlob)
+  if (requestId !== videoPreviewRequestId) {
+    URL.revokeObjectURL(nextVideoUrl)
+    return false
+  }
+  if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
+  videoUrl.value = nextVideoUrl
+  completedVideoJobId.value = jobId
+  videoSavedToCreationLibrary.value = savedToLibrary
+  if (jobId) displayedVideoGenerationJobId.value = jobId
+  return true
+}
+
+async function loadCompletedImageGeneration(job, { force = false } = {}) {
+  if (!force && (displayedImageGenerationJobId.value === job.id || loadingImageGenerationJobId === job.id)) return
+  const requestId = ++imagePreviewRequestId
+  loadingImageGenerationJobId = job.id
+  try {
+    const response = await fetch(`/generation-jobs/${encodeURIComponent(job.id)}/image`)
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    await updateImagePreview(await response.blob(), {
+      requestId,
+      jobId: job.id,
+      savedToLibrary: autoSaveImages.value
+    })
+  } catch {
+    // A completed job can be cleared between the queue refresh and this request.
+    // Keep the last result on screen instead of replacing it with an error state.
+  } finally {
+    if (loadingImageGenerationJobId === job.id) loadingImageGenerationJobId = ''
+  }
+}
+
+async function loadCompletedVideoGeneration(job, { force = false } = {}) {
+  if (!force && (displayedVideoGenerationJobId.value === job.id || loadingVideoGenerationJobId === job.id)) return
+  const requestId = ++videoPreviewRequestId
+  loadingVideoGenerationJobId = job.id
+  try {
+    const response = await fetch(`/video-generation-jobs/${encodeURIComponent(job.id)}/video`)
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    await updateVideoPreview(await response.blob(), { requestId, jobId: job.id })
+  } catch {
+    // Keep the previous completed video if a queue entry disappears before it loads.
+  } finally {
+    if (loadingVideoGenerationJobId === job.id) loadingVideoGenerationJobId = ''
+  }
+}
+
+async function loadLatestCompletedGenerationResults(jobs) {
+  const latestImage = latestCompletedGenerationJob(jobs, 'image')
+  const latestVideo = latestCompletedGenerationJob(jobs, 'video')
+  await Promise.all([
+    latestImage ? loadCompletedImageGeneration(latestImage) : Promise.resolve(),
+    latestVideo ? loadCompletedVideoGeneration(latestVideo) : Promise.resolve()
+  ])
 }
 
 async function loadDiagnostics() {
@@ -531,21 +646,11 @@ async function clearFinishedGenerationQueue() {
 async function openQueuedGeneration(job) {
   if (job.status !== 'complete') return
   if (job.kind === 'image') {
-    const response = await fetch(`/generation-jobs/${encodeURIComponent(job.id)}/image`)
-    if (!response.ok) throw new Error(`Request failed (${response.status})`)
-    const imageBlob = await response.blob()
-    if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
-    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-    imageUrl.value = URL.createObjectURL(imageBlob)
-    previewUrl.value = await createDisplayPreview(imageBlob)
-    previewFittedFor.value = display.value?.connected ? display.value : null
+    await loadCompletedImageGeneration(job, { force: true })
     page.value = 'generate'
     return
   }
-  const response = await fetch(`/video-generation-jobs/${encodeURIComponent(job.id)}/video`)
-  if (!response.ok) throw new Error(`Request failed (${response.status})`)
-  if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
-  videoUrl.value = URL.createObjectURL(await response.blob())
+  await loadCompletedVideoGeneration(job, { force: true })
   page.value = 'video'
 }
 
@@ -658,17 +763,15 @@ async function openSavedVideo(savedVideo) {
   videoError.value = ''
   videoStage.value = 'Loading saved video...'
   page.value = 'video'
+  const requestId = ++videoPreviewRequestId
   try {
     const response = await fetch(`/saved-videos/${encodeURIComponent(savedVideo.id)}/video`)
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
-    if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
-    videoUrl.value = URL.createObjectURL(await response.blob())
-    completedVideoJobId.value = ''
-    videoSavedToCreationLibrary.value = true
+    const shown = await updateVideoPreview(await response.blob(), { requestId, savedToLibrary: true })
+    if (!shown) return
     videoStage.value = 'Viewing saved video from the Creation Gallery.'
     if (!metadataPanePinned.value) metadataPane.value = false
   } catch (requestError) {
-    videoUrl.value = ''
     videoError.value = `Could not open this saved video: ${requestError.message}`
     videoStage.value = ''
   }
@@ -1236,19 +1339,18 @@ async function deleteSavedImage() {
 
 async function openSavedImage(savedImage) {
   metadataError.value = ''
+  const requestId = ++imagePreviewRequestId
   try {
     const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/image`)
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
-    const imageBlob = await response.blob()
-    if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
-    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-    imageUrl.value = URL.createObjectURL(imageBlob)
-    previewUrl.value = await createDisplayPreview(imageBlob)
-    previewFittedFor.value = display.value?.connected ? display.value : null
-    generatedMetadata.value = savedImage.metadata
+    const shown = await updateImagePreview(await response.blob(), {
+      requestId,
+      metadata: savedImage.metadata,
+      savedToLibrary: true,
+      savedImage
+    })
+    if (!shown) return
     recalledMetadata.value = savedImage.metadata
-    selectedSavedImage.value = savedImage
-    currentImageSavedToLibrary.value = true
     if (display.value?.connected) {
       const displayResponse = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, { method: 'POST' })
       if (!displayResponse.ok) {
@@ -1411,18 +1513,13 @@ async function generate() {
     generationStage.value = 'Image ready. Loading it into the preview...'
     const imageResponse = await fetch(`/generation-jobs/${job.id}/image`)
     if (!imageResponse.ok) throw new Error(`Request failed (${imageResponse.status})`)
-    const rawImageBlob = await imageResponse.blob()
     const metadata = buildGenerationMetadata()
-    const imageBlob = rawImageBlob
-    if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
-    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-    imageUrl.value = URL.createObjectURL(imageBlob)
     generationStage.value = 'Preparing the display preview...'
-    previewUrl.value = await createDisplayPreview(imageBlob)
-    previewFittedFor.value = display.value?.connected ? display.value : null
-    generatedMetadata.value = metadata
-    selectedSavedImage.value = null
-    currentImageSavedToLibrary.value = autoSaveImages.value
+    await updateImagePreview(await imageResponse.blob(), {
+      jobId: job.id,
+      metadata,
+      savedToLibrary: autoSaveImages.value
+    })
     generationStage.value = 'Refreshing your Creation Gallery...'
     await loadSavedImages()
     status.value = autoSaveImages.value
@@ -1473,8 +1570,6 @@ async function generateVideo() {
   videoError.value = ''
   videoProgress.value = 0
   videoStage.value = 'Starting video generation. The selected model will download first if it is not already on this computer...'
-  completedVideoJobId.value = ''
-  videoSavedToCreationLibrary.value = false
   try {
     const response = await fetch('/video-generation-jobs', {
       method: 'POST',
@@ -1520,10 +1615,8 @@ async function generateVideo() {
     videoStage.value = 'Video ready. Loading it into the preview...'
     const videoResponse = await fetch(`/video-generation-jobs/${job.id}/video`)
     if (!videoResponse.ok) throw new Error(`Request failed (${videoResponse.status})`)
-    if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
     videoStage.value = 'Preparing video preview...'
-    videoUrl.value = URL.createObjectURL(await videoResponse.blob())
-    completedVideoJobId.value = job.id
+    await updateVideoPreview(await videoResponse.blob(), { jobId: job.id })
     videoStage.value = 'Video ready. It is saved locally and can be downloaded below.'
   } catch (requestError) {
     videoError.value = `Could not generate the video: ${requestError.message}`
@@ -2036,6 +2129,13 @@ onUnmounted(() => {
 
         <v-col cols="12" lg="7">
         <v-card class="generated-image-card h-100">
+          <v-card-title class="d-flex flex-wrap align-center ga-2 text-subtitle-1">
+            <span>Latest completed image</span>
+            <v-chip v-if="activeImageQueueJob" color="primary" size="small" variant="tonal" prepend-icon="mdi-image-outline">
+              {{ resultPanelQueueStatus(activeImageQueueJob) }}
+            </v-chip>
+          </v-card-title>
+          <v-card-subtitle v-if="activeImageQueueJob && imageUrl" class="pb-3">The previous image remains available until this job is complete.</v-card-subtitle>
           <v-img v-if="previewUrl" :src="previewUrl" alt="Image fitted to the connected ESP32 display" />
           <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
             <v-avatar color="primary" variant="tonal" size="64" class="mb-4">
@@ -2124,6 +2224,13 @@ onUnmounted(() => {
               </v-col>
               <v-col cols="12" lg="7">
                 <v-card class="generated-video-card h-100">
+                  <v-card-title class="d-flex flex-wrap align-center ga-2 text-subtitle-1">
+                    <span>Latest completed video</span>
+                    <v-chip v-if="activeVideoQueueJob" color="primary" size="small" variant="tonal" prepend-icon="mdi-movie-open-outline">
+                      {{ resultPanelQueueStatus(activeVideoQueueJob) }}
+                    </v-chip>
+                  </v-card-title>
+                  <v-card-subtitle v-if="activeVideoQueueJob && videoUrl" class="pb-3">The previous video remains available until this job is complete.</v-card-subtitle>
                   <video v-if="videoUrl" :src="videoUrl" controls loop class="w-100 rounded" />
                   <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
                     <v-avatar color="primary" variant="tonal" size="64" class="mb-4"><v-icon size="34">mdi-movie-open-outline</v-icon></v-avatar>
