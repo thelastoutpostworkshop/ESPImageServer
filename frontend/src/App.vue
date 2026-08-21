@@ -1589,7 +1589,7 @@ onUnmounted(() => {
         <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
       <v-btn v-if="appBarCanCancel" class="mr-1" color="warning" icon="mdi-cancel" size="small" variant="text" :loading="appBarCancelling" :disabled="appBarCancelling" aria-label="Cancel active generation" title="Cancel active generation" @click="cancelActiveGeneration" />
-      <v-btn class="mr-1" icon="mdi-console-line" size="small" variant="text" :color="activityPanelOpen ? 'primary' : undefined" aria-label="Show activity panel" title="Activity and diagnostics" @click="activityPanelOpen = !activityPanelOpen" />
+      <v-btn class="mr-1" icon="mdi-console-line" size="small" variant="text" :color="activityPanelOpen ? 'primary' : undefined" :aria-label="activityPanelOpen ? 'Hide activity panel' : 'Show activity panel'" title="Activity and diagnostics" @click="activityPanelOpen = !activityPanelOpen" />
       <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="!display?.connected ? 'Open display connection help' : undefined" @click="!display?.connected && openDisplayHelp()">
         <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}</span>
       </v-chip>
@@ -2348,20 +2348,30 @@ onUnmounted(() => {
         </v-card>
       </v-container>
     </v-main>
-    <v-btn v-if="!activityPanelOpen" class="activity-panel-toggle" color="primary" variant="elevated" prepend-icon="mdi-console-line" @click="activityPanelOpen = true">Activity</v-btn>
-    <v-expand-transition>
-      <v-card v-if="activityPanelOpen" class="activity-panel" elevation="12">
-        <v-card-title class="d-flex align-center py-2 text-subtitle-1">
-          <v-icon class="mr-2">mdi-console-line</v-icon>Activity
-          <v-spacer />
-          <v-btn icon="mdi-chevron-down" variant="text" size="small" aria-label="Hide activity panel" @click="activityPanelOpen = false" />
-        </v-card-title>
-        <v-tabs v-model="activityPanelTab" density="compact">
+    <v-navigation-drawer
+      v-model="activityPanelOpen"
+      class="activity-drawer"
+      location="bottom"
+      absolute
+      temporary
+      touchless
+      :scrim="false"
+      :height="mobile ? '72vh' : 360"
+    >
+      <v-toolbar density="comfortable" color="surface">
+        <v-icon class="ml-4 mr-3" icon="mdi-console-line" />
+        <v-toolbar-title class="text-subtitle-1">Activity &amp; diagnostics</v-toolbar-title>
+        <v-chip v-if="generationQueue.some(job => ['queued', 'running', 'cancelling'].includes(job.status))" class="mr-2" color="primary" size="small" variant="tonal">
+          {{ generationQueue.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)).length }} active
+        </v-chip>
+        <v-btn icon="mdi-close" variant="text" size="small" aria-label="Close activity panel" @click="activityPanelOpen = false" />
+      </v-toolbar>
+      <v-tabs v-model="activityPanelTab" density="compact" color="primary">
           <v-tab value="queue" prepend-icon="mdi-format-list-numbered">Queue <span v-if="generationQueue.some(job => ['queued', 'running', 'cancelling'].includes(job.status))" class="ml-1">({{ generationQueue.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)).length }})</span></v-tab>
           <v-tab value="logs" prepend-icon="mdi-text-box-outline">Diagnostics</v-tab>
         </v-tabs>
         <v-divider />
-        <v-window v-model="activityPanelTab" class="activity-panel__content">
+        <v-window v-model="activityPanelTab" class="activity-drawer__content">
           <v-window-item value="queue">
             <v-list v-if="generationQueue.some(job => ['queued', 'running', 'cancelling'].includes(job.status))" density="compact">
               <v-list-item v-for="job in generationQueue.filter(item => ['queued', 'running', 'cancelling'].includes(item.status))" :key="job.id">
@@ -2375,7 +2385,7 @@ onUnmounted(() => {
           </v-window-item>
           <v-window-item value="logs">
             <div class="d-flex justify-end ga-2 pa-2"><v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyDiagnostics">Copy diagnostics</v-btn><v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearDiagnostics">Clear</v-btn></div>
-            <v-list v-if="diagnostics.length" density="compact" class="activity-panel__logs">
+            <v-list v-if="diagnostics.length" density="compact" class="activity-drawer__logs">
               <v-list-item v-for="entry in diagnostics" :key="`${entry.timestamp}-${entry.message}`" :class="entry.level === 'error' ? 'text-error' : ''">
                 <v-list-item-title class="text-body-2">{{ entry.message }}</v-list-item-title>
                 <v-list-item-subtitle>{{ new Date(entry.timestamp).toLocaleTimeString() }} · {{ entry.source }}</v-list-item-subtitle>
@@ -2383,8 +2393,7 @@ onUnmounted(() => {
             </v-list>
             <div v-else class="pa-4 text-medium-emphasis">No diagnostic events yet.</div>
           </v-window-item>
-        </v-window>
-      </v-card>
-    </v-expand-transition>
+      </v-window>
+    </v-navigation-drawer>
   </v-app>
 </template>
