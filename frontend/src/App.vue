@@ -1589,7 +1589,6 @@ onUnmounted(() => {
         <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
       <v-btn v-if="appBarCanCancel" class="mr-1" color="warning" icon="mdi-cancel" size="small" variant="text" :loading="appBarCancelling" :disabled="appBarCancelling" aria-label="Cancel active generation" title="Cancel active generation" @click="cancelActiveGeneration" />
-      <v-btn class="mr-1" icon="mdi-text-box-outline" size="small" variant="text" :color="page === 'diagnostics' ? 'primary' : undefined" aria-label="Open diagnostics" title="Diagnostics" @click="page = 'diagnostics'" />
       <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="!display?.connected ? 'Open display connection help' : undefined" @click="!display?.connected && openDisplayHelp()">
         <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}</span>
       </v-chip>
@@ -1608,11 +1607,7 @@ onUnmounted(() => {
       </v-list-item>
       <v-divider />
       <v-list nav density="comfortable">
-        <v-list-item title="Generate image" :active="page === 'generate'" @click="openGeneratePage">
-          <template #prepend>
-            <v-avatar :image="logoImageUrl" size="26" />
-          </template>
-        </v-list-item>
+        <v-list-item prepend-icon="mdi-image-plus" title="Generate image" :active="page === 'generate'" @click="openGeneratePage" />
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="page = 'video'" />
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
