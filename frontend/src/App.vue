@@ -1712,13 +1712,13 @@ onUnmounted(() => {
     </v-snackbar>
 
     <v-app-bar name="primary-app-bar" order="-1" color="surface" border elevation="2" class="app-bar">
-      <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
+      <v-app-bar-nav-icon :aria-label="drawer ? 'Close navigation menu' : 'Open navigation menu'" :title="drawer ? 'Close navigation menu' : 'Open navigation menu'" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
-      <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : undefined" @click="openActiveGeneration">
+      <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.label" @click="openActiveGeneration">
         <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
       <v-btn v-if="appBarCanCancel" class="mr-1" color="warning" icon="mdi-cancel" size="small" variant="text" :loading="appBarCancelling" :disabled="appBarCancelling" aria-label="Cancel active generation" title="Cancel active generation" @click="cancelActiveGeneration" />
-      <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="!display?.connected ? 'Open display connection help' : undefined" @click="!display?.connected && openDisplayHelp()">
+      <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
         <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}</span>
       </v-chip>
       <v-spacer />
@@ -1748,7 +1748,7 @@ onUnmounted(() => {
         <v-divider />
         <v-list nav density="comfortable">
           <v-list-item prepend-icon="mdi-format-list-numbered" title="Queue" :active="page === 'queue'" @click="page = 'queue'">
-            <template #append><v-chip v-if="activeGenerationQueue.length" color="primary" size="x-small" variant="tonal">{{ activeGenerationQueue.length }}</v-chip></template>
+            <template #append><v-chip v-if="activeGenerationQueue.length" color="primary" size="x-small" variant="tonal" title="Active generation jobs">{{ activeGenerationQueue.length }}</v-chip></template>
           </v-list-item>
           <v-list-item prepend-icon="mdi-text-box-outline" title="Diagnostics" :active="page === 'diagnostics'" @click="page = 'diagnostics'" />
         </v-list>
@@ -1780,8 +1780,8 @@ onUnmounted(() => {
           :title="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
           @click="toggleImageLibraryView"
         />
-        <v-btn :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" @click="toggleMetadataPanePin" />
-        <v-btn icon="mdi-close" variant="text" aria-label="Close Creation Library" @click="closeMetadataPane" />
+        <v-btn :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" :title="metadataPanePinned ? 'Unpin Creation Library' : 'Pin Creation Library open'" @click="toggleMetadataPanePin" />
+        <v-btn icon="mdi-close" variant="text" aria-label="Close Creation Library" title="Close Creation Library" @click="closeMetadataPane" />
       </div>
       <v-divider />
       <div class="pa-4">
@@ -1972,7 +1972,7 @@ onUnmounted(() => {
               </template>
               <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
               <v-list-item-subtitle>{{ job.status === 'queued' ? `Waiting · position ${job.queue_position}` : job.stage }}<span v-if="job.status !== 'queued' && job.progress"> · {{ job.progress }}%</span></v-list-item-subtitle>
-              <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
+              <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" :title="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
               <v-progress-linear v-if="job.status !== 'queued'" class="mt-2" :model-value="job.progress" color="primary" height="6" rounded />
             </v-list-item>
           </v-list>
@@ -1992,7 +1992,7 @@ onUnmounted(() => {
                 <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
                 <v-list-item-subtitle>{{ job.status === 'complete' ? `${job.kind === 'video' ? 'Video' : 'Image'} generation complete` : job.error || job.stage }}</v-list-item-subtitle>
                 <template #append>
-                  <v-btn v-if="job.status === 'complete'" icon="mdi-open-in-new" size="small" variant="text" :aria-label="`Open completed ${job.kind}`" @click="openQueuedGeneration(job)" />
+                  <v-btn v-if="job.status === 'complete'" icon="mdi-open-in-new" size="small" variant="text" :aria-label="`Open completed ${job.kind}`" :title="`Open completed ${job.kind}`" @click="openQueuedGeneration(job)" />
                   <v-chip :color="job.status === 'complete' ? 'success' : job.status === 'failed' ? 'error' : 'warning'" size="small" variant="tonal">{{ job.status === 'complete' ? 'Complete' : job.status === 'failed' ? 'Failed' : 'Cancelled' }}</v-chip>
                 </template>
               </v-list-item>
@@ -2131,7 +2131,7 @@ onUnmounted(() => {
         <v-card class="generated-image-card h-100">
           <v-card-title class="d-flex flex-wrap align-center ga-2 text-subtitle-1">
             <span>Latest completed image</span>
-            <v-chip v-if="activeImageQueueJob" color="primary" size="small" variant="tonal" prepend-icon="mdi-image-outline">
+            <v-chip v-if="activeImageQueueJob" color="primary" size="small" variant="tonal" prepend-icon="mdi-image-outline" :title="activeImageQueueJob.stage">
               {{ resultPanelQueueStatus(activeImageQueueJob) }}
             </v-chip>
           </v-card-title>
@@ -2203,7 +2203,7 @@ onUnmounted(() => {
                 <div class="d-flex align-center">
                       <v-avatar rounded size="72" class="mr-4"><v-img :src="`/saved-images/${encodeURIComponent(videoSourceImage.id)}/thumbnail`" /></v-avatar>
                   <span>Animating the selected Creation Gallery image as the first frame.</span>
-                  <v-spacer /><v-btn icon="mdi-close" size="small" variant="text" aria-label="Stop using this image for the video" @click="videoSourceImage = null" />
+                  <v-spacer /><v-btn icon="mdi-close" size="small" variant="text" aria-label="Stop using this image for the video" title="Stop using this image" @click="videoSourceImage = null" />
                 </div>
               </v-alert>
               <v-select v-model="videoModelId" :items="videoModels" label="Video model" variant="outlined" density="comfortable" class="mb-3" />
@@ -2235,7 +2235,7 @@ onUnmounted(() => {
                 <v-card class="generated-video-card h-100">
                   <v-card-title class="d-flex flex-wrap align-center ga-2 text-subtitle-1">
                     <span>Latest completed video</span>
-                    <v-chip v-if="activeVideoQueueJob" color="primary" size="small" variant="tonal" prepend-icon="mdi-movie-open-outline">
+                    <v-chip v-if="activeVideoQueueJob" color="primary" size="small" variant="tonal" prepend-icon="mdi-movie-open-outline" :title="activeVideoQueueJob.stage">
                       {{ resultPanelQueueStatus(activeVideoQueueJob) }}
                     </v-chip>
                   </v-card-title>
@@ -2322,7 +2322,7 @@ onUnmounted(() => {
               <v-list-item-title class="font-weight-bold">{{ model.name }}</v-list-item-title>
               <v-list-item-subtitle><a :href="model.model_card_url" target="_blank" rel="noopener noreferrer" class="text-primary">License &amp; usage <v-icon size="12">mdi-open-in-new</v-icon></a></v-list-item-subtitle>
               <v-list-item-subtitle>{{ model.speed }} · {{ model.hardware }}</v-list-item-subtitle>
-              <template #append><div class="d-flex align-center"><v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingImageModelId === model.id" :disabled="generationBusy" :aria-label="`Remove ${model.name}`" @click="confirmRemoveImageModel(model)" /></div></template>
+              <template #append><div class="d-flex align-center"><v-chip v-if="model.active" color="success" variant="tonal" size="small">In use</v-chip><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingImageModelId === model.id" :disabled="generationBusy" :aria-label="`Remove ${model.name}`" :title="`Remove ${model.name}`" @click="confirmRemoveImageModel(model)" /></div></template>
             </v-list-item>
           </v-list>
           <v-card-text class="text-caption text-medium-emphasis pt-3">
@@ -2358,7 +2358,7 @@ onUnmounted(() => {
               <template #prepend><v-avatar color="deep-purple" variant="tonal" size="36"><v-icon size="20">mdi-movie-open-outline</v-icon></v-avatar></template>
               <v-list-item-title class="font-weight-bold">{{ model.name }}</v-list-item-title>
               <v-list-item-subtitle>{{ model.description }}<br><a :href="model.model_card_url" target="_blank" rel="noopener noreferrer" class="text-primary">License &amp; usage <v-icon size="12">mdi-open-in-new</v-icon></a></v-list-item-subtitle>
-              <template #append><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingVideoModelId === model.id" :disabled="videoGenerationActive" :aria-label="`Remove ${model.name}`" @click="confirmRemoveVideoModel(model)" /></template>
+              <template #append><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingVideoModelId === model.id" :disabled="videoGenerationActive" :aria-label="`Remove ${model.name}`" :title="`Remove ${model.name}`" @click="confirmRemoveVideoModel(model)" /></template>
             </v-list-item>
           </v-list>
         </v-card>
