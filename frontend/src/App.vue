@@ -2136,6 +2136,15 @@ onUnmounted(() => {
             </v-chip>
           </v-card-title>
           <v-card-subtitle v-if="activeImageQueueJob && imageUrl" class="pb-3">The previous image remains available until this job is complete.</v-card-subtitle>
+          <v-progress-linear
+            v-if="activeImageQueueJob"
+            class="mx-4 mb-3"
+            :color="activeImageQueueJob.status === 'cancelling' ? 'warning' : 'primary'"
+            :indeterminate="activeImageQueueJob.status !== 'running'"
+            :model-value="activeImageQueueJob.status === 'running' ? activeImageQueueJob.progress : undefined"
+            height="6"
+            rounded
+          />
           <v-img v-if="previewUrl" :src="previewUrl" alt="Image fitted to the connected ESP32 display" />
           <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
             <v-avatar color="primary" variant="tonal" size="64" class="mb-4">
@@ -2231,6 +2240,15 @@ onUnmounted(() => {
                     </v-chip>
                   </v-card-title>
                   <v-card-subtitle v-if="activeVideoQueueJob && videoUrl" class="pb-3">The previous video remains available until this job is complete.</v-card-subtitle>
+                  <v-progress-linear
+                    v-if="activeVideoQueueJob"
+                    class="mx-4 mb-3"
+                    :color="activeVideoQueueJob.status === 'cancelling' ? 'warning' : 'primary'"
+                    :indeterminate="activeVideoQueueJob.status !== 'running'"
+                    :model-value="activeVideoQueueJob.status === 'running' ? activeVideoQueueJob.progress : undefined"
+                    height="6"
+                    rounded
+                  />
                   <video v-if="videoUrl" :src="videoUrl" controls loop class="w-100 rounded" />
                   <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
                     <v-avatar color="primary" variant="tonal" size="64" class="mb-4"><v-icon size="34">mdi-movie-open-outline</v-icon></v-avatar>
