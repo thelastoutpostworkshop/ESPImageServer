@@ -109,6 +109,7 @@ const generatingVideo = ref(false)
 const cancellingVideo = ref(false)
 const cancelVideoOnStart = ref(false)
 const activeVideoJobId = ref('')
+const activeVideoJobRunning = ref(false)
 const videoProgress = ref(0)
 const videoStage = ref('')
 const videoError = ref('')
@@ -164,6 +165,7 @@ const settingsError = ref('')
 const generating = ref(false)
 const cancelling = ref(false)
 const activeJobId = ref('')
+const activeImageJobRunning = ref(false)
 const generationQueue = ref([])
 const cancellingQueueJobId = ref('')
 const activityPanelOpen = ref(window.localStorage.getItem('esp-image-server.activity-panel-open') === 'true')
@@ -1388,6 +1390,7 @@ async function generate() {
     }
     const job = await response.json()
     activeJobId.value = job.id
+    activeImageJobRunning.value = ['running', 'cancelling'].includes(job.status)
     status.value = `Image job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
     await loadGenerationQueue()
     let currentJob = job
@@ -1396,6 +1399,7 @@ async function generate() {
       const statusResponse = await fetch(`/generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
+      activeImageJobRunning.value = ['running', 'cancelling'].includes(currentJob.status)
       generationProgress.value = currentJob.progress
       generationStage.value = currentJob.steps ? `${currentJob.stage} — Step ${currentJob.step} of ${currentJob.steps}` : currentJob.stage
     }
@@ -1435,6 +1439,7 @@ async function generate() {
     generating.value = false
     cancelling.value = false
     activeJobId.value = ''
+    activeImageJobRunning.value = false
     generationProgress.value = 0
     generationStage.value = ''
   }
@@ -1490,6 +1495,7 @@ async function generateVideo() {
     }
     const job = await response.json()
     activeVideoJobId.value = job.id
+    activeVideoJobRunning.value = ['running', 'cancelling'].includes(job.status)
     videoStage.value = `Video job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
     await loadGenerationQueue()
     if (cancelVideoOnStart.value) {
@@ -1502,6 +1508,7 @@ async function generateVideo() {
       const statusResponse = await fetch(`/video-generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
+      activeVideoJobRunning.value = ['running', 'cancelling'].includes(currentJob.status)
       videoProgress.value = currentJob.progress
       videoStage.value = currentJob.steps ? `${currentJob.stage} — Step ${currentJob.step} of ${currentJob.steps}` : currentJob.stage
     }
@@ -1526,6 +1533,7 @@ async function generateVideo() {
     cancellingVideo.value = false
     cancelVideoOnStart.value = false
     activeVideoJobId.value = ''
+    activeVideoJobRunning.value = false
   }
 }
 
@@ -2009,7 +2017,7 @@ onUnmounted(() => {
               <v-btn v-if="generating" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
                 {{ activeJobId ? 'Cancel generation' : 'Cancel' }}
               </v-btn>
-              <div v-if="generating" class="mt-5">
+              <div v-if="generating && activeImageJobRunning" class="mt-5">
                 <div class="d-flex justify-space-between text-body-2 mb-2">
                   <span>{{ generationStage }}</span><span>{{ activeJobId || generationProgress ? `${generationProgress}%` : 'Preparing' }}</span>
                 </div>
@@ -2107,7 +2115,7 @@ onUnmounted(() => {
               <v-btn type="submit" class="mt-4" color="primary" :disabled="health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">{{ generationBusy ? 'Add video to queue' : 'Generate video' }}</v-btn>
               <v-btn v-if="generatingVideo" class="ml-2 mt-4" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
             </v-form>
-            <div v-if="generatingVideo" class="mt-5">
+            <div v-if="generatingVideo && activeVideoJobRunning" class="mt-5">
               <div class="d-flex justify-space-between text-body-2 mb-2"><span>{{ videoStage }}</span><span>{{ videoProgress }}%</span></div>
               <v-progress-linear :model-value="videoProgress" :indeterminate="!activeVideoJobId" color="primary" height="10" rounded />
             </div>
