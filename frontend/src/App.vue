@@ -173,6 +173,11 @@ const cancellingQueueJobId = ref('')
 const activityPanelOpen = ref(window.localStorage.getItem('esp-image-server.activity-panel-open') === 'true')
 const activityPanelTab = ref('logs')
 const diagnostics = ref([])
+const diagnosticsTab = ref('summary')
+const consoleOutput = ref([])
+const consoleSearch = ref('')
+const consoleAutoScroll = ref(true)
+const consoleOutputElement = ref(null)
 const latestDiagnosticError = ref('')
 const generationProgress = ref(0)
 const generationStage = ref('')
@@ -199,6 +204,10 @@ const activeGenerationQueue = computed(() => generationQueue.value.filter(job =>
 const finishedGenerationQueue = computed(() => generationQueue.value.filter(job => !['queued', 'running', 'cancelling'].includes(job.status)))
 const activeImageQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'image') || null)
 const activeVideoQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'video') || null)
+const filteredConsoleOutput = computed(() => {
+  const query = consoleSearch.value.trim().toLocaleLowerCase()
+  return query ? consoleOutput.value.filter(line => line.toLocaleLowerCase().includes(query)) : consoleOutput.value
+})
 const appBarStatus = computed(() => {
   if (videoGenerationActive.value) {
     const job = health.value?.active_video_job
@@ -342,6 +351,10 @@ watch(sdCardItemsPerPage, itemsPerPage => {
 
 watch(activityPanelOpen, isOpen => {
   window.localStorage.setItem('esp-image-server.activity-panel-open', String(isOpen))
+})
+
+watch(diagnosticsTab, tab => {
+  if (tab === 'console' && consoleAutoScroll.value) nextTick(scrollConsoleToBottom)
 })
 
 watch(page, (nextPage, previousPage) => {
@@ -608,9 +621,21 @@ async function loadDiagnostics() {
     if (newestError && newestError !== latestDiagnosticError.value) {
       latestDiagnosticError.value = newestError
       page.value = 'diagnostics'
+      diagnosticsTab.value = 'summary'
     }
   } catch {
     diagnostics.value = []
+  }
+}
+
+async function loadConsoleOutput() {
+  try {
+    const response = await fetch('/console-output', { cache: 'no-store' })
+    consoleOutput.value = response.ok ? await response.json() : []
+    await nextTick()
+    if (diagnosticsTab.value === 'console' && consoleAutoScroll.value) scrollConsoleToBottom()
+  } catch {
+    consoleOutput.value = []
   }
 }
 
@@ -623,6 +648,26 @@ async function clearDiagnostics() {
 async function copyDiagnostics() {
   const text = diagnostics.value.map(entry => `${entry.timestamp} [${entry.level.toUpperCase()}] ${entry.source}: ${entry.message}`).join('\n')
   await navigator.clipboard?.writeText(text)
+}
+
+function updateConsoleAutoScroll(event) {
+  const element = event.currentTarget
+  consoleAutoScroll.value = element.scrollHeight - element.scrollTop - element.clientHeight < 16
+}
+
+function scrollConsoleToBottom() {
+  consoleAutoScroll.value = true
+  const element = consoleOutputElement.value
+  if (element) element.scrollTop = element.scrollHeight
+}
+
+async function clearConsoleOutput() {
+  await fetch('/console-output', { method: 'DELETE' })
+  consoleOutput.value = []
+}
+
+async function copyConsoleOutput() {
+  await navigator.clipboard?.writeText(filteredConsoleOutput.value.join('\n'))
 }
 
 async function cancelQueuedGeneration(job) {
@@ -1672,6 +1717,7 @@ onMounted(async () => {
   await loadAppSettings()
   await loadGenerationQueue()
   await clearDiagnostics()
+  await loadConsoleOutput()
   if (metadataPanePinned.value && !mobile.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
     loadServerStatus()
@@ -1681,6 +1727,7 @@ onMounted(async () => {
     loadDisplaySdCard()
     loadGenerationQueue()
     loadDiagnostics()
+    loadConsoleOutput()
   }, 5000)
 })
 
@@ -2003,9 +2050,22 @@ onUnmounted(() => {
           <v-card-title class="d-flex align-center text-h6">
             <v-icon class="mr-2" icon="mdi-text-box-outline" />Diagnostics
             <v-spacer />
-            <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyDiagnostics">Copy diagnostics</v-btn>
-            <v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearDiagnostics">Clear</v-btn>
+            <template v-if="diagnosticsTab === 'summary'">
+              <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyDiagnostics">Copy diagnostics</v-btn>
+              <v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearDiagnostics">Clear</v-btn>
+            </template>
+            <template v-else>
+              <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyConsoleOutput">Copy console</v-btn>
+              <v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearConsoleOutput">Clear console</v-btn>
+            </template>
           </v-card-title>
+          <v-tabs v-model="diagnosticsTab" color="primary">
+            <v-tab value="summary" prepend-icon="mdi-clipboard-text-outline">Summary</v-tab>
+            <v-tab value="console" prepend-icon="mdi-console-line">Console</v-tab>
+          </v-tabs>
+          <v-divider />
+          <v-window v-model="diagnosticsTab">
+            <v-window-item value="summary">
           <v-list v-if="diagnostics.length" density="comfortable" lines="two">
             <v-list-item v-for="entry in diagnostics" :key="`${entry.timestamp}-${entry.message}`" :class="entry.level === 'error' ? 'text-error' : ''">
               <v-list-item-title>{{ entry.message }}</v-list-item-title>
@@ -2013,6 +2073,24 @@ onUnmounted(() => {
             </v-list-item>
           </v-list>
           <v-card-text v-else class="text-medium-emphasis py-8 text-center">No diagnostic events yet.</v-card-text>
+            </v-window-item>
+            <v-window-item value="console">
+              <v-card-text>
+                <div class="d-flex align-center ga-2 mb-3">
+                  <v-text-field v-model="consoleSearch" density="compact" variant="outlined" hide-details clearable prepend-inner-icon="mdi-magnify" label="Filter console output" />
+                  <v-btn icon="mdi-chevron-down" size="small" variant="text" aria-label="Scroll console to newest output" title="Scroll to newest output" @click="scrollConsoleToBottom" />
+                </div>
+                <div ref="consoleOutputElement" class="console-output" @scroll="updateConsoleAutoScroll">
+                  <pre v-if="filteredConsoleOutput.length">{{ filteredConsoleOutput.join('\n') }}</pre>
+                  <div v-else class="text-medium-emphasis text-center pa-8">{{ consoleOutput.length ? 'No console lines match this filter.' : 'No console output has been recorded yet.' }}</div>
+                </div>
+                <div class="d-flex flex-wrap justify-space-between ga-2 mt-3 text-caption text-medium-emphasis">
+                  <span>{{ filteredConsoleOutput.length }} of {{ consoleOutput.length }} recent log entries</span>
+                  <span>Server log output refreshes every 5 seconds. Secrets are redacted.</span>
+                </div>
+              </v-card-text>
+            </v-window-item>
+          </v-window>
         </v-card>
         <template v-if="page === 'generate'">
         <v-row>

@@ -1,4 +1,5 @@
 from io import BytesIO
+import logging
 from pathlib import Path
 from threading import Event
 import time
@@ -103,6 +104,21 @@ def test_health_reports_that_no_generation_is_active() -> None:
     assert response.json()["video_generating"] is False
     assert response.json()["active_image_job"] is None
     assert response.json()["active_video_job"] is None
+
+
+def test_console_output_mirrors_server_logs_and_redacts_secrets() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        logging.getLogger("esp_image_server.console_test").warning("Console token=very-secret-value")
+        output = client.get("/console-output")
+        cleared = client.delete("/console-output")
+        empty_output = client.get("/console-output")
+
+    assert output.status_code == 200
+    assert any("WARNING esp_image_server.console_test: Console token=[redacted]" in line for line in output.json())
+    assert all("very-secret-value" not in line for line in output.json())
+    assert cleared.status_code == 204
+    assert empty_output.json() == []
 
 
 def test_generation_job_reports_progress_and_returns_its_image() -> None:

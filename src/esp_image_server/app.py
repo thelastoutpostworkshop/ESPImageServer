@@ -28,7 +28,7 @@ from .display import ActiveDisplayStore
 from .display_commands import DisplayCommandStore
 from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
-from .diagnostics import DiagnosticLogStore
+from .diagnostics import ConsoleLogStore, DiagnosticLogStore
 from .generator import DiffusersGenerator
 from .generation_jobs import GenerationCancelled
 from .generation_queue import GenerationQueue
@@ -195,7 +195,12 @@ def create_app(
     generation_queue = generation_queue or GenerationQueue()
     diagnostics = DiagnosticLogStore()
     diagnostics.setFormatter(logging.Formatter("%(message)s"))
-    logging.getLogger().addHandler(diagnostics)
+    console_output = ConsoleLogStore()
+    console_output.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    root_logger = logging.getLogger()
+    uvicorn_logger = logging.getLogger("uvicorn")
+    root_logger.addHandler(diagnostics)
+    root_logger.addHandler(console_output)
     display_command_store = display_command_store or DisplayCommandStore()
     video_generator = video_generator or LTXVideoGenerator()
     model_loading_status: dict[str, object] = {"active": False, "step": 0, "steps": 0, "stage": ""}
@@ -217,6 +222,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        # Uvicorn keeps its own non-propagating console logger. Mirror it as
+        # well so startup and server errors are visible in the Console tab.
+        uvicorn_logger.addHandler(console_output)
         mdns = MdnsAdvertiser(settings.port) if enable_mdns else None
         if mdns is not None:
             try:
@@ -242,7 +250,9 @@ def create_app(
             if mdns is not None:
                 mdns.close()
             generation_queue.close()
-            logging.getLogger().removeHandler(diagnostics)
+            root_logger.removeHandler(diagnostics)
+            root_logger.removeHandler(console_output)
+            uvicorn_logger.removeHandler(console_output)
 
     app = FastAPI(title="ESPImageServer", version=APP_VERSION, lifespan=lifespan)
     app.state.device_manager = device_manager
@@ -252,6 +262,7 @@ def create_app(
     app.state.model_selection_store = model_selection_store
     app.state.generation_queue = generation_queue
     app.state.diagnostics = diagnostics
+    app.state.console_output = console_output
     app.state.display_command_store = display_command_store
     app.state.image_library = image_library
     app.state.video_library = video_library
@@ -294,6 +305,15 @@ def create_app(
     @app.delete("/diagnostics", status_code=status.HTTP_204_NO_CONTENT)
     def clear_diagnostics() -> Response:
         diagnostics.clear()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/console-output")
+    def get_console_output() -> list[str]:
+        return console_output.list()
+
+    @app.delete("/console-output", status_code=status.HTTP_204_NO_CONTENT)
+    def clear_console_output() -> Response:
+        console_output.clear()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/server-info")
