@@ -568,7 +568,7 @@ async function prepareSelectedModel() {
 
 function selectModelById(modelId) {
   const model = models.value.find(candidate => candidate.id === modelId)
-  if (!model || generationBusy.value) return
+  if (!model) return
   activeModelId.value = model.id
   steps.value = model.default_steps
 }
@@ -1738,13 +1738,13 @@ onUnmounted(() => {
     >
       <v-list min-width="220" density="comfortable">
         <v-list-subheader>Reuse generation settings</v-list-subheader>
-        <v-list-item prepend-icon="mdi-text" title="Use prompt" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'prompt')" />
-        <v-list-item prepend-icon="mdi-dice-5" title="Use seed" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'seed')" />
-        <v-list-item prepend-icon="mdi-foot-print" title="Use steps" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'steps')" />
-        <v-list-item prepend-icon="mdi-brain" title="Use model" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'model')" />
-        <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
+        <v-list-item prepend-icon="mdi-text" title="Use prompt" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'prompt')" />
+        <v-list-item prepend-icon="mdi-dice-5" title="Use seed" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'seed')" />
+        <v-list-item prepend-icon="mdi-foot-print" title="Use steps" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'steps')" />
+        <v-list-item prepend-icon="mdi-brain" title="Use model" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'model')" />
+        <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
-        <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generationBusy" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
+        <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
         <v-list-item color="primary" prepend-icon="mdi-sd" title="Save to display SD card" :disabled="!display?.connected || savingToDisplaySdCard" @click="saveContextMenuImageToDisplaySdCard" />
         <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
         <v-divider class="my-1" />
@@ -1755,14 +1755,14 @@ onUnmounted(() => {
     <v-menu v-model="savedVideoContextMenu" :target="savedVideoContextMenuPosition" location="bottom start" :close-on-content-click="true">
       <v-list min-width="230" density="comfortable">
         <v-list-subheader>Reuse video settings</v-list-subheader>
-        <v-list-item prepend-icon="mdi-text" title="Use prompt" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'prompt')" />
-        <v-list-item prepend-icon="mdi-dice-5" title="Use seed" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'seed')" />
-        <v-list-item prepend-icon="mdi-foot-print" title="Use steps" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'steps')" />
-        <v-list-item prepend-icon="mdi-brain" title="Use model" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'model')" />
-        <v-list-item prepend-icon="mdi-filmstrip" title="Use length" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'frames')" />
-        <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
+        <v-list-item prepend-icon="mdi-text" title="Use prompt" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'prompt')" />
+        <v-list-item prepend-icon="mdi-dice-5" title="Use seed" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'seed')" />
+        <v-list-item prepend-icon="mdi-foot-print" title="Use steps" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'steps')" />
+        <v-list-item prepend-icon="mdi-brain" title="Use model" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'model')" />
+        <v-list-item prepend-icon="mdi-filmstrip" title="Use length" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'frames')" />
+        <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
         <v-divider class="my-1" />
-        <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" :disabled="generatingVideo" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
+        <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
         <v-list-item color="primary" prepend-icon="mdi-sd" title="Save to display SD card" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="saveSavedVideoToDisplaySdCard" />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
         <v-divider class="my-1" />
@@ -1887,7 +1887,7 @@ onUnmounted(() => {
                 label="Image model"
                 variant="outlined"
                 density="comfortable"
-                :disabled="generationBusy || models.length === 0"
+                :disabled="models.length === 0"
                 hint="Choose a model for this computer. Models not yet downloaded will download before they are used."
                 persistent-hint
                 class="mb-4"

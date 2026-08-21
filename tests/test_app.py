@@ -13,6 +13,7 @@ from esp_image_server.config import Settings
 from esp_image_server.display_settings import DisplaySettingsStore
 from esp_image_server.model_settings import ModelSelectionStore
 from esp_image_server.generation_jobs import GenerationCancelled
+from esp_image_server.generation_queue import GenerationQueue
 from esp_image_server.image_library import ImageLibrary
 from esp_image_server.video_library import VideoLibrary
 
@@ -283,6 +284,20 @@ def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
     assert len(models.json()) == 4
     assert next(model for model in models.json() if model["id"] == "stabilityai/sd-turbo")["model_card_url"] == "https://huggingface.co/stabilityai/sd-turbo"
     assert selected.status_code == 200
+    assert store.get() == "segmind/SSD-1B"
+
+
+def test_model_selection_is_saved_for_subsequent_jobs_while_queue_is_busy(tmp_path, monkeypatch) -> None:
+    store = ModelSelectionStore("stabilityai/sd-turbo", tmp_path / "settings.json")
+    queue = GenerationQueue()
+    monkeypatch.setattr(queue, "has_active_job", lambda: True)
+    app = create_app(Settings(), FakeGenerator(), generation_queue=queue, model_selection_store=store, enable_mdns=False)
+
+    with TestClient(app) as client:
+        selected = client.post("/models/segmind/SSD-1B/select")
+
+    assert selected.status_code == 200
+    assert selected.json() == {"status": "selected", "model_id": "segmind/SSD-1B"}
     assert store.get() == "segmind/SSD-1B"
 
 

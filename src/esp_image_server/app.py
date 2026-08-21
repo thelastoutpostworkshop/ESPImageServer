@@ -351,17 +351,18 @@ def create_app(
     @app.post("/models/{model_id:path}/select")
     async def select_model(model_id: str) -> dict[str, object]:
         nonlocal active_model_id, active_settings
-        if generation_queue.has_active_job():
-            raise HTTPException(
-                status_code=409,
-                detail="Wait for the current image generation to finish before changing models",
-            )
         try:
             selected_settings = model_settings(settings, model_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail="This model is not available in ESPImageServer") from exc
         if model_id == active_model_id and generator.ready:
             return {"status": "active", "model_id": model_id}
+        if generation_queue.has_active_job():
+            active_settings = selected_settings
+            active_model_id = model_id
+            model_selection_store.set(model_id)
+            logger.info("Image model changed to %s for subsequent queued jobs", model_id)
+            return {"status": "selected", "model_id": model_id}
         try:
             model_loading_status.update(active=True, step=0, steps=0, stage="Preparing image model")
             def report_download(step: int, steps: int, stage: str) -> None:
@@ -871,17 +872,15 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "acknowledged"}
 
-    def generate_jpeg(request: GenerateRequest, progress=None, is_cancelled=None) -> bytes:
+    def generate_jpeg(request: GenerateRequest, progress=None, is_cancelled=None, model_id: str | None = None, selected_settings: Settings | None = None) -> bytes:
         def ensure_not_cancelled() -> None:
             if is_cancelled is not None and is_cancelled():
                 raise GenerationCancelled()
 
         ensure_not_cancelled()
-        if not generator.ready:
-            # A fresh installation deliberately has no model.  A generation
-            # request is the user's explicit choice to fetch and load the
-            # currently selected model.
-            generator.activate_model(active_settings)
+        job_model_id = model_id or active_model_id
+        job_settings = selected_settings or active_settings
+        generator.activate_model(job_settings)
         profile = active_display_store.get()
         output_width = profile.width if profile else settings.output_width
         output_height = profile.height if profile else settings.output_height
@@ -889,8 +888,8 @@ def create_app(
         artwork_width, artwork_height = (
             (output_height, output_width) if rotation in {90, 270} else (output_width, output_height)
         )
-        generation_width, generation_height = optimal_generation_size(active_model_id, artwork_width, artwork_height)
-        model = get_model(active_model_id)
+        generation_width, generation_height = optimal_generation_size(job_model_id, artwork_width, artwork_height)
+        model = get_model(job_model_id)
         if request.negative_prompt and not model.supports_negative_prompt:
             raise ValueError(f"{model.name} does not support negative prompts")
         steps = request.steps if request.steps is not None else model.inference_steps
@@ -930,7 +929,7 @@ def create_app(
         metadata = {
             "version": 1,
             "createdAt": datetime.now(UTC).isoformat(),
-            "model": {"id": active_model_id, "name": model.name},
+            "model": {"id": job_model_id, "name": model.name},
             "prompt": request.prompt,
             "negative_prompt": request.negative_prompt,
             "steps": steps,
@@ -967,10 +966,12 @@ def create_app(
 
     @app.post("/generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
+        job_model_id = active_model_id
+        job_settings = active_settings
         job = generation_queue.create(
             "image",
-            lambda progress, is_cancelled: (video_generator.unload(), generate_jpeg(request, progress, is_cancelled))[1],
-            {"label": request.prompt[:80], "model_id": active_model_id},
+            lambda progress, is_cancelled: (video_generator.unload(), generate_jpeg(request, progress, is_cancelled, job_model_id, job_settings))[1],
+            {"label": request.prompt[:80], "model_id": job_model_id},
         )
         return job.as_dict()
 
