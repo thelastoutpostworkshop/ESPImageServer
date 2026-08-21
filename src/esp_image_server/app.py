@@ -28,6 +28,7 @@ from .display import ActiveDisplayStore
 from .display_commands import DisplayCommandStore
 from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
+from .diagnostics import DiagnosticLogStore
 from .generator import DiffusersGenerator
 from .generation_jobs import GenerationCancelled
 from .generation_queue import GenerationQueue
@@ -192,6 +193,9 @@ def create_app(
     active_display_store = active_display_store or ActiveDisplayStore()
     display_settings_store = display_settings_store or DisplaySettingsStore()
     generation_queue = generation_queue or GenerationQueue()
+    diagnostics = DiagnosticLogStore()
+    diagnostics.setFormatter(logging.Formatter("%(message)s"))
+    logging.getLogger().addHandler(diagnostics)
     display_command_store = display_command_store or DisplayCommandStore()
     video_generator = video_generator or LTXVideoGenerator()
     model_loading_status: dict[str, object] = {"active": False, "step": 0, "steps": 0, "stage": ""}
@@ -238,6 +242,7 @@ def create_app(
             if mdns is not None:
                 mdns.close()
             generation_queue.close()
+            logging.getLogger().removeHandler(diagnostics)
 
     app = FastAPI(title="ESPImageServer", version=APP_VERSION, lifespan=lifespan)
     app.state.device_manager = device_manager
@@ -246,6 +251,7 @@ def create_app(
     app.state.display_settings_store = display_settings_store
     app.state.model_selection_store = model_selection_store
     app.state.generation_queue = generation_queue
+    app.state.diagnostics = diagnostics
     app.state.display_command_store = display_command_store
     app.state.image_library = image_library
     app.state.video_library = video_library
@@ -280,6 +286,15 @@ def create_app(
             "active_video_job": video_job.as_dict() if video_job else None,
             "queue_depth": sum(1 for job in generation_queue.list() if job["status"] in {"queued", "running", "cancelling"}),
         }
+
+    @app.get("/diagnostics")
+    def get_diagnostics() -> list[dict[str, str]]:
+        return diagnostics.list()
+
+    @app.delete("/diagnostics", status_code=status.HTTP_204_NO_CONTENT)
+    def clear_diagnostics() -> Response:
+        diagnostics.clear()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/server-info")
     def server_info() -> dict[str, object]:

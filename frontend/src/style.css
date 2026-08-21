@@ -6,6 +6,10 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .model-table__active { background: rgba(var(--v-theme-success), 0.08); }
 .model-table__description { max-width: 230px; }
 .app-container { max-width: 1440px; }
+.activity-panel { position: fixed; z-index: 1200; left: 16px; right: 16px; bottom: 16px; max-width: 1120px; margin: auto; }
+.activity-panel-toggle { position: fixed; z-index: 1200; right: 24px; bottom: 24px; }
+.activity-panel__content { max-height: min(42vh, 420px); overflow-y: auto; }
+.activity-panel__logs { max-height: min(34vh, 330px); overflow-y: auto; }
 .generated-image-card .v-img { max-height: calc(100vh - 220px); }
 .generated-video-card video { display: block; max-height: calc(100vh - 260px); object-fit: contain; background: #000; }
 .preview-placeholder { min-height: 420px; }
