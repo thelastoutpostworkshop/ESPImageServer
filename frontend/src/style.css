@@ -6,6 +6,7 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .model-table__active { background: rgba(var(--v-theme-success), 0.08); }
 .model-table__description { max-width: 230px; }
 .app-container { max-width: 1440px; }
+/* Keep the primary controls above navigation drawers while they change mode. */
 .app-bar { z-index: 1202 !important; }
 .activity-drawer { border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); }
 .activity-drawer .v-navigation-drawer__content { display: flex; flex-direction: column; }

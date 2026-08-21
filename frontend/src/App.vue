@@ -1618,7 +1618,7 @@ onUnmounted(() => {
       </div>
     </v-snackbar>
 
-    <v-app-bar color="surface" border elevation="2" class="app-bar">
+    <v-app-bar name="primary-app-bar" order="-1" color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
       <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : undefined" @click="openActiveGeneration">
