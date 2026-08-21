@@ -1614,10 +1614,6 @@ onUnmounted(() => {
           </template>
         </v-list-item>
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="page = 'video'" />
-        <v-list-item prepend-icon="mdi-format-list-numbered" title="Queue" :active="page === 'queue'" @click="page = 'queue'">
-          <template #append><v-chip v-if="activeGenerationQueue.length" color="primary" size="x-small" variant="tonal">{{ activeGenerationQueue.length }}</v-chip></template>
-        </v-list-item>
-        <v-list-item prepend-icon="mdi-text-box-outline" title="Diagnostics" :active="page === 'diagnostics'" @click="page = 'diagnostics'" />
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
@@ -1625,7 +1621,13 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
       </v-list>
       <template #append>
-        <div class="pa-4 text-caption text-medium-emphasis">Images stay on your local network.</div>
+        <v-divider />
+        <v-list nav density="comfortable">
+          <v-list-item prepend-icon="mdi-format-list-numbered" title="Queue" :active="page === 'queue'" @click="page = 'queue'">
+            <template #append><v-chip v-if="activeGenerationQueue.length" color="primary" size="x-small" variant="tonal">{{ activeGenerationQueue.length }}</v-chip></template>
+          </v-list-item>
+          <v-list-item prepend-icon="mdi-text-box-outline" title="Diagnostics" :active="page === 'diagnostics'" @click="page = 'diagnostics'" />
+        </v-list>
       </template>
     </v-navigation-drawer>
 
