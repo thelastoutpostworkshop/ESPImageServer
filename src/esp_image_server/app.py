@@ -11,7 +11,7 @@ import logging
 import os
 from pathlib import Path
 import subprocess
-from threading import Lock, Timer
+from threading import Timer
 from typing import Protocol
 import webbrowser
 
@@ -29,7 +29,8 @@ from .display_commands import DisplayCommandStore
 from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
 from .generator import DiffusersGenerator
-from .generation_jobs import GenerationCancelled, GenerationJobStore
+from .generation_jobs import GenerationCancelled
+from .generation_queue import GenerationQueue
 from .generation_size import optimal_generation_size
 from .image_processor import to_jpeg
 from .image_library import ImageLibrary
@@ -38,7 +39,6 @@ from .mdns import MdnsAdvertiser
 from .models import MODELS, get_model, model_is_cached, model_settings, remove_cached_model
 from .model_settings import ModelSelectionStore
 from .video_generator import LTXVideoGenerator, VIDEO_MODELS, remove_cached_video_model, video_model_is_cached
-from .video_jobs import VideoJobStore
 from .video_library import VideoLibrary, bundled_ffmpeg_executable
 from .version import APP_VERSION
 
@@ -172,10 +172,9 @@ def create_app(
     model_selection_store: ModelSelectionStore | None = None,
     image_library: ImageLibrary | None = None,
     app_settings_store: AppSettingsStore | None = None,
-    generation_jobs: GenerationJobStore | None = None,
+    generation_queue: GenerationQueue | None = None,
     display_command_store: DisplayCommandStore | None = None,
     video_generator: LTXVideoGenerator | None = None,
-    video_jobs: VideoJobStore | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
     supplied_settings = settings is not None
@@ -192,13 +191,9 @@ def create_app(
     latest_image_store = latest_image_store or LatestImageStore()
     active_display_store = active_display_store or ActiveDisplayStore()
     display_settings_store = display_settings_store or DisplaySettingsStore()
-    generation_jobs = generation_jobs or GenerationJobStore()
+    generation_queue = generation_queue or GenerationQueue()
     display_command_store = display_command_store or DisplayCommandStore()
     video_generator = video_generator or LTXVideoGenerator()
-    video_jobs = video_jobs or VideoJobStore()
-    # Only one model family may own the GPU at a time. The lock covers the
-    # check, unload, and job creation so simultaneous requests cannot overlap.
-    generation_mode_lock = Lock()
     model_loading_status: dict[str, object] = {"active": False, "step": 0, "steps": 0, "stage": ""}
     video_output_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "videos"
     sd_thumbnail_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "display_sd_thumbnails"
@@ -242,8 +237,7 @@ def create_app(
         finally:
             if mdns is not None:
                 mdns.close()
-            generation_jobs.close()
-            video_jobs.close()
+            generation_queue.close()
 
     app = FastAPI(title="ESPImageServer", version=APP_VERSION, lifespan=lifespan)
     app.state.device_manager = device_manager
@@ -251,10 +245,9 @@ def create_app(
     app.state.active_display_store = active_display_store
     app.state.display_settings_store = display_settings_store
     app.state.model_selection_store = model_selection_store
-    app.state.generation_jobs = generation_jobs
+    app.state.generation_queue = generation_queue
     app.state.display_command_store = display_command_store
     app.state.image_library = image_library
-    app.state.video_jobs = video_jobs
     app.state.video_library = video_library
     app.state.app_settings_store = app_settings_store
     app.mount(
@@ -274,8 +267,9 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict[str, object]:
-        image_job = generation_jobs.active_job()
-        video_job = video_jobs.active_job()
+        active_job = generation_queue.active_job()
+        image_job = active_job if active_job and active_job.kind == "image" else None
+        video_job = active_job if active_job and active_job.kind == "video" else None
         return {
             "status": "ready" if generator.ready else "loading",
             "device": generator.device,
@@ -284,6 +278,7 @@ def create_app(
             "video_generating": video_job is not None,
             "active_image_job": image_job.as_dict() if image_job else None,
             "active_video_job": video_job.as_dict() if video_job else None,
+            "queue_depth": sum(1 for job in generation_queue.list() if job["status"] in {"queued", "running", "cancelling"}),
         }
 
     @app.get("/server-info")
@@ -341,15 +336,10 @@ def create_app(
     @app.post("/models/{model_id:path}/select")
     async def select_model(model_id: str) -> dict[str, object]:
         nonlocal active_model_id, active_settings
-        if generation_jobs.has_active_job():
+        if generation_queue.has_active_job():
             raise HTTPException(
                 status_code=409,
                 detail="Wait for the current image generation to finish before changing models",
-            )
-        if video_jobs.has_active_job():
-            raise HTTPException(
-                status_code=409,
-                detail="Wait for the current video generation to finish before loading an image model",
             )
         try:
             selected_settings = model_settings(settings, model_id)
@@ -380,10 +370,8 @@ def create_app(
             model = get_model(model_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail="Image model not found") from exc
-        if generation_jobs.has_active_job():
+        if generation_queue.has_active_job():
             raise HTTPException(status_code=409, detail="Wait for the current image generation to finish before removing an image model")
-        if video_jobs.has_active_job():
-            raise HTTPException(status_code=409, detail="Wait for the current video generation to finish before removing an image model")
         generator.unload()
         removed = remove_cached_model(model, active_settings.model_cache_dir)
         return {"removed": removed}
@@ -949,8 +937,8 @@ def create_app(
 
     @app.post("/generate", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
     async def generate(request: GenerateRequest) -> Response:
-        if video_jobs.has_active_job():
-            raise HTTPException(status_code=409, detail="Wait for the current video generation to finish before generating an image")
+        if generation_queue.has_active_job():
+            raise HTTPException(status_code=409, detail="Wait for queued generation work to finish before using the direct image endpoint")
         try:
             await run_in_threadpool(video_generator.unload)
             jpeg = await run_in_threadpool(generate_jpeg, request)
@@ -964,33 +952,41 @@ def create_app(
 
     @app.post("/generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
-        with generation_mode_lock:
-            if video_jobs.has_active_job():
-                raise HTTPException(
-                    status_code=409,
-                    detail="Wait for the current video generation to finish before generating an image",
-                )
-            video_generator.unload()
-            job = generation_jobs.create(lambda progress, is_cancelled: generate_jpeg(request, progress, is_cancelled))
+        job = generation_queue.create(
+            "image",
+            lambda progress, is_cancelled: (video_generator.unload(), generate_jpeg(request, progress, is_cancelled))[1],
+            {"label": request.prompt[:80], "model_id": active_model_id},
+        )
+        return job.as_dict()
+
+    @app.get("/generation-queue")
+    def list_generation_queue() -> list[dict[str, object]]:
+        return generation_queue.list()
+
+    @app.delete("/generation-queue/{job_id}")
+    def cancel_queued_generation(job_id: str) -> dict[str, object]:
+        job = generation_queue.cancel(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Generation job not found")
         return job.as_dict()
 
     @app.get("/generation-jobs/{job_id}")
     def generation_job(job_id: str) -> dict[str, object]:
-        job = generation_jobs.get(job_id)
+        job = generation_queue.get(job_id, "image")
         if job is None:
             raise HTTPException(status_code=404, detail="Generation job not found")
         return job.as_dict()
 
     @app.delete("/generation-jobs/{job_id}")
     def cancel_generation_job(job_id: str) -> dict[str, object]:
-        job = generation_jobs.cancel(job_id)
+        job = generation_queue.cancel(job_id, "image")
         if job is None:
             raise HTTPException(status_code=404, detail="Generation job not found")
         return job.as_dict()
 
     @app.get("/generation-jobs/{job_id}/image", response_class=Response)
     def generation_job_image(job_id: str) -> Response:
-        job = generation_jobs.get(job_id)
+        job = generation_queue.get(job_id, "image")
         if job is None:
             raise HTTPException(status_code=404, detail="Generation job not found")
         if job.status != "complete" or job.jpeg is None:
@@ -1031,8 +1027,8 @@ def create_app(
     def remove_video_model(model_id: str) -> dict[str, object]:
         if model_id not in VIDEO_MODELS:
             raise HTTPException(status_code=404, detail="Video model not found")
-        if video_jobs.has_active_job():
-            raise HTTPException(status_code=409, detail="Wait for the current video generation to finish before removing a video model")
+        if generation_queue.has_active_job():
+            raise HTTPException(status_code=409, detail="Wait for queued generation work to finish before removing a video model")
         video_generator.unload()
         removed = remove_cached_video_model(model_id)
         return {"removed": removed}
@@ -1052,57 +1048,49 @@ def create_app(
             ))
         if request.source_image_id and video_model["family"] == "wan":
             raise HTTPException(status_code=422, detail="Wan 2.1 T2V is text-to-video only; choose an LTX or HunyuanVideo model to animate an image")
-        with generation_mode_lock:
-            if generation_jobs.has_active_job():
-                raise HTTPException(
-                    status_code=409,
-                    detail="Wait for the current image generation to finish before generating a video",
-                )
-            generator.unload()
-            source_image_path = image_library.find_path(request.source_image_id) if request.source_image_id else None
-            if request.source_image_id and source_image_path is None:
-                raise HTTPException(status_code=404, detail="The selected Creation Gallery image was not found")
-            profile = active_display_store.get()
-            output_width = profile.width if profile else request.width
-            output_height = profile.height if profile else request.height
-            filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
-            output_path = video_output_path / filename
-            job = video_jobs.create(lambda progress, cancelled: video_generator.generate(
+        source_image_path = image_library.find_path(request.source_image_id) if request.source_image_id else None
+        if request.source_image_id and source_image_path is None:
+            raise HTTPException(status_code=404, detail="The selected Creation Gallery image was not found")
+        profile = active_display_store.get()
+        output_width = profile.width if profile else request.width
+        output_height = profile.height if profile else request.height
+        filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
+        output_path = video_output_path / filename
+        job = generation_queue.create("video", lambda progress, cancelled: (
+            generator.unload(), video_generator.generate(
                 request.prompt, output_width, output_height, request.num_frames, request.fps,
-            request.steps, request.seed, output_path, progress, cancelled, source_image_path,
-            request.model_id,
-            ))
-            job.metadata = {
-                "model": {"id": request.model_id, "name": video_model["name"]}, "prompt": request.prompt,
-                "steps": request.steps, "seed": request.seed, "frames": request.num_frames, "fps": request.fps,
-                "source_image_id": request.source_image_id,
-            }
+                request.steps, request.seed, output_path, progress, cancelled, source_image_path, request.model_id,
+            ))[1], {
+                "label": request.prompt[:80], "model": {"id": request.model_id, "name": video_model["name"]},
+                "prompt": request.prompt, "steps": request.steps, "seed": request.seed,
+                "frames": request.num_frames, "fps": request.fps, "source_image_id": request.source_image_id,
+            })
         return job.as_dict()
 
     @app.get("/video-generation-jobs/{job_id}")
     def video_generation_job(job_id: str) -> dict[str, object]:
-        job = video_jobs.get(job_id)
+        job = generation_queue.get(job_id, "video")
         if job is None:
             raise HTTPException(status_code=404, detail="Video generation job not found")
         return job.as_dict()
 
     @app.post("/video-generation-jobs/{job_id}/save", status_code=status.HTTP_201_CREATED)
     def save_video_to_creation_library(job_id: str) -> dict[str, object]:
-        job = video_jobs.get(job_id)
+        job = generation_queue.get(job_id, "video")
         if job is None or job.status != "complete" or job.video_path is None:
             raise HTTPException(status_code=409, detail="Video is not ready to save")
         return video_library.save(job.video_path, job.metadata or {})
 
     @app.delete("/video-generation-jobs/{job_id}")
     def cancel_video_generation_job(job_id: str) -> dict[str, object]:
-        job = video_jobs.cancel(job_id)
+        job = generation_queue.cancel(job_id, "video")
         if job is None:
             raise HTTPException(status_code=404, detail="Video generation job not found")
         return job.as_dict()
 
     @app.get("/video-generation-jobs/{job_id}/video")
     def video_generation_job_video(job_id: str) -> FileResponse:
-        job = video_jobs.get(job_id)
+        job = generation_queue.get(job_id, "video")
         if job is None:
             raise HTTPException(status_code=404, detail="Video generation job not found")
         if job.status != "complete" or job.video_path is None or not job.video_path.is_file():

@@ -164,6 +164,8 @@ const settingsError = ref('')
 const generating = ref(false)
 const cancelling = ref(false)
 const activeJobId = ref('')
+const generationQueue = ref([])
+const cancellingQueueJobId = ref('')
 const generationProgress = ref(0)
 const generationStage = ref('')
 const steps = ref(savedGenerationSettings.steps)
@@ -462,10 +464,34 @@ async function loadServerStatus() {
   }
 }
 
+async function loadGenerationQueue() {
+  try {
+    const response = await fetch('/generation-queue', { cache: 'no-store' })
+    generationQueue.value = response.ok ? await response.json() : []
+  } catch {
+    generationQueue.value = []
+  }
+}
+
+async function cancelQueuedGeneration(job) {
+  if (!job?.cancellable || cancellingQueueJobId.value) return
+  cancellingQueueJobId.value = job.id
+  try {
+    const response = await fetch(`/generation-queue/${encodeURIComponent(job.id)}`, { method: 'DELETE' })
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    await loadGenerationQueue()
+  } finally {
+    cancellingQueueJobId.value = ''
+  }
+}
+
 async function prepareSelectedModel() {
   const model = models.value.find(candidate => candidate.id === activeModelId.value)
   if (!model) throw new Error('Choose an image model before generating.')
-  if (model.active && health.value?.status === 'ready') return
+  // The queued job activates this already-selected model when it reaches the
+  // front of the shared GPU queue. Avoid trying to switch models while another
+  // job is running just because its pipeline was unloaded for video work.
+  if (model.active) return
   const abortController = new AbortController()
   modelSwitchAbortController = abortController
   generationStage.value = model.installed
@@ -1300,6 +1326,8 @@ async function generate() {
     }
     const job = await response.json()
     activeJobId.value = job.id
+    status.value = `Image job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
+    await loadGenerationQueue()
     let currentJob = job
     while (!['complete', 'failed', 'cancelled'].includes(currentJob.status)) {
       await new Promise(resolve => window.setTimeout(resolve, 350))
@@ -1374,7 +1402,6 @@ async function cancelGeneration() {
 }
 
 async function generateVideo() {
-  if (generatingVideo.value) return
   generatingVideo.value = true
   videoError.value = ''
   videoProgress.value = 0
@@ -1401,6 +1428,8 @@ async function generateVideo() {
     }
     const job = await response.json()
     activeVideoJobId.value = job.id
+    videoStage.value = `Video job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
+    await loadGenerationQueue()
     if (cancelVideoOnStart.value) {
       cancelVideoOnStart.value = false
       await cancelVideoGeneration()
@@ -1478,6 +1507,7 @@ onMounted(async () => {
   await loadSavedImages()
   await loadSavedVideos()
   await loadAppSettings()
+  await loadGenerationQueue()
   if (metadataPanePinned.value && !mobile.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
     loadServerStatus()
@@ -1485,6 +1515,7 @@ onMounted(async () => {
     loadModels()
     loadVideoModels()
     loadDisplaySdCard()
+    loadGenerationQueue()
   }, 5000)
 })
 
@@ -1758,6 +1789,21 @@ onUnmounted(() => {
 
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
+        <v-card v-if="generationQueue.some(job => ['queued', 'running', 'cancelling'].includes(job.status))" class="mb-5" variant="outlined">
+          <v-card-title class="d-flex align-center text-h6">
+            <v-icon class="mr-2">mdi-format-list-numbered</v-icon>Generation queue
+            <v-spacer />
+            <v-chip size="small" variant="tonal">{{ generationQueue.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)).length }} active</v-chip>
+          </v-card-title>
+          <v-list density="compact">
+            <v-list-item v-for="job in generationQueue.filter(item => ['queued', 'running', 'cancelling'].includes(item.status))" :key="job.id">
+              <template #prepend><v-icon :icon="job.kind === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline'" /></template>
+              <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
+              <v-list-item-subtitle>{{ job.status === 'queued' ? `Waiting · position ${job.queue_position}` : job.stage }}<span v-if="job.status !== 'queued' && job.progress"> · {{ job.progress }}%</span></v-list-item-subtitle>
+              <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
+            </v-list-item>
+          </v-list>
+        </v-card>
         <template v-if="page === 'generate'">
         <v-row>
         <v-col cols="12" lg="5">
@@ -1848,7 +1894,7 @@ onUnmounted(() => {
                   <v-btn class="mt-1" size="small" variant="text" prepend-icon="mdi-dice-5" @click="chooseRandomSeed">Create random seed</v-btn>
                 </v-col>
               </v-row>
-              <v-btn type="submit" color="primary" :disabled="generationBusy" prepend-icon="mdi-image-plus">
+              <v-btn type="submit" color="primary" :disabled="models.length === 0" prepend-icon="mdi-image-plus">
                 Generate image
               </v-btn>
               <v-btn v-if="generating" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
@@ -1949,7 +1995,7 @@ onUnmounted(() => {
                 <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'hunyuanvideo-1.5-480p' ? '30 is recommended for HunyuanVideo 1.5.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
-              <v-btn type="submit" class="mt-4" color="primary" :disabled="generationBusy || health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
+              <v-btn type="submit" class="mt-4" color="primary" :disabled="health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">Generate video</v-btn>
               <v-btn v-if="generatingVideo" class="ml-2 mt-4" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
             </v-form>
             <div v-if="generatingVideo" class="mt-5">
