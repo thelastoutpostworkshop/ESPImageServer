@@ -14,8 +14,8 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .activity-drawer__logs { max-height: 100%; overflow-y: auto; }
 .queue-job-thumbnail { background: rgb(var(--v-theme-surface-variant)); }
 .queue-job-thumbnail video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.console-output { height: min(52vh, 520px); overflow: auto; border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); border-radius: 4px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface)); font: 12px/1.45 Consolas, 'Cascadia Code', monospace; white-space: pre-wrap; }
-.console-output pre { margin: 0; padding: 12px; font: inherit; white-space: inherit; }
+.console-output { height: min(52vh, 520px); overflow: auto; border: 1px solid rgba(255, 255, 255, 0.20); border-radius: 6px; background: #0b0f14; color: #e6edf3; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05); font: 13px/1.55 Consolas, 'Cascadia Code', ui-monospace, monospace; tab-size: 2; }
+.console-output pre { min-width: max-content; margin: 0; padding: 16px; font: inherit; white-space: pre; }
 .generated-image-card .v-img { max-height: calc(100vh - 220px); }
 .generated-video-card video { display: block; max-height: calc(100vh - 260px); object-fit: contain; background: #000; }
 .preview-placeholder { min-height: 420px; }

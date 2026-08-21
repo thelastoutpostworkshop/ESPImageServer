@@ -188,6 +188,8 @@ const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
 const page = ref('generate')
 let statusTimer
+let consoleRefreshTimer
+let consoleRequestInFlight = false
 let modelSwitchAbortController
 let imageLibraryResizeStartX = 0
 let imageLibraryResizeStartWidth = 0
@@ -355,10 +357,12 @@ watch(activityPanelOpen, isOpen => {
 
 watch(diagnosticsTab, tab => {
   if (tab === 'console' && consoleAutoScroll.value) nextTick(scrollConsoleToBottom)
+  updateConsoleRefresh()
 })
 
 watch(page, (nextPage, previousPage) => {
   if (previousPage === 'display-experience' && nextPage !== 'display-experience') void stopDisplayExperiencePreview()
+  updateConsoleRefresh()
 })
 
 const displayMessage = computed(() => {
@@ -629,6 +633,8 @@ async function loadDiagnostics() {
 }
 
 async function loadConsoleOutput() {
+  if (consoleRequestInFlight) return
+  consoleRequestInFlight = true
   try {
     const response = await fetch('/console-output', { cache: 'no-store' })
     consoleOutput.value = response.ok ? await response.json() : []
@@ -636,7 +642,17 @@ async function loadConsoleOutput() {
     if (diagnosticsTab.value === 'console' && consoleAutoScroll.value) scrollConsoleToBottom()
   } catch {
     consoleOutput.value = []
+  } finally {
+    consoleRequestInFlight = false
   }
+}
+
+function updateConsoleRefresh() {
+  window.clearInterval(consoleRefreshTimer)
+  consoleRefreshTimer = undefined
+  if (page.value !== 'diagnostics' || diagnosticsTab.value !== 'console') return
+  void loadConsoleOutput()
+  consoleRefreshTimer = window.setInterval(loadConsoleOutput, 1000)
 }
 
 async function clearDiagnostics() {
@@ -1717,7 +1733,6 @@ onMounted(async () => {
   await loadAppSettings()
   await loadGenerationQueue()
   await clearDiagnostics()
-  await loadConsoleOutput()
   if (metadataPanePinned.value && !mobile.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
     loadServerStatus()
@@ -1727,12 +1742,12 @@ onMounted(async () => {
     loadDisplaySdCard()
     loadGenerationQueue()
     loadDiagnostics()
-    loadConsoleOutput()
   }, 5000)
 })
 
 onUnmounted(() => {
   window.clearInterval(statusTimer)
+  window.clearInterval(consoleRefreshTimer)
   modelSwitchAbortController?.abort()
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
@@ -2086,7 +2101,7 @@ onUnmounted(() => {
                 </div>
                 <div class="d-flex flex-wrap justify-space-between ga-2 mt-3 text-caption text-medium-emphasis">
                   <span>{{ filteredConsoleOutput.length }} of {{ consoleOutput.length }} recent log entries</span>
-                  <span>Server log output refreshes every 5 seconds. Secrets are redacted.</span>
+                  <span>Live output refreshes every second while this tab is active. Secrets are redacted.</span>
                 </div>
               </v-card-text>
             </v-window-item>
