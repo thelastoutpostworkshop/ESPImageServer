@@ -1570,7 +1570,7 @@ onMounted(async () => {
   await loadSavedVideos()
   await loadAppSettings()
   await loadGenerationQueue()
-  await loadDiagnostics()
+  await clearDiagnostics()
   if (metadataPanePinned.value && !mobile.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
     loadServerStatus()
