@@ -167,7 +167,7 @@ const activeJobId = ref('')
 const generationQueue = ref([])
 const cancellingQueueJobId = ref('')
 const activityPanelOpen = ref(window.localStorage.getItem('esp-image-server.activity-panel-open') === 'true')
-const activityPanelTab = ref('queue')
+const activityPanelTab = ref('logs')
 const diagnostics = ref([])
 const latestDiagnosticError = ref('')
 const generationProgress = ref(0)
@@ -187,6 +187,7 @@ const selectedImageModelName = computed(() => models.value.find(model => model.i
 const imageGenerationActive = computed(() => generating.value || Boolean(generationStage.value) || health.value?.image_generating === true)
 const videoGenerationActive = computed(() => generatingVideo.value || health.value?.video_generating === true)
 const generationBusy = computed(() => imageGenerationActive.value || videoGenerationActive.value)
+const activeGenerationQueue = computed(() => generationQueue.value.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)))
 const appBarStatus = computed(() => {
   if (videoGenerationActive.value) {
     const job = health.value?.active_video_job
@@ -488,8 +489,7 @@ async function loadDiagnostics() {
     const newestError = diagnostics.value.find(entry => entry.level === 'error')?.timestamp || ''
     if (newestError && newestError !== latestDiagnosticError.value) {
       latestDiagnosticError.value = newestError
-      activityPanelTab.value = 'logs'
-      activityPanelOpen.value = true
+      page.value = 'diagnostics'
     }
   } catch {
     diagnostics.value = []
@@ -1589,7 +1589,7 @@ onUnmounted(() => {
         <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
       <v-btn v-if="appBarCanCancel" class="mr-1" color="warning" icon="mdi-cancel" size="small" variant="text" :loading="appBarCancelling" :disabled="appBarCancelling" aria-label="Cancel active generation" title="Cancel active generation" @click="cancelActiveGeneration" />
-      <v-btn class="mr-1" icon="mdi-console-line" size="small" variant="text" :color="activityPanelOpen ? 'primary' : undefined" :aria-label="activityPanelOpen ? 'Hide activity panel' : 'Show activity panel'" title="Activity and diagnostics" @click="activityPanelOpen = !activityPanelOpen" />
+      <v-btn class="mr-1" icon="mdi-text-box-outline" size="small" variant="text" :color="page === 'diagnostics' ? 'primary' : undefined" aria-label="Open diagnostics" title="Diagnostics" @click="page = 'diagnostics'" />
       <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="!display?.connected ? 'Open display connection help' : undefined" @click="!display?.connected && openDisplayHelp()">
         <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}</span>
       </v-chip>
@@ -1614,7 +1614,10 @@ onUnmounted(() => {
           </template>
         </v-list-item>
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="page = 'video'" />
-        <v-list-item prepend-icon="mdi-console-line" title="Activity" @click="activityPanelOpen = true" />
+        <v-list-item prepend-icon="mdi-format-list-numbered" title="Queue" :active="page === 'queue'" @click="page = 'queue'">
+          <template #append><v-chip v-if="activeGenerationQueue.length" color="primary" size="x-small" variant="tonal">{{ activeGenerationQueue.length }}</v-chip></template>
+        </v-list-item>
+        <v-list-item prepend-icon="mdi-text-box-outline" title="Diagnostics" :active="page === 'diagnostics'" @click="page = 'diagnostics'" />
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
@@ -1827,20 +1830,36 @@ onUnmounted(() => {
 
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
-        <v-card v-if="false" class="mb-5" variant="outlined">
+        <v-card v-if="page === 'queue'" class="mx-auto" max-width="960">
           <v-card-title class="d-flex align-center text-h6">
             <v-icon class="mr-2">mdi-format-list-numbered</v-icon>Generation queue
             <v-spacer />
-            <v-chip size="small" variant="tonal">{{ generationQueue.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)).length }} active</v-chip>
+            <v-chip size="small" variant="tonal">{{ activeGenerationQueue.length }} active</v-chip>
           </v-card-title>
-          <v-list density="compact">
-            <v-list-item v-for="job in generationQueue.filter(item => ['queued', 'running', 'cancelling'].includes(item.status))" :key="job.id">
+          <v-list v-if="activeGenerationQueue.length" density="comfortable" lines="two">
+            <v-list-item v-for="job in activeGenerationQueue" :key="job.id">
               <template #prepend><v-icon :icon="job.kind === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline'" /></template>
               <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
               <v-list-item-subtitle>{{ job.status === 'queued' ? `Waiting · position ${job.queue_position}` : job.stage }}<span v-if="job.status !== 'queued' && job.progress"> · {{ job.progress }}%</span></v-list-item-subtitle>
               <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
             </v-list-item>
           </v-list>
+          <v-card-text v-else class="text-medium-emphasis py-8 text-center">No image or video jobs are waiting.</v-card-text>
+        </v-card>
+        <v-card v-if="page === 'diagnostics'" class="mx-auto" max-width="960">
+          <v-card-title class="d-flex align-center text-h6">
+            <v-icon class="mr-2" icon="mdi-text-box-outline" />Diagnostics
+            <v-spacer />
+            <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyDiagnostics">Copy diagnostics</v-btn>
+            <v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearDiagnostics">Clear</v-btn>
+          </v-card-title>
+          <v-list v-if="diagnostics.length" density="comfortable" lines="two">
+            <v-list-item v-for="entry in diagnostics" :key="`${entry.timestamp}-${entry.message}`" :class="entry.level === 'error' ? 'text-error' : ''">
+              <v-list-item-title>{{ entry.message }}</v-list-item-title>
+              <v-list-item-subtitle>{{ new Date(entry.timestamp).toLocaleTimeString() }} · {{ entry.source }}</v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+          <v-card-text v-else class="text-medium-emphasis py-8 text-center">No diagnostic events yet.</v-card-text>
         </v-card>
         <template v-if="page === 'generate'">
         <v-row>
@@ -1991,7 +2010,7 @@ onUnmounted(() => {
         </v-row>
         </template>
 
-        <v-card v-else-if="page === 'video'" class="mx-auto" max-width="1400">
+        <v-card v-if="page === 'video'" class="mx-auto" max-width="1400">
           <v-card-title class="text-h5 pt-5">Generate video</v-card-title>
           <v-card-text>
             <v-alert v-if="health?.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
@@ -2063,7 +2082,7 @@ onUnmounted(() => {
           </v-card-actions>
         </v-card>
 
-        <v-card v-else-if="page === 'models'">
+        <v-card v-if="page === 'models'">
           <v-card-title class="text-h5 pt-5">Image models</v-card-title>
           <v-card-text class="text-body-1">
             Compare the available models. Choose the model to use from the Generate image page; it downloads once and stays on this computer.
@@ -2159,7 +2178,7 @@ onUnmounted(() => {
           </v-list>
         </v-card>
 
-        <v-card v-else-if="page === 'about'">
+        <v-card v-if="page === 'about'">
           <v-card-title>About ESPImageServer</v-card-title>
           <v-card-text class="text-body-1">
             Generate local AI images and show them on a connected ESP32 display. Images remain on your local network.
@@ -2179,7 +2198,7 @@ onUnmounted(() => {
           </v-list>
         </v-card>
 
-        <v-card v-else-if="page === 'display-experience'" class="settings-card">
+        <v-card v-if="page === 'display-experience'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
           <v-card-text>
             <v-progress-linear v-if="displayExperienceLoading" indeterminate color="primary" class="mb-4" />
@@ -2225,7 +2244,7 @@ onUnmounted(() => {
           </v-card-text>
         </v-card>
 
-        <v-card v-else-if="page === 'sd-card'">
+        <v-card v-if="page === 'sd-card'">
           <v-card-title class="d-flex align-center text-h5 pt-5">
             Display SD Card
             <v-spacer />
@@ -2286,7 +2305,7 @@ onUnmounted(() => {
           </v-card-text>
         </v-card>
 
-        <v-card v-else class="settings-card">
+        <v-card v-if="page === 'settings'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Settings</v-card-title>
           <v-card-text>
             <v-form @submit.prevent="saveAppSettings">
@@ -2348,7 +2367,7 @@ onUnmounted(() => {
         </v-card>
       </v-container>
     </v-main>
-    <v-navigation-drawer
+    <v-navigation-drawer v-if="false"
       v-model="activityPanelOpen"
       class="activity-drawer"
       location="bottom"
@@ -2359,20 +2378,17 @@ onUnmounted(() => {
       :height="mobile ? '72vh' : 360"
     >
       <v-toolbar density="comfortable" color="surface">
-        <v-icon class="ml-4 mr-3" icon="mdi-console-line" />
-        <v-toolbar-title class="text-subtitle-1">Activity &amp; diagnostics</v-toolbar-title>
-        <v-chip v-if="generationQueue.some(job => ['queued', 'running', 'cancelling'].includes(job.status))" class="mr-2" color="primary" size="small" variant="tonal">
-          {{ generationQueue.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)).length }} active
-        </v-chip>
+        <v-icon class="ml-4 mr-3" icon="mdi-text-box-outline" />
+        <v-toolbar-title class="text-subtitle-1">Diagnostics</v-toolbar-title>
         <v-btn icon="mdi-close" variant="text" size="small" aria-label="Close activity panel" @click="activityPanelOpen = false" />
       </v-toolbar>
       <v-tabs v-model="activityPanelTab" density="compact" color="primary">
-          <v-tab value="queue" prepend-icon="mdi-format-list-numbered">Queue <span v-if="generationQueue.some(job => ['queued', 'running', 'cancelling'].includes(job.status))" class="ml-1">({{ generationQueue.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)).length }})</span></v-tab>
+          <v-tab v-if="false" value="queue" prepend-icon="mdi-format-list-numbered">Queue</v-tab>
           <v-tab value="logs" prepend-icon="mdi-text-box-outline">Diagnostics</v-tab>
         </v-tabs>
         <v-divider />
         <v-window v-model="activityPanelTab" class="activity-drawer__content">
-          <v-window-item value="queue">
+          <v-window-item v-if="false" value="queue">
             <v-list v-if="generationQueue.some(job => ['queued', 'running', 'cancelling'].includes(job.status))" density="compact">
               <v-list-item v-for="job in generationQueue.filter(item => ['queued', 'running', 'cancelling'].includes(item.status))" :key="job.id">
                 <template #prepend><v-icon :icon="job.kind === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline'" /></template>
