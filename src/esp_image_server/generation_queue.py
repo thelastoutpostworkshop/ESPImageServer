@@ -100,6 +100,15 @@ class GenerationQueue:
                 job.status, job.stage = "cancelling", f"Cancelling {job.kind} generation"
             return job
 
+    def clear_finished(self) -> int:
+        """Remove completed, failed, and cancelled jobs while preserving active work."""
+        with self._lock:
+            finished_ids = [job_id for job_id in self._order if self._jobs[job_id].status in {"complete", "failed", "cancelled"}]
+            for job_id in finished_ids:
+                del self._jobs[job_id]
+            self._order = [job_id for job_id in self._order if job_id not in finished_ids]
+            return len(finished_ids)
+
     def close(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
 

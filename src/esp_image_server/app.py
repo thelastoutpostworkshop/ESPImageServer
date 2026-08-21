@@ -979,6 +979,10 @@ def create_app(
     def list_generation_queue() -> list[dict[str, object]]:
         return generation_queue.list()
 
+    @app.delete("/generation-queue")
+    def clear_finished_generation_queue() -> dict[str, int]:
+        return {"cleared": generation_queue.clear_finished()}
+
     @app.delete("/generation-queue/{job_id}")
     def cancel_queued_generation(job_id: str) -> dict[str, object]:
         job = generation_queue.cancel(job_id)

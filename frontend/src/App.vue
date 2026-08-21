@@ -520,6 +520,33 @@ async function cancelQueuedGeneration(job) {
   }
 }
 
+async function clearFinishedGenerationQueue() {
+  const response = await fetch('/generation-queue', { method: 'DELETE' })
+  if (!response.ok) throw new Error(`Request failed (${response.status})`)
+  await loadGenerationQueue()
+}
+
+async function openQueuedGeneration(job) {
+  if (job.status !== 'complete') return
+  if (job.kind === 'image') {
+    const response = await fetch(`/generation-jobs/${encodeURIComponent(job.id)}/image`)
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    const imageBlob = await response.blob()
+    if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+    imageUrl.value = URL.createObjectURL(imageBlob)
+    previewUrl.value = await createDisplayPreview(imageBlob)
+    previewFittedFor.value = display.value?.connected ? display.value : null
+    page.value = 'generate'
+    return
+  }
+  const response = await fetch(`/video-generation-jobs/${encodeURIComponent(job.id)}/video`)
+  if (!response.ok) throw new Error(`Request failed (${response.status})`)
+  if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
+  videoUrl.value = URL.createObjectURL(await response.blob())
+  page.value = 'video'
+}
+
 async function prepareSelectedModel() {
   const model = models.value.find(candidate => candidate.id === activeModelId.value)
   if (!model) throw new Error('Choose an image model before generating.')
@@ -1833,13 +1860,19 @@ onUnmounted(() => {
             <v-icon class="mr-2">mdi-format-list-numbered</v-icon>Generation queue
             <v-spacer />
             <v-chip size="small" variant="tonal">{{ activeGenerationQueue.length }} active</v-chip>
+            <v-btn v-if="finishedGenerationQueue.length" class="ml-2" size="small" variant="text" color="error" prepend-icon="mdi-delete-sweep-outline" @click="clearFinishedGenerationQueue">Clear finished</v-btn>
           </v-card-title>
           <v-list v-if="activeGenerationQueue.length" density="comfortable" lines="two">
             <v-list-item v-for="job in activeGenerationQueue" :key="job.id">
-              <template #prepend><v-icon :icon="job.kind === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline'" /></template>
+              <template #prepend>
+                <v-avatar rounded="sm" size="56" class="queue-job-thumbnail">
+                  <v-icon :icon="job.kind === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline'" />
+                </v-avatar>
+              </template>
               <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
               <v-list-item-subtitle>{{ job.status === 'queued' ? `Waiting · position ${job.queue_position}` : job.stage }}<span v-if="job.status !== 'queued' && job.progress"> · {{ job.progress }}%</span></v-list-item-subtitle>
               <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
+              <v-progress-linear v-if="job.status !== 'queued'" class="mt-2" :model-value="job.progress" color="primary" height="6" rounded />
             </v-list-item>
           </v-list>
           <v-card-text v-if="!activeGenerationQueue.length" class="text-medium-emphasis py-6 text-center">No image or video jobs are waiting.</v-card-text>
@@ -1848,10 +1881,19 @@ onUnmounted(() => {
             <div class="px-4 pt-4 text-overline text-medium-emphasis">Recent jobs</div>
             <v-list density="comfortable" lines="two">
               <v-list-item v-for="job in finishedGenerationQueue" :key="job.id">
-                <template #prepend><v-icon :color="job.status === 'complete' ? 'success' : job.status === 'failed' ? 'error' : 'warning'" :icon="job.status === 'complete' ? 'mdi-check-circle' : job.status === 'failed' ? 'mdi-alert-circle' : 'mdi-cancel'" /></template>
+                <template #prepend>
+                  <v-avatar v-if="job.status === 'complete'" rounded="sm" size="56" class="queue-job-thumbnail">
+                    <v-img v-if="job.kind === 'image'" :src="`/generation-jobs/${encodeURIComponent(job.id)}/image`" cover />
+                    <video v-else :src="`/video-generation-jobs/${encodeURIComponent(job.id)}/video`" muted preload="metadata" />
+                  </v-avatar>
+                  <v-icon v-else :color="job.status === 'failed' ? 'error' : 'warning'" :icon="job.status === 'failed' ? 'mdi-alert-circle' : 'mdi-cancel'" />
+                </template>
                 <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
                 <v-list-item-subtitle>{{ job.status === 'complete' ? `${job.kind === 'video' ? 'Video' : 'Image'} generation complete` : job.error || job.stage }}</v-list-item-subtitle>
-                <template #append><v-chip :color="job.status === 'complete' ? 'success' : job.status === 'failed' ? 'error' : 'warning'" size="small" variant="tonal">{{ job.status === 'complete' ? 'Complete' : job.status === 'failed' ? 'Failed' : 'Cancelled' }}</v-chip></template>
+                <template #append>
+                  <v-btn v-if="job.status === 'complete'" icon="mdi-open-in-new" size="small" variant="text" :aria-label="`Open completed ${job.kind}`" @click="openQueuedGeneration(job)" />
+                  <v-chip :color="job.status === 'complete' ? 'success' : job.status === 'failed' ? 'error' : 'warning'" size="small" variant="tonal">{{ job.status === 'complete' ? 'Complete' : job.status === 'failed' ? 'Failed' : 'Cancelled' }}</v-chip>
+                </template>
               </v-list-item>
             </v-list>
           </template>

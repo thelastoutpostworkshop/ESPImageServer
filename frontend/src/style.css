@@ -11,6 +11,8 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .activity-drawer .v-navigation-drawer__content { display: flex; flex-direction: column; }
 .activity-drawer__content { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .activity-drawer__logs { max-height: 100%; overflow-y: auto; }
+.queue-job-thumbnail { background: rgb(var(--v-theme-surface-variant)); }
+.queue-job-thumbnail video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .generated-image-card .v-img { max-height: calc(100vh - 220px); }
 .generated-video-card video { display: block; max-height: calc(100vh - 260px); object-fit: contain; background: #000; }
 .preview-placeholder { min-height: 420px; }
