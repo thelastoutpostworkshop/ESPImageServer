@@ -713,10 +713,20 @@ def create_app(
         return device_manager.list_devices()
 
     @app.get("/latest.jpg", response_class=Response)
-    def latest_image(if_none_match: str | None = Header(default=None)) -> Response:
+    def latest_image(
+        if_none_match: str | None = Header(default=None),
+        width: int | None = Query(default=None, ge=1, le=1024),
+        height: int | None = Query(default=None, ge=1, le=1024),
+    ) -> Response:
         image = latest_image_store.get()
         if image is None:
             return Response(status_code=status.HTTP_204_NO_CONTENT)
+        if (width is None) != (height is None):
+            raise HTTPException(status_code=422, detail="Width and height must be provided together")
+        if width is not None and height is not None:
+            with Image.open(BytesIO(image.jpeg)) as source:
+                jpeg = to_jpeg(source, width=width, height=height, quality=jpeg_quality)
+            return Response(content=jpeg, media_type="image/jpeg")
         etag = f'"{image.image_id}"'
         if if_none_match == etag:
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
@@ -756,7 +766,7 @@ def create_app(
         try:
             if not output_path.is_file() or output_path.stat().st_mtime < video_path.stat().st_mtime:
                 subprocess.run(
-                    [ffmpeg, "-y", "-loglevel", "error", "-i", str(video_path), "-vf", f"scale={width}:{height}",
+                    [ffmpeg, "-y", "-loglevel", "error", "-i", str(video_path), "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}",
                      "-r", str(fps), "-an", "-c:v", "mjpeg", "-pix_fmt", "yuvj420p", "-color_range", "pc",
                      "-q:v", str(video_jpeg_quality), "-f", "mjpeg", str(output_path)],
                     capture_output=True, check=True, timeout=300,
@@ -793,10 +803,23 @@ def create_app(
         return image_library.save(jpeg, metadata)
 
     @app.get("/saved-images/{image_id}/image", response_class=Response)
-    def saved_image(image_id: str) -> FileResponse:
+    def saved_image(
+        image_id: str,
+        width: int | None = Query(default=None, ge=1, le=1024),
+        height: int | None = Query(default=None, ge=1, le=1024),
+    ) -> Response:
         image_path = image_library.find_path(image_id)
         if image_path is None:
             raise HTTPException(status_code=404, detail="Saved image not found")
+        if (width is None) != (height is None):
+            raise HTTPException(status_code=422, detail="Width and height must be provided together")
+        if width is not None and height is not None:
+            try:
+                with Image.open(image_path) as source:
+                    jpeg = to_jpeg(source, width=width, height=height, quality=jpeg_quality)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail=f"Could not prepare saved image for the display: {exc}") from exc
+            return Response(content=jpeg, media_type="image/jpeg")
         return FileResponse(image_path, media_type="image/jpeg", filename=image_path.name)
 
     @app.post("/saved-images/{image_id}/display", status_code=status.HTTP_202_ACCEPTED)

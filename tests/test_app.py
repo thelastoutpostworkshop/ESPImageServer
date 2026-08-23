@@ -468,6 +468,8 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
     assert "-pix_fmt" in ffmpeg_commands[0]
     assert ffmpeg_commands[0][ffmpeg_commands[0].index("-pix_fmt") + 1] == "yuvj420p"
     assert ffmpeg_commands[0][ffmpeg_commands[0].index("-q:v") + 1] == "10"
+    assert any("force_original_aspect_ratio=increase" in argument for argument in ffmpeg_commands[0])
+    assert any("crop=480:272" in argument for argument in ffmpeg_commands[0])
 
 
 def test_video_generation_metadata_records_the_active_display() -> None:
@@ -499,6 +501,20 @@ def test_selecting_a_saved_image_makes_it_available_to_the_esp32(tmp_path) -> No
 
     assert selected.status_code == 202
     assert Image.open(BytesIO(latest.content)).size == (20, 10)
+
+
+def test_saved_image_can_be_center_cropped_for_a_display_sd_card(tmp_path) -> None:
+    library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
+    source = BytesIO()
+    Image.new("RGB", (64, 32), "red").save(source, format="JPEG")
+    record = library.save(source.getvalue(), {"prompt": "wide saved creation"})
+    app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+
+    with TestClient(app) as client:
+        prepared = client.get(f"/saved-images/{record['id']}/image?width=20&height=20")
+
+    assert prepared.status_code == 200
+    assert Image.open(BytesIO(prepared.content)).size == (20, 20)
 
 
 def test_display_can_acknowledge_a_request_to_save_the_latest_image_to_sd_card() -> None:
