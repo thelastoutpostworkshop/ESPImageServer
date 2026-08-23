@@ -1873,20 +1873,16 @@ onUnmounted(() => {
           <section v-for="group in savedImageGroups" :key="group.modelName" class="saved-image-group">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
             <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
-              <v-tooltip v-for="savedImage in group.images" :key="savedImage.id" location="end" max-width="300">
+              <v-tooltip v-for="savedImage in group.images" :key="savedImage.id" location="end" max-width="260" open-delay="800">
                 <template #activator="{ props }">
                   <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
                     <v-img :src="`/saved-images/${encodeURIComponent(savedImage.id)}/thumbnail`" aspect-ratio="1.33" cover />
                     <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
                   </v-card>
                 </template>
-                <div class="text-body-2">
-                  <div><strong>Model:</strong> {{ savedImage.metadata?.model?.name || 'ESPImageServer' }}</div>
-                  <div class="mt-1"><strong>Prompt:</strong> {{ savedImage.metadata?.prompt || 'Generated image' }}</div>
-                  <div class="mt-1"><strong>Steps:</strong> {{ savedImage.metadata?.steps ?? '—' }}</div>
-                  <div><strong>Seed:</strong> {{ savedImage.metadata?.seed ?? 'Random seed' }}</div>
-                  <div><strong>Rotation:</strong> {{ savedImage.metadata?.rotation || 0 }}°</div>
-                  <div><strong>Created:</strong> {{ formatDateTime(savedImage.created_at) }}</div>
+                <div class="text-body-2 saved-creation-tooltip">
+                  <div class="font-weight-bold">{{ savedImage.metadata?.model?.name || 'ESPImageServer' }}</div>
+                  <div class="saved-creation-tooltip__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
                 </div>
               </v-tooltip>
             </div>
@@ -1903,7 +1899,7 @@ onUnmounted(() => {
           <section v-for="group in savedVideoGroups" :key="group.modelName" class="saved-image-group mt-6">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
             <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
-            <v-tooltip v-for="savedVideo in group.videos" :key="savedVideo.id" location="end" max-width="300">
+            <v-tooltip v-for="savedVideo in group.videos" :key="savedVideo.id" location="end" max-width="260" open-delay="800">
               <template #activator="{ props }">
                 <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
                   <v-img v-if="savedVideo.thumbnail_filename" :src="`/saved-videos/${encodeURIComponent(savedVideo.id)}/thumbnail`" aspect-ratio="1.33" cover />
@@ -1911,12 +1907,9 @@ onUnmounted(() => {
                   <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
                 </v-card>
               </template>
-              <div class="text-body-2">
-                <div><strong>Model:</strong> {{ savedVideo.metadata?.model?.name || 'LTX-Video' }}</div>
-                <div class="mt-1"><strong>Prompt:</strong> {{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
-                <div><strong>Frames:</strong> {{ savedVideo.metadata?.frames }} · {{ savedVideo.metadata?.fps }} fps</div>
-                <div><strong>Steps:</strong> {{ savedVideo.metadata?.steps }} · <strong>Seed:</strong> {{ savedVideo.metadata?.seed ?? 'Random seed' }}</div>
-                <div><strong>Created:</strong> {{ formatDateTime(savedVideo.created_at) }}</div>
+              <div class="text-body-2 saved-creation-tooltip">
+                <div class="font-weight-bold">{{ savedVideo.metadata?.model?.name || 'LTX-Video' }}</div>
+                <div class="saved-creation-tooltip__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
               </div>
             </v-tooltip>
             </div>

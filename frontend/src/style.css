@@ -28,6 +28,7 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .saved-image-thumbnail { width: var(--thumbnail-size); cursor: pointer; overflow: hidden; }
 .saved-image-thumbnail:hover { border-color: rgb(var(--v-theme-primary)); }
 .saved-image-thumbnail__prompt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-creation-tooltip__prompt { display: -webkit-box; margin-top: 4px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .model-switch-dialog__heading { min-width: 0; }
 .model-switch-dialog__heading > div { overflow-wrap: anywhere; }
 .image-library-resize-handle { position: absolute; z-index: 2; top: 0; bottom: 0; left: -6px; width: 12px; cursor: col-resize; touch-action: none; }
