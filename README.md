@@ -1,8 +1,8 @@
 # ESPImageServer
 
-ESPImageServer creates AI images on your own computer and sends them to an ESP32 display on your local network. Describe the image you want, choose a model, and generate an image sized exactly for your connected display.
+ESPImageServer creates AI images and video on your own computer and sends them to an ESP32 display on your local network. Describe the image or the video you want, choose a model, and generate an image or video sized exactly for your connected display.
 
-Your prompts, generated images, and model files stay on your computer. The ESP32 only downloads the finished JPEG from your local network.
+Your prompts, generated images, and model files stay on your computer. The ESP32 only downloads the finished JPEG or MJPEG from your local network.
 
 ## What you need
 
@@ -10,7 +10,7 @@ Your prompts, generated images, and model files stay on your computer. The ESP32
 - An ESP32 display running compatible ESPImageServer firmware and connected to the same Wi-Fi network.
 - Enough free disk space for AI models. The first use of a model downloads its files.
 
-ESPImageServer works best with an NVIDIA graphics card. It can run on the computer processor instead, but image generation may take several minutes per image.
+ESPImageServer works best with an NVIDIA graphics card. It can run on the computer processor instead, but image and video generation may take very long.
 
 ## Install
 
