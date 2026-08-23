@@ -151,6 +151,8 @@ const sdCardSnackbarMessage = ref('')
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
+const creationModelFilter = ref(null)
+const creationDisplayFilter = ref(null)
 const imageLibraryLocation = ref('')
 const jpegQuality = ref(85)
 const videoJpegQuality = ref(10)
@@ -297,9 +299,38 @@ const sdCardTableHeaders = [
   { title: 'Size', key: 'size', width: '120px', align: 'end' },
   { title: 'Actions', key: 'actions', sortable: false, align: 'end', width: '120px' }
 ]
+function creationModelName(creation) {
+  return creation.metadata?.model?.name || 'Other creations'
+}
+
+function creationDisplayName(creation) {
+  return creation.metadata?.display?.name || ''
+}
+
+function matchesCreationFilters(creation) {
+  if (creationModelFilter.value && creationModelName(creation) !== creationModelFilter.value) return false
+  if (creationDisplayFilter.value === '__no_display__') return !creationDisplayName(creation)
+  return !creationDisplayFilter.value || creationDisplayName(creation) === creationDisplayFilter.value
+}
+
+const creationModelOptions = computed(() => [...new Set(
+  [...savedImages.value, ...savedVideos.value].map(creationModelName)
+)].sort().map(name => ({ title: name, value: name })))
+const creationDisplayOptions = computed(() => {
+  const creations = [...savedImages.value, ...savedVideos.value]
+  const names = [...new Set(creations.map(creationDisplayName).filter(Boolean))].sort()
+  const options = names.map(name => ({ title: name, value: name }))
+  if (creations.some(creation => !creationDisplayName(creation))) {
+    options.push({ title: 'No display recorded', value: '__no_display__' })
+  }
+  return options
+})
+const filteredSavedImages = computed(() => savedImages.value.filter(matchesCreationFilters))
+const filteredSavedVideos = computed(() => savedVideos.value.filter(matchesCreationFilters))
+const filteredCreationsCount = computed(() => filteredSavedImages.value.length + filteredSavedVideos.value.length)
 const savedImageGroups = computed(() => {
   const groups = new Map()
-  for (const savedImage of savedImages.value) {
+  for (const savedImage of filteredSavedImages.value) {
     const modelName = savedImage.metadata?.model?.name || 'Other images'
     if (!groups.has(modelName)) groups.set(modelName, [])
     groups.get(modelName).push(savedImage)
@@ -308,7 +339,7 @@ const savedImageGroups = computed(() => {
 })
 const savedVideoGroups = computed(() => {
   const groups = new Map()
-  for (const savedVideo of savedVideos.value) {
+  for (const savedVideo of filteredSavedVideos.value) {
     const modelName = savedVideo.metadata?.model?.name || 'Other videos'
     if (!groups.has(modelName)) groups.set(modelName, [])
     groups.get(modelName).push(savedVideo)
@@ -1933,8 +1964,34 @@ onUnmounted(() => {
           class="mb-5"
         />
         <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
+        <v-row dense class="mb-3">
+          <v-col cols="12" sm="6">
+            <v-select
+              v-model="creationModelFilter"
+              :items="creationModelOptions"
+              label="Filter by model"
+              prepend-inner-icon="mdi-brain"
+              clearable
+              hide-details
+              density="compact"
+              variant="outlined"
+            />
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-select
+              v-model="creationDisplayFilter"
+              :items="creationDisplayOptions"
+              label="Filter by display"
+              prepend-inner-icon="mdi-monitor-dashboard"
+              clearable
+              hide-details
+              density="compact"
+              variant="outlined"
+            />
+          </v-col>
+        </v-row>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
-        <div v-if="!savedImagesLoading && savedImages.length && imageLibraryView === 'thumbnails'" class="saved-image-library">
+        <div v-if="!savedImagesLoading && filteredSavedImages.length && imageLibraryView === 'thumbnails'" class="saved-image-library">
           <section v-for="group in savedImageGroups" :key="group.modelName" class="saved-image-group">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
             <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
@@ -1953,14 +2010,15 @@ onUnmounted(() => {
             </div>
           </section>
         </div>
-        <v-list v-if="!savedImagesLoading && savedImages.length && imageLibraryView === 'list'" class="saved-image-library saved-image-list" density="compact" lines="two">
-          <v-list-item v-for="savedImage in savedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
+        <v-list v-if="!savedImagesLoading && filteredSavedImages.length && imageLibraryView === 'list'" class="saved-image-library saved-image-list" density="compact" lines="two">
+          <v-list-item v-for="savedImage in filteredSavedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
             <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
             <v-list-item-subtitle>{{ savedImage.metadata?.model?.name || 'ESPImageServer' }} · {{ new Date(savedImage.created_at).toLocaleString() }}</v-list-item-subtitle>
           </v-list-item>
         </v-list>
-        <div v-if="!savedImagesLoading && !savedImages.length" class="text-body-2 text-medium-emphasis">No generated images have been saved yet.</div>
-        <template v-if="savedVideos.length">
+        <div v-if="!savedImagesLoading && !savedImages.length && !savedVideos.length" class="text-body-2 text-medium-emphasis">No generated images or videos have been saved yet.</div>
+        <div v-else-if="!savedImagesLoading && !filteredCreationsCount" class="text-body-2 text-medium-emphasis">No saved creations match these filters.</div>
+        <template v-if="filteredSavedVideos.length">
           <section v-for="group in savedVideoGroups" :key="group.modelName" class="saved-image-group mt-6">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
             <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
