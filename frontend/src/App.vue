@@ -13,7 +13,6 @@ const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
 const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thumbnail-size'
 const sdCardItemsPerPageSettingsKey = 'esp-image-server.sd-card-items-per-page'
-const videoFrameValues = [17, 25, 33, 41, 49, 57, 65, 73, 81]
 const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b', 'hunyuanvideo-1.5-480p']
 
 function loadImageLibraryWidth() {
@@ -57,7 +56,7 @@ function loadVideoGenerationSettings() {
         : [4, 5, 6, 7, 8]
     return {
       prompt: typeof saved.prompt === 'string' ? saved.prompt : 'Gentle cinematic camera movement, subtle natural motion',
-      frames: videoFrameValues.includes(saved.frames) ? saved.frames : 25,
+      frames: Number.isInteger(saved.frames) && saved.frames >= 9 && saved.frames <= 249 && (saved.frames - 1) % 8 === 0 ? saved.frames : 25,
       fps: [8, 12, 15, 24].includes(saved.fps) ? saved.fps : 8,
       steps: validSteps.includes(saved.steps) ? saved.steps : modelId === 'ltx-2b-0.9.6-distilled' ? 8 : 30,
       modelId,
@@ -257,10 +256,12 @@ const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
 })))
-const videoFrameOptions = computed(() => videoFrameValues.map(frames => ({
-  title: `${frames} frames · ${(frames / Number(videoFps.value)).toFixed(1)} seconds`,
-  value: frames
-})))
+const videoDurationSeconds = computed(() => {
+  const frames = Number(videoFrames.value)
+  const fps = Number(videoFps.value)
+  return Number.isFinite(frames) && frames > 0 && Number.isFinite(fps) && fps > 0 ? frames / fps : 0
+})
+const videoDurationLabel = computed(() => `${videoDurationSeconds.value.toFixed(1)} seconds`)
 const videoModels = [
   { title: 'LTX-Video 2B distilled — fast', value: 'ltx-2b-0.9.6-distilled', description: 'Best for quick short animations. Uses less graphics-card memory.' },
   { title: 'LTX-Video 2B quality — detailed', value: 'ltx-2b-0.9.6-dev', description: 'Best when detail matters more than speed. Much slower and needs more graphics-card memory.' },
@@ -1627,6 +1628,11 @@ async function cancelGeneration() {
 }
 
 async function generateVideo() {
+  const frames = Number(videoFrames.value)
+  if (!Number.isInteger(frames) || frames < 9 || frames > 249 || (frames - 1) % 8 !== 0) {
+    videoError.value = 'Enter a frame count from 9 to 249 that is 1 more than a multiple of 8 (for example, 17, 25, or 33).'
+    return
+  }
   generatingVideo.value = true
   videoError.value = ''
   videoProgress.value = 0
@@ -1637,7 +1643,7 @@ async function generateVideo() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt: videoPrompt.value,
-        num_frames: Number(videoFrames.value),
+        num_frames: frames,
         fps: Number(videoFps.value),
         steps: Number(videoSteps.value),
         model_id: videoModelId.value,
@@ -2309,7 +2315,7 @@ onUnmounted(() => {
               </v-card>
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow class="mb-4" />
               <v-row dense class="mt-1">
-                <v-col cols="12" sm="6"><v-select v-model="videoFrames" label="Length" variant="outlined" density="comfortable" :items="videoFrameOptions" hint="Longer clips need more graphics-card memory." persistent-hint /></v-col>
+                <v-col cols="12" sm="6"><v-text-field v-model="videoFrames" label="Frames" type="number" min="9" max="249" step="8" variant="outlined" density="comfortable" :hint="`${videoDurationLabel} at ${videoFps} fps. Use 9–249 frames, 1 more than a multiple of 8.`" persistent-hint /></v-col>
                 <v-col cols="12" sm="6"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
                 <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'hunyuanvideo-1.5-480p' ? '30 is recommended for HunyuanVideo 1.5.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
