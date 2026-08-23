@@ -262,16 +262,6 @@ const appBarStatus = computed(() => {
   }
   return { color: 'warning', icon: 'mdi-server', page: '', label: 'Server loading', compactLabel: 'Loading' }
 })
-const appBarCanCancel = computed(() => {
-  if (appBarStatus.value.page === 'video') {
-    return videoGenerationActive.value
-  }
-  if (appBarStatus.value.page === 'generate') {
-    return imageGenerationActive.value
-  }
-  return false
-})
-const appBarCancelling = computed(() => appBarStatus.value.page === 'video' ? cancelVideoOnStart.value || cancellingVideo.value : cancelling.value)
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
   value: model.id
@@ -972,46 +962,6 @@ function openGeneratePage() {
 
 function openActiveGeneration() {
   if (appBarStatus.value.page) page.value = appBarStatus.value.page
-}
-
-async function cancelActiveGeneration() {
-  const isVideo = appBarStatus.value.page === 'video'
-  const jobId = isVideo
-    ? activeVideoJobId.value || health.value?.active_video_job?.id
-    : activeJobId.value || health.value?.active_image_job?.id
-  if (!isVideo && modelSwitchAbortController) {
-    cancelGeneration()
-    return
-  }
-  if (!jobId) {
-    if (isVideo && generatingVideo.value) cancelVideoOnStart.value = true
-    return
-  }
-  if (isVideo && jobId === activeVideoJobId.value) {
-    cancelVideoGeneration()
-    return
-  }
-  if (!isVideo && jobId === activeJobId.value) {
-    cancelGeneration()
-    return
-  }
-  if (isVideo) cancellingVideo.value = true
-  else cancelling.value = true
-  try {
-    const endpoint = isVideo ? `/video-generation-jobs/${jobId}` : `/generation-jobs/${jobId}`
-    const response = await fetch(endpoint, { method: 'DELETE' })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.detail || `Request failed (${response.status})`)
-    }
-    await loadServerStatus()
-  } catch (requestError) {
-    if (isVideo) videoError.value = `Could not cancel video generation: ${requestError.message}`
-    else error.value = `Could not cancel image generation: ${requestError.message}`
-  } finally {
-    if (isVideo) cancellingVideo.value = false
-    else cancelling.value = false
-  }
 }
 
 function openDisplayHelp() {
@@ -1901,7 +1851,6 @@ onUnmounted(() => {
       <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.label" @click="openActiveGeneration">
         <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
-      <v-btn v-if="appBarCanCancel" class="mr-1" color="warning" icon="mdi-cancel" size="small" variant="text" :loading="appBarCancelling" :disabled="appBarCancelling" aria-label="Cancel active generation" title="Cancel active generation" @click="cancelActiveGeneration" />
       <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
         <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}</span>
       </v-chip>
