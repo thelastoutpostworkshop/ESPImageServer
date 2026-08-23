@@ -822,12 +822,9 @@ function openSavedVideoContextMenu(event, savedVideo) {
 }
 
 async function openSavedVideo(savedVideo) {
+  await useSavedVideoSettings(savedVideo.metadata, 'all')
   videoError.value = ''
   videoStage.value = 'Loading saved video...'
-  page.value = 'video'
-  // Video files can take longer to load than images. Reveal the video page
-  // immediately instead of leaving the Creation Library over it until loading ends.
-  if (!metadataPanePinned.value) metadataPane.value = false
   const requestId = ++videoPreviewRequestId
   try {
     const response = await fetch(`/saved-videos/${encodeURIComponent(savedVideo.id)}/video`)
@@ -1402,6 +1399,7 @@ async function deleteSavedImage() {
 }
 
 async function openSavedImage(savedImage) {
+  await useSavedImageSettings(savedImage.metadata, 'all')
   metadataError.value = ''
   const requestId = ++imagePreviewRequestId
   try {
