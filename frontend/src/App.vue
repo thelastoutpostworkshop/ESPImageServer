@@ -1576,6 +1576,21 @@ function useRecommendedSteps() {
   if (selectedModel) steps.value = selectedModel.default_steps
 }
 
+async function fetchGenerationResponse(url) {
+  // A completed job remains on the server even when a browser or ESP32 TCP
+  // connection drops. Keep polling through transient connection resets rather
+  // than telling the user their generation failed.
+  for (;;) {
+    try {
+      const response = await fetch(url)
+      if (response.ok || response.status < 500) return response
+    } catch {
+      // Connection resets are retried below.
+    }
+    await new Promise(resolve => window.setTimeout(resolve, 1500))
+  }
+}
+
 async function generate() {
   const alreadyShowingImageProgress = generating.value
   generating.value = true
@@ -1613,7 +1628,7 @@ async function generate() {
     let currentJob = job
     while (!['complete', 'failed', 'cancelled'].includes(currentJob.status)) {
       await new Promise(resolve => window.setTimeout(resolve, 350))
-      const statusResponse = await fetch(`/generation-jobs/${job.id}`)
+      const statusResponse = await fetchGenerationResponse(`/generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
       if (['running', 'cancelling'].includes(currentJob.status) && !activeJobId.value) activeJobId.value = job.id
@@ -1629,7 +1644,7 @@ async function generate() {
     }
     if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Image generation failed')
     if (activeJobId.value === job.id) generationStage.value = 'Image ready. Loading it into the preview...'
-    const imageResponse = await fetch(`/generation-jobs/${job.id}/image`)
+    const imageResponse = await fetchGenerationResponse(`/generation-jobs/${job.id}/image`)
     if (!imageResponse.ok) throw new Error(`Request failed (${imageResponse.status})`)
     const metadata = buildGenerationMetadata()
     if (activeJobId.value === job.id) generationStage.value = 'Preparing the display preview...'
@@ -1731,7 +1746,7 @@ async function generateVideo() {
     let currentJob = job
     while (!['complete', 'failed', 'cancelled'].includes(currentJob.status)) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
-      const statusResponse = await fetch(`/video-generation-jobs/${job.id}`)
+      const statusResponse = await fetchGenerationResponse(`/video-generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
       if (['running', 'cancelling'].includes(currentJob.status) && !activeVideoJobId.value) activeVideoJobId.value = job.id
@@ -1747,7 +1762,7 @@ async function generateVideo() {
     }
     if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Video generation failed')
     if (activeVideoJobId.value === job.id) videoStage.value = 'Video ready. Loading it into the preview...'
-    const videoResponse = await fetch(`/video-generation-jobs/${job.id}/video`)
+    const videoResponse = await fetchGenerationResponse(`/video-generation-jobs/${job.id}/video`)
     if (!videoResponse.ok) throw new Error(`Request failed (${videoResponse.status})`)
     if (activeVideoJobId.value === job.id) videoStage.value = 'Preparing video preview...'
     const autoSaved = currentJob.metadata?.auto_saved === true
