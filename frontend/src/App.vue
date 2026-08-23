@@ -90,6 +90,7 @@ const error = ref('')
 const imageUrl = ref('')
 const videoUrl = ref('')
 const completedVideoJobId = ref('')
+const completedVideoSavedId = ref('')
 const savingVideoToCreationLibrary = ref(false)
 const videoSavedToCreationLibrary = ref(false)
 const savedVideos = ref([])
@@ -850,6 +851,7 @@ async function openSavedVideo(savedVideo) {
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
     const shown = await updateVideoPreview(await response.blob(), { requestId, savedToLibrary: true })
     if (!shown) return
+    completedVideoSavedId.value = savedVideo.id
     videoStage.value = 'Viewing saved video from the Creation Gallery.'
   } catch (requestError) {
     videoError.value = `Could not open this saved video: ${requestError.message}`
@@ -880,12 +882,17 @@ async function useSavedVideoSettings(metadata, setting) {
 async function saveSavedVideoToDisplaySdCard() {
   const savedVideo = contextMenuSavedVideo.value
   if (!savedVideo || savingVideoToDisplaySdCard.value) return
-  savingVideoToDisplaySdCard.value = true
   savedVideoContextMenu.value = false
+  await saveVideoToDisplaySdCard(savedVideo.id)
+}
+
+async function saveVideoToDisplaySdCard(videoId) {
+  if (!videoId || savingVideoToDisplaySdCard.value) return false
+  savingVideoToDisplaySdCard.value = true
   error.value = ''
   status.value = ''
   try {
-    const response = await fetch(`/display-commands/save-saved-video/${encodeURIComponent(savedVideo.id)}`, { method: 'POST' })
+    const response = await fetch(`/display-commands/save-saved-video/${encodeURIComponent(videoId)}`, { method: 'POST' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
@@ -899,13 +906,15 @@ async function saveSavedVideoToDisplaySdCard() {
       const result = await commandResponse.json()
       if (result.status === 'complete') {
         status.value = 'Video saved to the display SD card. Open the SD Card page to play it.'
-        return
+        return true
       }
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not play this video')
     }
     status.value = 'The display is still preparing the video for its SD card.'
+    return true
   } catch (requestError) {
     error.value = `Could not save the video to the display SD card: ${requestError.message}`
+    return false
   } finally {
     savingVideoToDisplaySdCard.value = false
   }
@@ -1766,6 +1775,7 @@ async function generateVideo() {
     if (!videoResponse.ok) throw new Error(`Request failed (${videoResponse.status})`)
     if (activeVideoJobId.value === job.id) videoStage.value = 'Preparing video preview...'
     const autoSaved = currentJob.metadata?.auto_saved === true
+    completedVideoSavedId.value = autoSaved ? currentJob.metadata?.saved_video_id || '' : ''
     await updateVideoPreview(await videoResponse.blob(), { jobId: job.id, savedToLibrary: autoSaved })
     if (autoSaved) await loadSavedVideos()
     if (activeVideoJobId.value === job.id) videoStage.value = autoSaved
@@ -1786,7 +1796,8 @@ async function generateVideo() {
 }
 
 async function saveVideoToCreationLibrary() {
-  if (!completedVideoJobId.value || savingVideoToCreationLibrary.value || videoSavedToCreationLibrary.value) return
+  if (completedVideoSavedId.value) return completedVideoSavedId.value
+  if (!completedVideoJobId.value || savingVideoToCreationLibrary.value || videoSavedToCreationLibrary.value) return ''
   savingVideoToCreationLibrary.value = true
   try {
     const response = await fetch(`/video-generation-jobs/${completedVideoJobId.value}/save`, { method: 'POST' })
@@ -1794,14 +1805,31 @@ async function saveVideoToCreationLibrary() {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
+    const savedVideo = await response.json()
+    completedVideoSavedId.value = savedVideo.id
     videoSavedToCreationLibrary.value = true
     videoStage.value = 'Video saved to your Creation Gallery.'
     await loadSavedVideos()
+    return savedVideo.id
   } catch (requestError) {
     videoError.value = `Could not save the video to the Creation Gallery: ${requestError.message}`
+    return ''
   } finally {
     savingVideoToCreationLibrary.value = false
   }
+}
+
+async function saveCompletedVideoToDisplaySdCard() {
+  if (!display.value?.connected || savingVideoToDisplaySdCard.value) return
+  let videoId = completedVideoSavedId.value
+  if (!videoId) {
+    videoStage.value = 'Saving video to your Creation Gallery before sending it to the display...'
+    videoId = await saveVideoToCreationLibrary()
+    if (!videoId) return
+  }
+  videoStage.value = 'Sending video to the display SD card...'
+  const saved = await saveVideoToDisplaySdCard(videoId)
+  if (saved) videoStage.value = 'Video save request sent to the display SD card.'
 }
 
 async function cancelVideoGeneration() {
@@ -2454,6 +2482,9 @@ onUnmounted(() => {
             <v-btn :href="videoUrl" download="esp-image-video.mp4" color="secondary" prepend-icon="mdi-download">Download MP4</v-btn>
             <v-btn color="primary" variant="tonal" prepend-icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" @click="saveVideoToCreationLibrary">
               {{ videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery' }}
+            </v-btn>
+            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="saveCompletedVideoToDisplaySdCard">
+              Save to display SD card
             </v-btn>
           </v-card-actions>
         </v-card>

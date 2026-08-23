@@ -1117,8 +1117,9 @@ def create_app(
             )
             if auto_save_videos:
                 progress(request.steps, request.steps, "Saving video to your Creation Gallery")
-                video_library.save(result, video_metadata)
+                saved_video = video_library.save(result, video_metadata)
                 video_metadata["auto_saved"] = True
+                video_metadata["saved_video_id"] = saved_video["id"]
             return result
 
         job = generation_queue.create("video", generate_video, video_metadata)
