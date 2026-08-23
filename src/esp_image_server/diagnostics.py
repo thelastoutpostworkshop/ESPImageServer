@@ -18,15 +18,29 @@ class DiagnosticLogStore(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             message = self.format(record)
+            level = record.levelname.lower()
+            if self._is_recoverable_connection_reset(record):
+                message = "A device or browser briefly closed its network connection. The server and queued generation will continue."
+                level = "info"
             with self._lock:
                 self._entries.append({
                     "timestamp": datetime.now(UTC).isoformat(),
-                    "level": record.levelname.lower(),
+                    "level": level,
                     "source": record.name,
                     "message": message,
                 })
         except Exception:
             self.handleError(record)
+
+    @staticmethod
+    def _is_recoverable_connection_reset(record: logging.LogRecord) -> bool:
+        exception = record.exc_info[1] if record.exc_info else None
+        return (
+            record.name == "asyncio"
+            and "_ProactorBasePipeTransport._call_connection_lost" in record.getMessage()
+            and isinstance(exception, ConnectionResetError)
+            and getattr(exception, "winerror", None) == 10054
+        )
 
     def list(self) -> list[dict[str, str]]:
         with self._lock:
