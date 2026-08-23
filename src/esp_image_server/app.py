@@ -1107,6 +1107,10 @@ def create_app(
             "label": request.prompt[:80], "model": {"id": request.model_id, "name": video_model["name"]},
             "prompt": request.prompt, "steps": request.steps, "seed": request.seed,
             "frames": request.num_frames, "fps": request.fps, "source_image_id": request.source_image_id,
+            "display": (
+                {"name": profile.name, "width": profile.width, "height": profile.height}
+                if profile is not None else None
+            ),
         }
 
         def generate_video(progress, cancelled):

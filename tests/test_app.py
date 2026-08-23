@@ -74,6 +74,13 @@ class BlankFakeGenerator(FakeGenerator):
         return Image.new("RGB", (64, 64), "black")
 
 
+class FakeVideoGenerator:
+    def generate(self, prompt, width, height, num_frames, fps, steps, seed, output_path, progress, cancelled, source_image_path, model_id) -> Path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"video")
+        return output_path
+
+
 def test_generate_returns_jpeg_binary() -> None:
     app = create_app(Settings(output_width=20, output_height=10), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
@@ -461,6 +468,22 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
     assert "-pix_fmt" in ffmpeg_commands[0]
     assert ffmpeg_commands[0][ffmpeg_commands[0].index("-pix_fmt") + 1] == "yuvj420p"
     assert ffmpeg_commands[0][ffmpeg_commands[0].index("-q:v") + 1] == "10"
+
+
+def test_video_generation_metadata_records_the_active_display() -> None:
+    generator = FakeGenerator()
+    generator.device = "cuda"
+    app = create_app(Settings(), generator, video_generator=FakeVideoGenerator(), enable_mdns=False)
+
+    with TestClient(app) as client:
+        announced = client.post("/display", json={"name": "Cheap Yellow Display", "width": 240, "height": 320})
+        created = client.post("/video-generation-jobs", json={"prompt": "a tiny robot"})
+
+    assert announced.status_code == 201
+    assert created.status_code == 202
+    assert created.json()["metadata"]["display"] == {
+        "name": "Cheap Yellow Display", "width": 240, "height": 320,
+    }
 
 
 def test_selecting_a_saved_image_makes_it_available_to_the_esp32(tmp_path) -> None:
