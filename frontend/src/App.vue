@@ -203,6 +203,7 @@ const videoGenerationActive = computed(() => generatingVideo.value || health.val
 const generationBusy = computed(() => imageGenerationActive.value || videoGenerationActive.value)
 const activeGenerationQueue = computed(() => generationQueue.value.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)))
 const finishedGenerationQueue = computed(() => generationQueue.value.filter(job => !['queued', 'running', 'cancelling'].includes(job.status)))
+const runningGenerationQueueJob = computed(() => activeGenerationQueue.value.find(job => job.status === 'running' || job.status === 'cancelling') || null)
 const activeImageQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'image' && job.status !== 'queued') || activeGenerationQueue.value.find(job => job.kind === 'image') || null)
 const activeVideoQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'video' && job.status !== 'queued') || activeGenerationQueue.value.find(job => job.kind === 'video') || null)
 const filteredConsoleOutput = computed(() => {
@@ -210,6 +211,22 @@ const filteredConsoleOutput = computed(() => {
   return query ? consoleOutput.value.filter(line => line.toLocaleLowerCase().includes(query)) : consoleOutput.value
 })
 const appBarStatus = computed(() => {
+  const runningJob = runningGenerationQueueJob.value
+  if (runningJob) {
+    const isVideo = runningJob.kind === 'video'
+    const progress = isVideo && activeVideoJobId.value === runningJob.id
+      ? videoProgress.value
+      : !isVideo && activeJobId.value === runningJob.id
+        ? generationProgress.value
+        : runningJob.progress
+    const kind = isVideo ? 'video' : 'image'
+    const cancelling = runningJob.status === 'cancelling'
+    return {
+      color: 'primary', icon: isVideo ? 'mdi-movie-open-outline' : 'mdi-image-outline', page: isVideo ? 'video' : 'generate',
+      label: cancelling ? `Cancelling ${kind}` : Number.isFinite(progress) && progress > 0 ? `Generating ${kind} · ${progress}%` : `Preparing ${kind}`,
+      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : isVideo ? 'Video' : 'Image'
+    }
+  }
   if (videoGenerationActive.value) {
     const job = health.value?.active_video_job
     const progress = generatingVideo.value ? videoProgress.value : job?.progress
