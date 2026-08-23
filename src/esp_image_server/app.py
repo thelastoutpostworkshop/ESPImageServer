@@ -117,6 +117,7 @@ class AppSettingsRequest(BaseModel):
     jpeg_quality: int | None = Field(default=None, ge=1, le=100)
     video_jpeg_quality: int | None = Field(default=None, ge=2, le=31)
     auto_save_images: bool | None = None
+    auto_save_videos: bool | None = None
     confirm_deletion: bool | None = None
 
 
@@ -217,6 +218,8 @@ def create_app(
     video_jpeg_quality = video_jpeg_quality if isinstance(video_jpeg_quality, int) and 2 <= video_jpeg_quality <= 31 else 10
     auto_save_images = persisted_app_settings.get("auto_save_images", True)
     auto_save_images = auto_save_images if isinstance(auto_save_images, bool) else True
+    auto_save_videos = persisted_app_settings.get("auto_save_videos", True)
+    auto_save_videos = auto_save_videos if isinstance(auto_save_videos, bool) else True
     confirm_deletion = persisted_app_settings.get("confirm_deletion", True)
     confirm_deletion = confirm_deletion if isinstance(confirm_deletion, bool) else True
 
@@ -638,12 +641,13 @@ def create_app(
             "jpeg_quality": jpeg_quality,
             "video_jpeg_quality": video_jpeg_quality,
             "auto_save_images": auto_save_images,
+            "auto_save_videos": auto_save_videos,
             "confirm_deletion": confirm_deletion,
         }
 
     @app.put("/app-settings")
     def update_app_settings(request: AppSettingsRequest) -> dict[str, object]:
-        nonlocal jpeg_quality, video_jpeg_quality, auto_save_images, confirm_deletion
+        nonlocal jpeg_quality, video_jpeg_quality, auto_save_images, auto_save_videos, confirm_deletion
         if request.image_library_location is not None:
             location = Path(request.image_library_location)
             if not location.is_absolute():
@@ -659,6 +663,8 @@ def create_app(
             video_jpeg_quality = request.video_jpeg_quality
         if request.auto_save_images is not None:
             auto_save_images = request.auto_save_images
+        if request.auto_save_videos is not None:
+            auto_save_videos = request.auto_save_videos
         if request.confirm_deletion is not None:
             confirm_deletion = request.confirm_deletion
         app_settings_store.set({
@@ -666,6 +672,7 @@ def create_app(
             "jpeg_quality": jpeg_quality,
             "video_jpeg_quality": video_jpeg_quality,
             "auto_save_images": auto_save_images,
+            "auto_save_videos": auto_save_videos,
             "confirm_deletion": confirm_deletion,
         })
         return get_app_settings()
@@ -1096,15 +1103,25 @@ def create_app(
         output_height = profile.height if profile else request.height
         filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
         output_path = video_output_path / filename
-        job = generation_queue.create("video", lambda progress, cancelled: (
-            generator.unload(), video_generator.generate(
+        video_metadata: dict[str, object] = {
+            "label": request.prompt[:80], "model": {"id": request.model_id, "name": video_model["name"]},
+            "prompt": request.prompt, "steps": request.steps, "seed": request.seed,
+            "frames": request.num_frames, "fps": request.fps, "source_image_id": request.source_image_id,
+        }
+
+        def generate_video(progress, cancelled):
+            generator.unload()
+            result = video_generator.generate(
                 request.prompt, output_width, output_height, request.num_frames, request.fps,
                 request.steps, request.seed, output_path, progress, cancelled, source_image_path, request.model_id,
-            ))[1], {
-                "label": request.prompt[:80], "model": {"id": request.model_id, "name": video_model["name"]},
-                "prompt": request.prompt, "steps": request.steps, "seed": request.seed,
-                "frames": request.num_frames, "fps": request.fps, "source_image_id": request.source_image_id,
-            })
+            )
+            if auto_save_videos:
+                progress(request.steps, request.steps, "Saving video to your Creation Gallery")
+                video_library.save(result, video_metadata)
+                video_metadata["auto_saved"] = True
+            return result
+
+        job = generation_queue.create("video", generate_video, video_metadata)
         return job.as_dict()
 
     @app.get("/video-generation-jobs/{job_id}")

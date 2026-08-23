@@ -154,8 +154,10 @@ const imageLibraryLocation = ref('')
 const jpegQuality = ref(85)
 const videoJpegQuality = ref(10)
 const autoSaveImages = ref(true)
+const autoSaveVideos = ref(true)
 const confirmDeletion = ref(true)
 const autoSaveSaving = ref(false)
+const autoSaveVideoSaving = ref(false)
 const settingsSaving = ref(false)
 const openingImageLibrary = ref(false)
 const choosingImageLibrary = ref(false)
@@ -1158,6 +1160,7 @@ async function loadAppSettings() {
     jpegQuality.value = settings.jpeg_quality
     videoJpegQuality.value = settings.video_jpeg_quality
     autoSaveImages.value = settings.auto_save_images !== false
+    autoSaveVideos.value = settings.auto_save_videos !== false
     confirmDeletion.value = settings.confirm_deletion !== false
   } catch {
     // The rest of the app remains usable while settings are unavailable.
@@ -1177,6 +1180,7 @@ async function saveAppSettings() {
         jpeg_quality: Number(jpegQuality.value),
         video_jpeg_quality: Number(videoJpegQuality.value),
         auto_save_images: autoSaveImages.value,
+        auto_save_videos: autoSaveVideos.value,
         confirm_deletion: confirmDeletion.value
       })
     })
@@ -1189,6 +1193,7 @@ async function saveAppSettings() {
     jpegQuality.value = settings.jpeg_quality
     videoJpegQuality.value = settings.video_jpeg_quality
     autoSaveImages.value = settings.auto_save_images !== false
+    autoSaveVideos.value = settings.auto_save_videos !== false
     confirmDeletion.value = settings.confirm_deletion !== false
     await loadSavedImages()
     settingsStatus.value = 'Settings saved. Image and video quality settings apply to future exports.'
@@ -1221,6 +1226,31 @@ async function setAutoSaveImages(value) {
     error.value = `Could not update automatic saving: ${requestError.message}`
   } finally {
     autoSaveSaving.value = false
+  }
+}
+
+async function setAutoSaveVideos(value) {
+  const previousValue = autoSaveVideos.value
+  autoSaveVideos.value = value
+  autoSaveVideoSaving.value = true
+  videoError.value = ''
+  try {
+    const response = await fetch('/app-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_save_videos: value })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const settings = await response.json()
+    autoSaveVideos.value = settings.auto_save_videos !== false
+  } catch (requestError) {
+    autoSaveVideos.value = previousValue
+    videoError.value = `Could not update automatic video saving: ${requestError.message}`
+  } finally {
+    autoSaveVideoSaving.value = false
   }
 }
 
@@ -1720,8 +1750,12 @@ async function generateVideo() {
     const videoResponse = await fetch(`/video-generation-jobs/${job.id}/video`)
     if (!videoResponse.ok) throw new Error(`Request failed (${videoResponse.status})`)
     if (activeVideoJobId.value === job.id) videoStage.value = 'Preparing video preview...'
-    await updateVideoPreview(await videoResponse.blob(), { jobId: job.id })
-    if (activeVideoJobId.value === job.id) videoStage.value = 'Video ready. It is saved locally and can be downloaded below.'
+    const autoSaved = currentJob.metadata?.auto_saved === true
+    await updateVideoPreview(await videoResponse.blob(), { jobId: job.id, savedToLibrary: autoSaved })
+    if (autoSaved) await loadSavedVideos()
+    if (activeVideoJobId.value === job.id) videoStage.value = autoSaved
+      ? 'Video ready and saved to your Creation Gallery.'
+      : 'Video ready. Save it to your Creation Gallery or download it below.'
   } catch (requestError) {
     videoError.value = `Could not generate the video: ${requestError.message}`
     videoStage.value = ''
@@ -2345,6 +2379,17 @@ onUnmounted(() => {
                   <div class="text-body-2 mt-1">{{ selectedVideoModel.description }}</div>
                 </v-card-text>
               </v-card>
+              <v-switch
+                :model-value="autoSaveVideos"
+                label="Save generated videos automatically"
+                color="primary"
+                :loading="autoSaveVideoSaving"
+                :disabled="generationBusy || autoSaveVideoSaving"
+                hint="When off, use Save to Creation Gallery after a video finishes."
+                persistent-hint
+                class="mb-4"
+                @update:model-value="setAutoSaveVideos"
+              />
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow class="mb-4" />
               <v-row dense class="mt-1">
                 <v-col cols="12" sm="6"><v-text-field v-model="videoFrames" label="Frames" type="number" min="9" max="249" step="8" variant="outlined" density="comfortable" :hint="`${videoDurationLabel} at ${videoFps} fps. Use 9–249 frames, 1 more than a multiple of 8.`" persistent-hint /></v-col>
