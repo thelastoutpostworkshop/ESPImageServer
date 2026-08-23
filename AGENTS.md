@@ -3,8 +3,7 @@
 ## Projects and scope
 
 - Server and web app: `C:\Users\charles\Desktop\Repo\ESPImageServer`
-- ESP32 firmware: `C:\Users\charles\Desktop\Repo\ESPImageDisplay`
-- Arduino CLI : `c:\Users\charles\.vscode\extensions\thelastoutpostworkshop.arduino-maker-workshop-1.1.9-win32-x64\arduino_cli\win32\arduino-cli.exe`
+- ESP32 firmware: `C:\Users\charles\Desktop\Repo\ESPImageDisplay`, do not build the ESP32 firmware, the user will do it manually
 - The ESP32 firmware is a separate repository. Do not change it for a server-only task, but always consider whether an API or image-format change affects it.
 
 ## Architecture
