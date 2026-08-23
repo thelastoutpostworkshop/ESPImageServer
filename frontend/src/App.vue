@@ -825,6 +825,9 @@ async function openSavedVideo(savedVideo) {
   videoError.value = ''
   videoStage.value = 'Loading saved video...'
   page.value = 'video'
+  // Video files can take longer to load than images. Reveal the video page
+  // immediately instead of leaving the Creation Library over it until loading ends.
+  if (!metadataPanePinned.value) metadataPane.value = false
   const requestId = ++videoPreviewRequestId
   try {
     const response = await fetch(`/saved-videos/${encodeURIComponent(savedVideo.id)}/video`)
@@ -832,7 +835,6 @@ async function openSavedVideo(savedVideo) {
     const shown = await updateVideoPreview(await response.blob(), { requestId, savedToLibrary: true })
     if (!shown) return
     videoStage.value = 'Viewing saved video from the Creation Gallery.'
-    if (!metadataPanePinned.value) metadataPane.value = false
   } catch (requestError) {
     videoError.value = `Could not open this saved video: ${requestError.message}`
     videoStage.value = ''
