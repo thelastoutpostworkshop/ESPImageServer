@@ -203,8 +203,8 @@ const videoGenerationActive = computed(() => generatingVideo.value || health.val
 const generationBusy = computed(() => imageGenerationActive.value || videoGenerationActive.value)
 const activeGenerationQueue = computed(() => generationQueue.value.filter(job => ['queued', 'running', 'cancelling'].includes(job.status)))
 const finishedGenerationQueue = computed(() => generationQueue.value.filter(job => !['queued', 'running', 'cancelling'].includes(job.status)))
-const activeImageQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'image') || null)
-const activeVideoQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'video') || null)
+const activeImageQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'image' && job.status !== 'queued') || activeGenerationQueue.value.find(job => job.kind === 'image') || null)
+const activeVideoQueueJob = computed(() => activeGenerationQueue.value.find(job => job.kind === 'video' && job.status !== 'queued') || activeGenerationQueue.value.find(job => job.kind === 'video') || null)
 const filteredConsoleOutput = computed(() => {
   const query = consoleSearch.value.trim().toLocaleLowerCase()
   return query ? consoleOutput.value.filter(line => line.toLocaleLowerCase().includes(query)) : consoleOutput.value
@@ -1530,14 +1530,18 @@ function useRecommendedSteps() {
 }
 
 async function generate() {
+  const alreadyShowingImageProgress = generating.value
   generating.value = true
   error.value = ''
   status.value = ''
-  generationProgress.value = 0
-  generationStage.value = 'Preparing image generation...'
+  if (!alreadyShowingImageProgress) {
+    generationProgress.value = 0
+    generationStage.value = 'Preparing image generation...'
+  }
+  let job
   try {
     await prepareSelectedModel()
-    generationStage.value = 'Starting image generation...'
+    if (!alreadyShowingImageProgress) generationStage.value = 'Starting image generation...'
     const response = await fetch('/generation-jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1552,9 +1556,11 @@ async function generate() {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
-    const job = await response.json()
-    activeJobId.value = job.id
-    activeImageJobRunning.value = ['running', 'cancelling'].includes(job.status)
+    job = await response.json()
+    if (['running', 'cancelling'].includes(job.status) && !activeJobId.value) {
+      activeJobId.value = job.id
+      activeImageJobRunning.value = true
+    }
     status.value = `Image job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
     await loadGenerationQueue()
     let currentJob = job
@@ -1563,26 +1569,29 @@ async function generate() {
       const statusResponse = await fetch(`/generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
-      activeImageJobRunning.value = ['running', 'cancelling'].includes(currentJob.status)
-      generationProgress.value = currentJob.progress
-      generationStage.value = currentJob.steps ? `${currentJob.stage} — Step ${currentJob.step} of ${currentJob.steps}` : currentJob.stage
+      if (['running', 'cancelling'].includes(currentJob.status) && !activeJobId.value) activeJobId.value = job.id
+      if (activeJobId.value === job.id) {
+        activeImageJobRunning.value = ['running', 'cancelling'].includes(currentJob.status)
+        generationProgress.value = currentJob.progress
+        generationStage.value = currentJob.steps ? `${currentJob.stage} — Step ${currentJob.step} of ${currentJob.steps}` : currentJob.stage
+      }
     }
     if (currentJob.status === 'cancelled') {
       status.value = 'Image generation cancelled.'
       return
     }
     if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Image generation failed')
-    generationStage.value = 'Image ready. Loading it into the preview...'
+    if (activeJobId.value === job.id) generationStage.value = 'Image ready. Loading it into the preview...'
     const imageResponse = await fetch(`/generation-jobs/${job.id}/image`)
     if (!imageResponse.ok) throw new Error(`Request failed (${imageResponse.status})`)
     const metadata = buildGenerationMetadata()
-    generationStage.value = 'Preparing the display preview...'
+    if (activeJobId.value === job.id) generationStage.value = 'Preparing the display preview...'
     await updateImagePreview(await imageResponse.blob(), {
       jobId: job.id,
       metadata,
       savedToLibrary: autoSaveImages.value
     })
-    generationStage.value = 'Refreshing your Creation Gallery...'
+    if (activeJobId.value === job.id) generationStage.value = 'Refreshing your Creation Gallery...'
     await loadSavedImages()
     status.value = autoSaveImages.value
       ? 'Image ready and saved. Your ESP32 display will pick it up shortly.'
@@ -1595,12 +1604,14 @@ async function generate() {
       status.value = ''
     }
   } finally {
-    generating.value = false
-    cancelling.value = false
-    activeJobId.value = ''
-    activeImageJobRunning.value = false
-    generationProgress.value = 0
-    generationStage.value = ''
+    if (activeJobId.value === job?.id) {
+      generating.value = false
+      cancelling.value = false
+      activeJobId.value = ''
+      activeImageJobRunning.value = false
+      generationProgress.value = 0
+      generationStage.value = ''
+    }
   }
 }
 
@@ -1633,10 +1644,14 @@ async function generateVideo() {
     videoError.value = 'Enter a frame count from 9 to 249 that is 1 more than a multiple of 8 (for example, 17, 25, or 33).'
     return
   }
+  const alreadyShowingVideoProgress = generatingVideo.value
   generatingVideo.value = true
   videoError.value = ''
-  videoProgress.value = 0
-  videoStage.value = 'Starting video generation. The selected model will download first if it is not already on this computer...'
+  if (!alreadyShowingVideoProgress) {
+    videoProgress.value = 0
+    videoStage.value = 'Starting video generation. The selected model will download first if it is not already on this computer...'
+  }
+  let job
   try {
     const response = await fetch('/video-generation-jobs', {
       method: 'POST',
@@ -1655,10 +1670,12 @@ async function generateVideo() {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
-    const job = await response.json()
-    activeVideoJobId.value = job.id
-    activeVideoJobRunning.value = ['running', 'cancelling'].includes(job.status)
-    videoStage.value = `Video job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
+    job = await response.json()
+    if (['running', 'cancelling'].includes(job.status) && !activeVideoJobId.value) {
+      activeVideoJobId.value = job.id
+      activeVideoJobRunning.value = true
+    }
+    if (!alreadyShowingVideoProgress) videoStage.value = `Video job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
     await loadGenerationQueue()
     if (cancelVideoOnStart.value) {
       cancelVideoOnStart.value = false
@@ -1670,30 +1687,35 @@ async function generateVideo() {
       const statusResponse = await fetch(`/video-generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
-      activeVideoJobRunning.value = ['running', 'cancelling'].includes(currentJob.status)
-      videoProgress.value = currentJob.progress
-      videoStage.value = currentJob.steps ? `${currentJob.stage} — Step ${currentJob.step} of ${currentJob.steps}` : currentJob.stage
+      if (['running', 'cancelling'].includes(currentJob.status) && !activeVideoJobId.value) activeVideoJobId.value = job.id
+      if (activeVideoJobId.value === job.id) {
+        activeVideoJobRunning.value = ['running', 'cancelling'].includes(currentJob.status)
+        videoProgress.value = currentJob.progress
+        videoStage.value = currentJob.steps ? `${currentJob.stage} — Step ${currentJob.step} of ${currentJob.steps}` : currentJob.stage
+      }
     }
     if (currentJob.status === 'cancelled') {
       videoStage.value = 'Video generation cancelled.'
       return
     }
     if (currentJob.status === 'failed') throw new Error(currentJob.error || 'Video generation failed')
-    videoStage.value = 'Video ready. Loading it into the preview...'
+    if (activeVideoJobId.value === job.id) videoStage.value = 'Video ready. Loading it into the preview...'
     const videoResponse = await fetch(`/video-generation-jobs/${job.id}/video`)
     if (!videoResponse.ok) throw new Error(`Request failed (${videoResponse.status})`)
-    videoStage.value = 'Preparing video preview...'
+    if (activeVideoJobId.value === job.id) videoStage.value = 'Preparing video preview...'
     await updateVideoPreview(await videoResponse.blob(), { jobId: job.id })
-    videoStage.value = 'Video ready. It is saved locally and can be downloaded below.'
+    if (activeVideoJobId.value === job.id) videoStage.value = 'Video ready. It is saved locally and can be downloaded below.'
   } catch (requestError) {
     videoError.value = `Could not generate the video: ${requestError.message}`
     videoStage.value = ''
   } finally {
-    generatingVideo.value = false
-    cancellingVideo.value = false
-    cancelVideoOnStart.value = false
-    activeVideoJobId.value = ''
-    activeVideoJobRunning.value = false
+    if (activeVideoJobId.value === job?.id) {
+      generatingVideo.value = false
+      cancellingVideo.value = false
+      cancelVideoOnStart.value = false
+      activeVideoJobId.value = ''
+      activeVideoJobRunning.value = false
+    }
   }
 }
 
