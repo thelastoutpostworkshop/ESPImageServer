@@ -866,12 +866,21 @@ async function loadSavedVideos() {
   }
 }
 
-function openSavedVideoContextMenu(event, savedVideo) {
-  event.preventDefault()
+function showSavedVideoActions(savedVideo, position) {
   contextMenuSavedVideo.value = savedVideo
-  savedVideoContextMenuPosition.value = [event.clientX, event.clientY]
+  savedVideoContextMenuPosition.value = position
   savedVideoContextMenu.value = false
   window.requestAnimationFrame(() => { savedVideoContextMenu.value = true })
+}
+
+function openSavedVideoContextMenu(event, savedVideo) {
+  event.preventDefault()
+  showSavedVideoActions(savedVideo, [event.clientX, event.clientY])
+}
+
+function openSavedVideoActions(event, savedVideo) {
+  const bounds = event.currentTarget.getBoundingClientRect()
+  showSavedVideoActions(savedVideo, [bounds.right, bounds.bottom])
 }
 
 async function openSavedVideo(savedVideo) {
@@ -1375,14 +1384,23 @@ async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
   }
 }
 
-function openSavedImageContextMenu(event, savedImage) {
-  event.preventDefault()
+function showSavedImageActions(savedImage, position) {
   contextMenuSavedImage.value = savedImage
-  savedImageContextMenuPosition.value = [event.clientX, event.clientY]
+  savedImageContextMenuPosition.value = position
   savedImageContextMenu.value = false
   window.requestAnimationFrame(() => {
     savedImageContextMenu.value = true
   })
+}
+
+function openSavedImageContextMenu(event, savedImage) {
+  event.preventDefault()
+  showSavedImageActions(savedImage, [event.clientX, event.clientY])
+}
+
+function openSavedImageActions(event, savedImage) {
+  const bounds = event.currentTarget.getBoundingClientRect()
+  showSavedImageActions(savedImage, [bounds.right, bounds.bottom])
 }
 
 function toggleImageLibraryView() {
@@ -2044,6 +2062,7 @@ onUnmounted(() => {
                 <template #activator="{ props }">
                   <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
                     <v-img :src="`/saved-images/${encodeURIComponent(savedImage.id)}/thumbnail`" aspect-ratio="1.33" cover />
+                    <v-btn class="saved-image-thumbnail__more" icon="mdi-dots-vertical" size="small" color="surface" variant="flat" elevation="3" aria-label="More actions for saved image" title="More actions" @pointerdown.stop @click.stop="openSavedImageActions($event, savedImage)" />
                     <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
                   </v-card>
                 </template>
@@ -2059,6 +2078,9 @@ onUnmounted(() => {
         <v-list v-if="!savedImagesLoading && filteredSavedImages.length && imageLibraryView === 'list'" class="saved-image-library saved-image-list" density="compact" lines="two">
           <v-list-item v-for="savedImage in filteredSavedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
             <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
+            <template #append>
+              <v-btn icon="mdi-dots-vertical" size="small" variant="text" aria-label="More actions for saved image" title="More actions" @pointerdown.stop @click.stop="openSavedImageActions($event, savedImage)" />
+            </template>
             <v-list-item-subtitle>{{ savedImage.metadata?.model?.name || 'ESPImageServer' }} · {{ new Date(savedImage.created_at).toLocaleString() }}</v-list-item-subtitle>
           </v-list-item>
         </v-list>
@@ -2073,6 +2095,7 @@ onUnmounted(() => {
                 <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
                   <v-img v-if="savedVideo.thumbnail_filename" :src="`/saved-videos/${encodeURIComponent(savedVideo.id)}/thumbnail`" aspect-ratio="1.33" cover />
                   <v-sheet v-else class="d-flex align-center justify-center" height="120"><v-icon size="40">mdi-movie-open-outline</v-icon></v-sheet>
+                  <v-btn class="saved-image-thumbnail__more" icon="mdi-dots-vertical" size="small" color="surface" variant="flat" elevation="3" aria-label="More actions for saved video" title="More actions" @pointerdown.stop @click.stop="openSavedVideoActions($event, savedVideo)" />
                   <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
                 </v-card>
               </template>

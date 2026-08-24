@@ -25,8 +25,9 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .saved-image-library { padding-right: 4px; }
 .saved-image-group + .saved-image-group { margin-top: 18px; }
 .saved-image-grid { display: grid; grid-template-columns: repeat(auto-fill, var(--thumbnail-size)); gap: 8px; }
-.saved-image-thumbnail { width: var(--thumbnail-size); cursor: pointer; overflow: hidden; }
+.saved-image-thumbnail { position: relative; width: var(--thumbnail-size); cursor: pointer; overflow: hidden; }
 .saved-image-thumbnail:hover { border-color: rgb(var(--v-theme-primary)); }
+.saved-image-thumbnail__more { position: absolute; z-index: 1; top: 4px; right: 4px; }
 .saved-image-thumbnail__prompt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .saved-creation-tooltip__prompt { display: -webkit-box; margin-top: 4px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .model-switch-dialog__heading { min-width: 0; }
