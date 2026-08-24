@@ -2211,7 +2211,7 @@ onUnmounted(() => {
         <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
       <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height} · Firmware ${display.firmware_version}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
-        <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}</span>
+        <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height} · v${display.firmware_version}` : 'Display waiting' }}</span>
       </v-chip>
       <v-spacer />
       <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
