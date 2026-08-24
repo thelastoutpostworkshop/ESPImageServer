@@ -2719,8 +2719,16 @@ onUnmounted(() => {
                 <div class="d-flex justify-end ga-1">
                   <v-tooltip text="Show on display">
                     <template #activator="{ props }">
-                      <v-btn v-if="displayingSdCardFile !== item.name" v-bind="props" icon="mdi-play" size="small" color="primary" variant="text" :disabled="Boolean(displayingSdCardFile)" @click="showSDCardFileOnDisplay(item.name)" />
-                      <v-progress-circular v-else v-bind="props" indeterminate color="primary" size="22" width="3" />
+                      <v-btn
+                        v-bind="props"
+                        icon="mdi-play"
+                        size="small"
+                        color="primary"
+                        variant="text"
+                        :loading="displayingSdCardFile === item.name"
+                        :disabled="Boolean(displayingSdCardFile)"
+                        @click="showSDCardFileOnDisplay(item.name)"
+                      />
                     </template>
                   </v-tooltip>
                   <v-tooltip text="Delete from SD card">
