@@ -11,6 +11,7 @@ class DisplayProfile:
     name: str
     width: int
     height: int
+    firmware_version: str
 
 
 class ActiveDisplayStore:
@@ -18,8 +19,15 @@ class ActiveDisplayStore:
         self._lock = Lock()
         self._profile: DisplayProfile | None = None
 
-    def set(self, name: str, width: int, height: int) -> DisplayProfile:
-        profile = DisplayProfile(name=name, width=width, height=height)
+    def set(
+        self, name: str, width: int, height: int, firmware_version: str,
+    ) -> DisplayProfile:
+        profile = DisplayProfile(
+            name=name,
+            width=width,
+            height=height,
+            firmware_version=firmware_version,
+        )
         with self._lock:
             self._profile = profile
         return profile

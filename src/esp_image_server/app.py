@@ -106,6 +106,11 @@ class DisplayAnnouncement(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     width: int = Field(ge=64, le=1_024)
     height: int = Field(ge=64, le=1_024)
+    firmware_version: str = Field(
+        min_length=1,
+        max_length=32,
+        pattern=r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$",
+    )
 
 
 class DisplaySettingsRequest(BaseModel):
@@ -431,16 +436,32 @@ def create_app(
                 "name": profile.name,
                 "width": profile.width,
                 "height": profile.height,
+                "firmware_version": profile.firmware_version,
             }
         return JSONResponse(content=payload, headers={"Cache-Control": "no-store, max-age=0"})
 
     @app.post("/display", status_code=status.HTTP_201_CREATED)
     def announce_display(announcement: DisplayAnnouncement) -> dict[str, object]:
         profile = active_display_store.set(
-            announcement.name, announcement.width, announcement.height
+            announcement.name,
+            announcement.width,
+            announcement.height,
+            announcement.firmware_version,
         )
-        logger.info("Active display announced: %s (%sx%s)", profile.name, profile.width, profile.height)
-        return {"status": "registered", "name": profile.name, "width": profile.width, "height": profile.height}
+        logger.info(
+            "Active display announced: %s (%sx%s), firmware %s",
+            profile.name,
+            profile.width,
+            profile.height,
+            profile.firmware_version,
+        )
+        return {
+            "status": "registered",
+            "name": profile.name,
+            "width": profile.width,
+            "height": profile.height,
+            "firmware_version": profile.firmware_version,
+        }
 
     @app.get("/display-settings")
     def get_display_settings() -> dict[str, int]:

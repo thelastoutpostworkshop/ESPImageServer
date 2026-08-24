@@ -537,17 +537,19 @@ watch(page, (nextPage, previousPage) => {
 
 const displayMessage = computed(() => {
   if (!display.value?.connected) return 'Waiting for the ESP32 board to report its integrated display...'
-  return `${display.value.name} connected — ${display.value.width} × ${display.value.height}. Images will fit this screen.`
+  const firmwareVersion = display.value.firmware_version
+  return `${display.value.name} connected — ${display.value.width} × ${display.value.height}. Firmware ${firmwareVersion}. Images will fit this screen.`
 })
 
 async function loadDisplay() {
   try {
     const nextDisplay = await fetch('/display', { cache: 'no-store' }).then(response => response.json())
-    const previousKey = display.value?.connected ? `${display.value.name}:${display.value.width}x${display.value.height}` : ''
-    const nextKey = nextDisplay?.connected ? `${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}` : ''
+    const previousKey = display.value?.connected ? `${display.value.name}:${display.value.width}x${display.value.height}:${display.value.firmware_version}` : ''
+    const nextKey = nextDisplay?.connected ? `${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}:${nextDisplay.firmware_version}` : ''
     display.value = nextDisplay
     if (nextKey && nextKey !== previousKey) {
-      displayConnectedMessage.value = `${nextDisplay.name} connected (${nextDisplay.width} × ${nextDisplay.height}).`
+      const firmwareVersion = nextDisplay.firmware_version
+      displayConnectedMessage.value = `${nextDisplay.name} connected (${nextDisplay.width} × ${nextDisplay.height}, firmware ${firmwareVersion}).`
       displayConnectedSnackbar.value = true
     }
   } catch {
@@ -2208,7 +2210,7 @@ onUnmounted(() => {
       <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.label" @click="openActiveGeneration">
         <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
-      <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
+      <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height} · Firmware ${display.firmware_version}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
         <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height}` : 'Display waiting' }}</span>
       </v-chip>
       <v-spacer />

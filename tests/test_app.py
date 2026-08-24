@@ -213,13 +213,44 @@ def test_active_esp32_display_sets_the_default_generated_image_size() -> None:
     with TestClient(app) as client:
         assert client.get("/display").json() == {"connected": False}
         announcement = client.post(
-            "/display", json={"name": "JC4827W543 display", "width": 480, "height": 272}
+            "/display", json={
+                "name": "JC4827W543 display",
+                "width": 480,
+                "height": 272,
+                "firmware_version": "1.0.0",
+            }
         )
+        active_display = client.get("/display")
         generated = client.post("/generate", json={"prompt": "a tiny robot"})
 
     assert announcement.status_code == 201
+    assert announcement.json()["firmware_version"] == "1.0.0"
+    assert active_display.json()["firmware_version"] == "1.0.0"
     assert Image.open(BytesIO(generated.content)).size == (480, 272)
     assert generator.last_size == (512, 288)
+
+
+def test_display_firmware_version_is_required_and_uses_semantic_versioning() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        missing = client.post("/display", json={"name": "Test display", "width": 480, "height": 272})
+        valid = client.post("/display", json={
+            "name": "Test display",
+            "width": 480,
+            "height": 272,
+            "firmware_version": "1.0.0-rc.1+build.4",
+        })
+        invalid = client.post("/display", json={
+            "name": "Test display",
+            "width": 480,
+            "height": 272,
+            "firmware_version": "version one",
+        })
+
+    assert missing.status_code == 422
+    assert valid.status_code == 201
+    assert valid.json()["firmware_version"] == "1.0.0-rc.1+build.4"
+    assert invalid.status_code == 422
 
 
 def test_server_side_display_rotation_generates_for_rotated_aspect_ratio(tmp_path) -> None:
@@ -227,7 +258,7 @@ def test_server_side_display_rotation_generates_for_rotated_aspect_ratio(tmp_pat
     rotation_store = DisplaySettingsStore(tmp_path / "display_settings.json")
     app = create_app(Settings(), generator, display_settings_store=rotation_store, enable_mdns=False)
     with TestClient(app) as client:
-        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272})
+        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272, "firmware_version": "1.0.0"})
         settings = client.put("/display-settings", json={"rotation": 90})
         generated = client.post("/generate", json={"prompt": "a tiny robot"})
 
@@ -240,7 +271,7 @@ def test_ssd_1b_uses_a_larger_aspect_matched_generation_canvas() -> None:
     generator = FakeGenerator()
     app = create_app(Settings(model_id="segmind/SSD-1B"), generator, enable_mdns=False)
     with TestClient(app) as client:
-        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272})
+        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272, "firmware_version": "1.0.0"})
         response = client.post("/generate", json={"prompt": "a tiny robot"})
 
     assert response.status_code == 200
@@ -494,7 +525,7 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
     monkeypatch.setattr("esp_image_server.app.subprocess.run", fake_display_conversion)
 
     with TestClient(app) as client:
-        assert client.post("/display", json={"name": "Test display", "width": 480, "height": 272}).status_code == 201
+        assert client.post("/display", json={"name": "Test display", "width": 480, "height": 272, "firmware_version": "1.0.0"}).status_code == 201
         queued = client.post(f"/display-commands/save-saved-video/{record['id']}")
         command = client.get("/display-commands/next")
         thumbnail = client.get(f"/display-sd-card/thumbnails/{command.json()['filename']}")
@@ -540,7 +571,7 @@ def test_video_generation_metadata_records_the_active_display() -> None:
     app = create_app(Settings(), generator, video_generator=FakeVideoGenerator(), enable_mdns=False)
 
     with TestClient(app) as client:
-        announced = client.post("/display", json={"name": "Cheap Yellow Display", "width": 240, "height": 320})
+        announced = client.post("/display", json={"name": "Cheap Yellow Display", "width": 240, "height": 320, "firmware_version": "1.0.0"})
         created = client.post("/video-generation-jobs", json={"prompt": "a tiny robot"})
 
     assert announced.status_code == 201
@@ -636,7 +667,7 @@ def test_dreamshaper_uses_an_aspect_matched_sd_1_5_canvas() -> None:
     generator = FakeGenerator()
     app = create_app(Settings(model_id="Lykon/dreamshaper-8"), generator, enable_mdns=False)
     with TestClient(app) as client:
-        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272})
+        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272, "firmware_version": "1.0.0"})
         response = client.post("/generate", json={"prompt": "a tiny robot"})
 
     assert response.status_code == 200
@@ -647,7 +678,7 @@ def test_sdxl_uses_a_large_aspect_matched_generation_canvas() -> None:
     generator = FakeGenerator()
     app = create_app(Settings(model_id="stabilityai/stable-diffusion-xl-base-1.0"), generator, enable_mdns=False)
     with TestClient(app) as client:
-        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272})
+        client.post("/display", json={"name": "JC4827W543 display", "width": 480, "height": 272, "firmware_version": "1.0.0"})
         response = client.post("/generate", json={"prompt": "a tiny robot"})
 
     assert response.status_code == 200
