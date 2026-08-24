@@ -1360,6 +1360,7 @@ async function chooseImageLibrary() {
 }
 
 async function openMetadataPane() {
+  if (mobile.value) drawer.value = false
   metadataPane.value = true
   await loadSavedImages()
   await loadDisplaySdCard()
@@ -2001,6 +2002,7 @@ onUnmounted(() => {
       <v-list nav density="comfortable">
         <v-list-item prepend-icon="mdi-image-plus" title="Generate image" :active="page === 'generate'" @click="openGeneratePage" />
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="page = 'video'" />
+        <v-list-item prepend-icon="mdi-image-text" title="Creation Library" :active="metadataPane" @click="openMetadataPane" />
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
