@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import logging
 from pathlib import Path
 from threading import Lock
+from time import perf_counter
 from typing import Callable
 from uuid import uuid4
 
@@ -33,6 +34,7 @@ class QueuedGenerationJob:
     video_path: Path | None = None
     error: str | None = None
     cancel_requested: bool = False
+    generation_time_seconds: float | None = None
 
     def as_dict(self, queue_position: int | None = None) -> dict[str, object]:
         progress = 100 if self.status == "complete" else (0 if self.steps == 0 else round(self.step * 100 / self.steps))
@@ -41,6 +43,7 @@ class QueuedGenerationJob:
             "step": self.step, "steps": self.steps, "progress": progress, "error": self.error,
             "cancellable": self.status in {"queued", "running", "cancelling"},
             "queue_position": queue_position, "metadata": self.metadata,
+            "generation_time_seconds": self.generation_time_seconds,
         }
 
 
@@ -128,6 +131,7 @@ class GenerationQueue:
             job = self._jobs[job_id]
             kind = job.kind
             work = job.work
+        generation_started_at = perf_counter()
         try:
             if cancelled():
                 raise GenerationCancelled()
@@ -139,16 +143,19 @@ class GenerationQueue:
             with self._lock:
                 job = self._jobs[job_id]
                 job.status, job.stage, job.error = "cancelled", f"{kind.capitalize()} generation cancelled", None
+                job.generation_time_seconds = round(perf_counter() - generation_started_at, 2)
         except Exception as exc:
             logger.exception("%s generation job %s failed", kind, job_id)
             with self._lock:
                 job = self._jobs[job_id]
                 job.status, job.stage = "failed", f"{kind.capitalize()} generation failed"
                 job.error = user_facing_generation_error(exc, kind)
+                job.generation_time_seconds = round(perf_counter() - generation_started_at, 2)
         else:
             with self._lock:
                 job = self._jobs[job_id]
                 job.status, job.stage = "complete", f"{kind.capitalize()} ready"
+                job.generation_time_seconds = round(perf_counter() - generation_started_at, 2)
                 if kind == "image":
                     job.jpeg = result if isinstance(result, bytes) else None
                 else:

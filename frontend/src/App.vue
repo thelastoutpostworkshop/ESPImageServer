@@ -829,6 +829,15 @@ function formatDateTime(value) {
   return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString()
 }
 
+function formatGenerationTime(seconds) {
+  const duration = Number(seconds)
+  if (!Number.isFinite(duration) || duration < 0) return ''
+  if (duration < 60) return `${duration < 10 ? duration.toFixed(1) : Math.round(duration)} sec`
+  const minutes = Math.floor(duration / 60)
+  const remainingSeconds = Math.round(duration % 60)
+  return `${minutes}m ${remainingSeconds}s`
+}
+
 function showSDCardSnackbar(message) {
   sdCardSnackbarMessage.value = message
   sdCardSnackbar.value = true
@@ -1644,7 +1653,7 @@ async function generate() {
     if (activeJobId.value === job.id) generationStage.value = 'Image ready. Loading it into the preview...'
     const imageResponse = await fetchGenerationResponse(`/generation-jobs/${job.id}/image`)
     if (!imageResponse.ok) throw new Error(`Request failed (${imageResponse.status})`)
-    const metadata = buildGenerationMetadata()
+    const metadata = currentJob.metadata || buildGenerationMetadata()
     if (activeJobId.value === job.id) generationStage.value = 'Preparing the display preview...'
     await updateImagePreview(await imageResponse.blob(), {
       jobId: job.id,
@@ -2023,6 +2032,7 @@ onUnmounted(() => {
                 <div class="text-body-2 saved-creation-tooltip">
                   <div class="font-weight-bold">{{ savedImage.metadata?.model?.name || 'ESPImageServer' }}</div>
                   <div class="saved-creation-tooltip__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
+                  <div v-if="formatGenerationTime(savedImage.metadata?.generation_time_seconds)" class="text-caption mt-1">Generated in {{ formatGenerationTime(savedImage.metadata?.generation_time_seconds) }}</div>
                 </div>
               </v-tooltip>
             </div>
@@ -2051,6 +2061,7 @@ onUnmounted(() => {
               <div class="text-body-2 saved-creation-tooltip">
                 <div class="font-weight-bold">{{ savedVideo.metadata?.model?.name || 'LTX-Video' }}</div>
                 <div class="saved-creation-tooltip__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
+                <div v-if="formatGenerationTime(savedVideo.metadata?.generation_time_seconds)" class="text-caption mt-1">Generated in {{ formatGenerationTime(savedVideo.metadata?.generation_time_seconds) }}</div>
               </div>
             </v-tooltip>
             </div>
@@ -2192,7 +2203,7 @@ onUnmounted(() => {
                   <v-icon v-else :color="job.status === 'failed' ? 'error' : 'warning'" :icon="job.status === 'failed' ? 'mdi-alert-circle' : 'mdi-cancel'" />
                 </template>
                 <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
-                <v-list-item-subtitle>{{ job.status === 'complete' ? `${job.kind === 'video' ? 'Video' : 'Image'} generation complete` : job.error || job.stage }}</v-list-item-subtitle>
+                <v-list-item-subtitle>{{ job.status === 'complete' ? `${job.kind === 'video' ? 'Video' : 'Image'} generation complete${formatGenerationTime(job.generation_time_seconds) ? ` · Generated in ${formatGenerationTime(job.generation_time_seconds)}` : ''}` : job.error || job.stage }}</v-list-item-subtitle>
                 <template #append>
                   <v-btn v-if="job.status === 'complete'" icon="mdi-open-in-new" size="small" variant="text" :aria-label="`Open completed ${job.kind}`" :title="`Open completed ${job.kind}`" @click="openQueuedGeneration(job)" />
                   <v-chip :color="job.status === 'complete' ? 'success' : job.status === 'failed' ? 'error' : 'warning'" size="small" variant="tonal">{{ job.status === 'complete' ? 'Complete' : job.status === 'failed' ? 'Failed' : 'Cancelled' }}</v-chip>

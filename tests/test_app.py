@@ -142,6 +142,9 @@ def test_generation_job_reports_progress_and_returns_its_image() -> None:
 
     assert created.status_code == 202
     assert job["progress"] == 100
+    assert isinstance(job["generation_time_seconds"], float)
+    assert job["generation_time_seconds"] >= 0
+    assert isinstance(job["metadata"]["generation_time_seconds"], float)
     assert image.status_code == 200
     assert Image.open(BytesIO(image.content)).size == (20, 10)
 

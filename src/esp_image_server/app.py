@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import subprocess
 from threading import Timer
+from time import perf_counter
 from typing import Protocol
 import webbrowser
 
@@ -922,7 +923,9 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "acknowledged"}
 
-    def generate_jpeg(request: GenerateRequest, progress=None, is_cancelled=None, model_id: str | None = None, selected_settings: Settings | None = None) -> bytes:
+    def generate_jpeg(request: GenerateRequest, progress=None, is_cancelled=None, model_id: str | None = None, selected_settings: Settings | None = None, generation_metadata: dict[str, object] | None = None) -> bytes:
+        generation_started_at = perf_counter()
+
         def ensure_not_cancelled() -> None:
             if is_cancelled is not None and is_cancelled():
                 raise GenerationCancelled()
@@ -976,7 +979,8 @@ def create_app(
         if progress is not None:
             progress(1, 1, "Encoding image for your ESP32 display")
         jpeg = to_jpeg(image, width=output_width, height=output_height, quality=jpeg_quality)
-        metadata = {
+        metadata = generation_metadata if generation_metadata is not None else {}
+        metadata.update({
             "version": 1,
             "createdAt": datetime.now(UTC).isoformat(),
             "model": {"id": job_model_id, "name": model.name},
@@ -985,11 +989,12 @@ def create_app(
             "steps": steps,
             "seed": request.seed,
             "rotation": rotation,
+            "generation_time_seconds": round(perf_counter() - generation_started_at, 2),
             "display": (
                 {"name": profile.name, "width": profile.width, "height": profile.height}
                 if profile is not None else None
             ),
-        }
+        })
         jpeg = embed_jpeg_metadata(jpeg, metadata)
         ensure_not_cancelled()
         latest_image_store.set(jpeg)
@@ -1018,10 +1023,11 @@ def create_app(
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
         job_model_id = active_model_id
         job_settings = active_settings
+        image_metadata: dict[str, object] = {"label": request.prompt[:80], "model_id": job_model_id}
         job = generation_queue.create(
             "image",
-            lambda progress, is_cancelled: (video_generator.unload(), generate_jpeg(request, progress, is_cancelled, job_model_id, job_settings))[1],
-            {"label": request.prompt[:80], "model_id": job_model_id},
+            lambda progress, is_cancelled: (video_generator.unload(), generate_jpeg(request, progress, is_cancelled, job_model_id, job_settings, image_metadata))[1],
+            image_metadata,
         )
         return job.as_dict()
 
@@ -1137,11 +1143,13 @@ def create_app(
         }
 
         def generate_video(progress, cancelled):
+            generation_started_at = perf_counter()
             generator.unload()
             result = video_generator.generate(
                 request.prompt, output_width, output_height, request.num_frames, request.fps,
                 request.steps, request.seed, output_path, progress, cancelled, source_image_path, request.model_id,
             )
+            video_metadata["generation_time_seconds"] = round(perf_counter() - generation_started_at, 2)
             if auto_save_videos:
                 progress(request.steps, request.steps, "Saving video to your Creation Gallery")
                 saved_video = video_library.save(result, video_metadata)
