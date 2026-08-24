@@ -76,6 +76,8 @@ const health = ref(null)
 const display = ref(null)
 const displayConnectedSnackbar = ref(false)
 const displayConnectedMessage = ref('')
+const generationQueueSnackbar = ref(false)
+const generationQueueSnackbarMessage = ref('')
 const displayRotation = ref(0)
 const models = ref([])
 const availableVideoModels = ref([])
@@ -1581,6 +1583,11 @@ async function fetchGenerationResponse(url) {
   }
 }
 
+function showQueueAddedFeedback(kind, queuePosition) {
+  generationQueueSnackbarMessage.value = `${kind} added to the queue${queuePosition ? ` · position ${queuePosition}` : ''}.`
+  generationQueueSnackbar.value = true
+}
+
 async function generate() {
   const alreadyShowingImageProgress = generating.value
   generating.value = true
@@ -1614,6 +1621,7 @@ async function generate() {
       activeImageJobRunning.value = true
     }
     status.value = `Image job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
+    showQueueAddedFeedback('Image', job.queue_position)
     await loadGenerationQueue()
     let currentJob = job
     while (!['complete', 'failed', 'cancelled'].includes(currentJob.status)) {
@@ -1728,6 +1736,7 @@ async function generateVideo() {
       activeVideoJobRunning.value = true
     }
     if (!alreadyShowingVideoProgress) videoStage.value = `Video job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
+    showQueueAddedFeedback('Video', job.queue_position)
     await loadGenerationQueue()
     if (cancelVideoOnStart.value) {
       cancelVideoOnStart.value = false
@@ -1874,6 +1883,15 @@ onUnmounted(() => {
         <v-icon icon="mdi-check-circle" />
         <span>{{ sdCardSnackbarMessage }}</span>
       </div>
+    </v-snackbar>
+    <v-snackbar v-model="generationQueueSnackbar" color="success" location="bottom" timeout="5000">
+      <div class="d-flex align-center ga-2">
+        <v-icon icon="mdi-check-circle" />
+        <span>{{ generationQueueSnackbarMessage }}</span>
+      </div>
+      <template #actions>
+        <v-btn variant="text" @click="page = 'queue'; generationQueueSnackbar = false">View queue</v-btn>
+      </template>
     </v-snackbar>
 
     <v-app-bar name="primary-app-bar" order="-1" color="surface" border elevation="2" class="app-bar">
