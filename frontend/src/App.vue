@@ -137,6 +137,7 @@ const deleteSavedVideoDialog = ref(false)
 const deletingSavedVideo = ref(false)
 const deleteSavedVideoDontAskAgain = ref(false)
 const savingToDisplaySdCard = ref(false)
+const showingSavedImageOnDisplay = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardLoading = ref(false)
 const sdCardItemsPerPage = ref(loadSDCardItemsPerPage())
@@ -1351,6 +1352,29 @@ async function useRecalledSettings() {
   await useSavedImageSettings(recalledMetadata.value, 'all')
 }
 
+async function useSelectedSavedImageSettings() {
+  if (!selectedSavedImage.value) return
+  await useSavedImageSettings(selectedSavedImage.value.metadata, 'all')
+}
+
+async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
+  if (!savedImage || !display.value?.connected || showingSavedImageOnDisplay.value) return
+  showingSavedImageOnDisplay.value = true
+  error.value = ''
+  try {
+    const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Could not send image to display (${response.status})`)
+    }
+    status.value = 'Selected image is ready for your ESP32 display.'
+  } catch (requestError) {
+    error.value = `Could not show the saved image on your display: ${requestError.message}`
+  } finally {
+    showingSavedImageOnDisplay.value = false
+  }
+}
+
 function openSavedImageContextMenu(event, savedImage) {
   event.preventDefault()
   contextMenuSavedImage.value = savedImage
@@ -1447,7 +1471,6 @@ async function deleteSavedImage() {
 }
 
 async function openSavedImage(savedImage) {
-  await useSavedImageSettings(savedImage.metadata, 'all')
   metadataError.value = ''
   const requestId = ++imagePreviewRequestId
   try {
@@ -1461,14 +1484,9 @@ async function openSavedImage(savedImage) {
     })
     if (!shown) return
     recalledMetadata.value = savedImage.metadata
-    if (display.value?.connected) {
-      const displayResponse = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, { method: 'POST' })
-      if (!displayResponse.ok) {
-        const body = await displayResponse.json().catch(() => ({}))
-        throw new Error(body.detail || `Could not send image to display (${displayResponse.status})`)
-      }
-      status.value = 'Selected image is ready for your ESP32 display.'
-    }
+    status.value = 'Previewing saved image. Generator settings and the display are unchanged.'
+    page.value = 'generate'
+    if (!metadataPanePinned.value) metadataPane.value = false
   } catch (requestError) {
     metadataError.value = `Could not open this saved image: ${requestError.message}`
   }
@@ -2086,6 +2104,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
+        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" title="Show on display" :disabled="!display?.connected || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
         <v-list-item color="primary" prepend-icon="mdi-sd" title="Save to display SD card" :disabled="!display?.connected || savingToDisplaySdCard" @click="saveContextMenuImageToDisplaySdCard" />
         <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
         <v-divider class="my-1" />
@@ -2374,12 +2393,13 @@ onUnmounted(() => {
         <v-col cols="12" lg="7">
         <v-card class="generated-image-card h-100">
           <v-card-title class="d-flex flex-wrap align-center ga-2 text-subtitle-1">
-            <span>Latest completed image</span>
+            <span>{{ selectedSavedImage ? 'Selected saved image' : 'Latest completed image' }}</span>
             <v-chip v-if="activeImageQueueJob" color="primary" size="small" variant="tonal" prepend-icon="mdi-image-outline" :title="activeImageQueueJob.stage">
               {{ resultPanelQueueStatus(activeImageQueueJob) }}
             </v-chip>
           </v-card-title>
           <v-card-subtitle v-if="activeImageQueueJob && imageUrl" class="pb-3">The previous image remains available until this job is complete.</v-card-subtitle>
+          <v-card-subtitle v-else-if="selectedSavedImage" class="pb-3">Previewing a saved image. Use its settings or show it on the display when you are ready.</v-card-subtitle>
           <v-progress-linear
             v-if="activeImageQueueJob"
             class="mx-4 mb-3"
@@ -2403,6 +2423,12 @@ onUnmounted(() => {
             <v-chip v-if="previewFittedFor" size="small" variant="tonal" prepend-icon="mdi-monitor-dashboard">
               Preview: fitted for {{ previewFittedFor.name }} ({{ previewFittedFor.width }}×{{ previewFittedFor.height }})
             </v-chip>
+            <v-btn v-if="selectedSavedImage" color="primary" prepend-icon="mdi-restore" @click="useSelectedSavedImageSettings">
+              Use saved settings
+            </v-btn>
+            <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!display?.connected" @click="showSavedImageOnDisplay()">
+              Show on display
+            </v-btn>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
             </v-btn>
