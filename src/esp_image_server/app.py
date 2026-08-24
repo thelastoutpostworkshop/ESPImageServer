@@ -479,22 +479,41 @@ def create_app(
             fps = max(1, min(24, int(fps)))
         except (TypeError, ValueError):
             fps = 15
-        filename = f"esp-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{video_id[:8]}-fps{fps}.mjpeg"
+        profile = active_display_store.get()
+        if profile is None:
+            raise HTTPException(status_code=409, detail="Connect a display before saving a video to its SD card")
+        content_key = f"v1-{video_id}-{profile.width}x{profile.height}-fps{fps}"
+        existing_filename = display_command_store.find_sd_card_video(content_key, video_id, fps)
+        if existing_filename is not None:
+            return {
+                "status": "already_saved",
+                "filename": existing_filename,
+                "content_key": content_key,
+                "detail": "This video is already on the display SD card for its current size and frame rate",
+            }
+        filename = f"esp-video-{content_key}.mjpeg"
         thumbnail_path = video_library.find_thumbnail_path(video_id)
         if thumbnail_path is not None:
             write_sd_thumbnail(filename, thumbnail_path.read_bytes())
         return display_command_store.queue(
             "save_saved_video", filename=filename, video_id=video_id,
             video_url=f"/saved-videos/{video_id}/mjpeg-download", fps=fps,
-            thumbnail_url=f"/saved-videos/{video_id}/thumbnail",
+            content_key=content_key, thumbnail_url=f"/saved-videos/{video_id}/thumbnail",
         )
 
     def queue_image_save(jpeg: bytes, image_id: str | None = None) -> dict[str, object]:
         image_hash = hashlib.sha256(jpeg).hexdigest()[:16]
-        filename = f"esp-image-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{image_hash}.jpg"
-        if display_command_store.sd_card_has_image_hash(image_hash):
-            return {"status": "already_saved", "filename": filename, "detail": "Image is already on the display SD card"}
-        command = display_command_store.queue_save(filename, image_id)
+        content_key = f"v1-{image_hash}"
+        existing_filename = display_command_store.find_sd_card_image(image_hash)
+        if existing_filename is not None:
+            return {
+                "status": "already_saved",
+                "filename": existing_filename,
+                "content_key": content_key,
+                "detail": "This image is already on the display SD card",
+            }
+        filename = f"esp-image-{content_key}.jpg"
+        command = display_command_store.queue_save(filename, image_id, content_key=content_key)
         write_sd_thumbnail(filename, jpeg)
         return command
 
@@ -509,7 +528,10 @@ def create_app(
         """Rebuild the server thumbnail cache for an MJPEG file already on the card."""
         if not filename.endswith(".mjpeg") or "-fps" not in filename:
             return
-        video_prefix = filename.rsplit("-fps", 1)[0].rsplit("-", 1)[-1]
+        if "-v1-" in filename:
+            video_prefix = filename.split("-v1-", 1)[1].split("-", 1)[0]
+        else:
+            video_prefix = filename.rsplit("-fps", 1)[0].rsplit("-", 1)[-1]
         record = next(
             (item for item in video_library.list(limit=10_000) if str(item.get("id", "")).startswith(video_prefix)),
             None,

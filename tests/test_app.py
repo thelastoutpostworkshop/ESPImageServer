@@ -261,7 +261,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
 def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
     app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
-        assert client.get("/display-sd-card").json() == {"available": False, "files": []}
+        assert client.get("/display-sd-card").json() == {"available": False, "files": [], "report_version": 0}
         report = client.post(
             "/display-sd-card/report",
             json={
@@ -281,8 +281,11 @@ def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
         preview_command = client.get("/display-commands/next")
         stop_preview = client.delete("/display-experience/preview")
         stop_preview_command = client.get("/display-commands/next")
+        sd_card_report = client.get("/display-sd-card").json()
 
     assert report.status_code == 204
+    assert sd_card_report["report_version"] == 1
+    assert sd_card_report["reported_at"]
     assert reported_experience.json()["current_mode"] == "sd_card"
     assert reported_experience.json()["slideshow_interval_ms"] == 15000
     assert queued.status_code == 202
@@ -297,6 +300,29 @@ def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
     assert preview_command.json()["offline_experience"] == "video_loop"
     assert stop_preview.status_code == 202
     assert stop_preview_command.json()["type"] == "stop_display_experience_preview"
+
+
+def test_sd_card_refresh_reports_the_inventory_version_it_requires() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        refresh = client.post("/display-sd-card/refresh")
+        acknowledgement = client.post(
+            f"/display-commands/{refresh.json()['id']}/ack",
+            json={"success": True, "detail": "SD card list refreshed"},
+        )
+        report = client.post(
+            "/display-sd-card/report",
+            json={
+                "available": True,
+                "mode": "server_controlled",
+                "total_bytes": 1024,
+                "used_bytes": 0,
+                "files": [],
+            },
+        )
+
+    assert acknowledgement.json()["report_version"] == 1
+    assert report.status_code == 204
 
 
 def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
@@ -455,16 +481,36 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
     monkeypatch.setattr("esp_image_server.app.subprocess.run", fake_display_conversion)
 
     with TestClient(app) as client:
+        assert client.post("/display", json={"name": "Test display", "width": 480, "height": 272}).status_code == 201
         queued = client.post(f"/display-commands/save-saved-video/{record['id']}")
         command = client.get("/display-commands/next")
         thumbnail = client.get(f"/display-sd-card/thumbnails/{command.json()['filename']}")
         mjpeg = client.get(f"/saved-videos/{record['id']}/mjpeg-download?width=480&height=272&fps=12")
+        report = client.post(
+            "/display-sd-card/report",
+            json={
+                "available": True,
+                "mode": "server_controlled",
+                "total_bytes": 1024,
+                "used_bytes": 256,
+                "files": [{
+                    "name": command.json()["filename"],
+                    "type": "video",
+                    "content_key": command.json()["content_key"],
+                }],
+            },
+        )
+        reused = client.post(f"/display-commands/save-saved-video/{record['id']}")
 
     assert queued.status_code == 202
     assert command.json()["type"] == "save_saved_video"
     assert command.json()["video_url"] == f"/saved-videos/{record['id']}/mjpeg-download"
     assert command.json()["fps"] == 12
-    assert command.json()["filename"].endswith("-fps12.mjpeg")
+    assert command.json()["filename"].endswith(f"-v1-{record['id']}-480x272-fps12.mjpeg")
+    assert command.json()["content_key"] == f"v1-{record['id']}-480x272-fps12"
+    assert report.status_code == 204
+    assert reused.json()["status"] == "already_saved"
+    assert reused.json()["filename"] == command.json()["filename"]
     assert thumbnail.status_code == 200
     assert thumbnail.headers["content-type"] == "image/jpeg"
     assert mjpeg.status_code == 200
@@ -547,11 +593,30 @@ def test_display_can_save_a_specific_creation_library_image_to_sd_card(tmp_path)
     with TestClient(app) as client:
         queued = client.post(f"/display-commands/save-saved-image/{record['id']}")
         command = client.get("/display-commands/next")
+        report = client.post(
+            "/display-sd-card/report",
+            json={
+                "available": True,
+                "mode": "server_controlled",
+                "total_bytes": 1024,
+                "used_bytes": 256,
+                "files": [{
+                    "name": command.json()["filename"],
+                    "type": "image",
+                    "content_key": command.json()["content_key"],
+                }],
+            },
+        )
+        reused = client.post(f"/display-commands/save-saved-image/{record['id']}")
 
     assert queued.status_code == 202
     assert command.json()["type"] == "save_saved_image"
     assert command.json()["image_id"] == record["id"]
     assert command.json()["thumbnail_url"].endswith(command.json()["filename"])
+    assert command.json()["content_key"].startswith("v1-")
+    assert report.status_code == 204
+    assert reused.json()["status"] == "already_saved"
+    assert reused.json()["filename"] == command.json()["filename"]
 
 
 def test_dreamshaper_uses_an_aspect_matched_sd_1_5_canvas() -> None:

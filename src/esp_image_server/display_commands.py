@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from threading import Lock
 from uuid import uuid4
 
@@ -11,9 +12,22 @@ class DisplayCommandStore:
         self._lock = Lock()
         self._pending: dict[str, object] | None = None
         self._completed: dict[str, dict[str, object]] = {}
+        self._sd_card_report_version = 0
+        self._sd_card_report: dict[str, object] = {
+            "available": False,
+            "files": [],
+            "report_version": self._sd_card_report_version,
+        }
 
-    def queue_save(self, filename: str, image_id: str | None = None) -> dict[str, object]:
-        command = self.queue("save_saved_image" if image_id else "save_latest", filename=filename, image_id=image_id)
+    def queue_save(
+        self, filename: str, image_id: str | None = None, content_key: str | None = None,
+    ) -> dict[str, object]:
+        command = self.queue(
+            "save_saved_image" if image_id else "save_latest",
+            filename=filename,
+            image_id=image_id,
+            content_key=content_key,
+        )
         filename = str(command["filename"])
         command["thumbnail_url"] = f"/display-sd-card/thumbnails/{filename}"
         with self._lock:
@@ -36,23 +50,77 @@ class DisplayCommandStore:
 
     def report_sd_card(self, report: dict[str, object]) -> None:
         with self._lock:
-            self._sd_card_report = dict(report)
+            report_version = self._sd_card_report_version + 1
+            self._sd_card_report_version = report_version
+            self._sd_card_report = {
+                **report,
+                "reported_at": datetime.now(UTC).isoformat(),
+                "report_version": report_version,
+            }
 
     def sd_card_report(self) -> dict[str, object]:
         with self._lock:
-            return dict(getattr(self, "_sd_card_report", {"available": False, "files": []}))
+            return dict(self._sd_card_report)
 
-    def sd_card_has_image_hash(self, image_hash: str) -> bool:
+    def find_sd_card_image(self, image_hash: str) -> str | None:
+        """Find a stored image by its stable content hash, including legacy names."""
         with self._lock:
-            report = getattr(self, "_sd_card_report", {})
+            report = self._sd_card_report
             if not report.get("available", False):
-                return False
+                return None
             files = report.get("files", [])
-            return isinstance(files, list) and any(
-                isinstance(item, dict) and str(item.get("name", "")).startswith(f"esp-image-{image_hash}")
-                or isinstance(item, dict) and str(item.get("name", "")).endswith(f"-{image_hash}.jpg")
-                for item in files
-            )
+            if not isinstance(files, list):
+                return None
+            content_key = f"v1-{image_hash}"
+            for item in files:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name", ""))
+                if (
+                    item.get("type", "image") == "image"
+                    and (
+                        str(item.get("content_key", "")) == content_key
+                        or name.startswith(f"esp-image-{image_hash}")
+                        or name.endswith(f"-{image_hash}.jpg")
+                    )
+                ):
+                    return name
+            return None
+
+    def find_sd_card_content(self, content_key: str, media_type: str) -> str | None:
+        """Return the filename currently reported for a stable SD-card content key."""
+        with self._lock:
+            report = self._sd_card_report
+            if not report.get("available", False):
+                return None
+            files = report.get("files", [])
+            if not isinstance(files, list):
+                return None
+            for item in files:
+                if not isinstance(item, dict) or item.get("type") != media_type:
+                    continue
+                name = str(item.get("name", ""))
+                extension = "mjpeg" if media_type == "video" else "jpg"
+                if str(item.get("content_key", "")) == content_key or name.endswith(f"-{content_key}.{extension}"):
+                    return name
+            return None
+
+    def find_sd_card_video(self, content_key: str, video_id: str, fps: int) -> str | None:
+        """Find a video by its current key or the older short-ID filename."""
+        existing_filename = self.find_sd_card_content(content_key, "video")
+        if existing_filename is not None:
+            return existing_filename
+        legacy_suffix = f"-{video_id[:8]}-fps{fps}.mjpeg"
+        with self._lock:
+            files = self._sd_card_report.get("files", [])
+            if not self._sd_card_report.get("available", False) or not isinstance(files, list):
+                return None
+            for item in files:
+                if isinstance(item, dict) and item.get("type") == "video":
+                    name = str(item.get("name", ""))
+                    if name.startswith("esp-video-") and name.endswith(legacy_suffix):
+                        return name
+            return None
 
     def next(self) -> dict[str, object] | None:
         with self._lock:
@@ -64,6 +132,10 @@ class DisplayCommandStore:
             if command is None:
                 return None
             command.update({"status": "complete" if success else "failed", "detail": detail})
+            if success and command.get("type") == "refresh_sd_card":
+                # Firmware acknowledges a refresh immediately before it posts its
+                # new inventory. The UI waits for this exact next report.
+                command["report_version"] = self._sd_card_report_version + 1
             if self._pending is not None and self._pending.get("id") == command_id:
                 self._pending = None
             return dict(command)

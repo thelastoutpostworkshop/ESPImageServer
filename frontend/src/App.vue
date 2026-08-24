@@ -990,12 +990,18 @@ async function saveVideoToDisplaySdCard(videoId) {
   error.value = ''
   status.value = ''
   try {
+    status.value = 'Checking the display SD card for this video...'
+    await refreshDisplaySdCardInventory()
     const response = await fetch(`/display-commands/save-saved-video/${encodeURIComponent(videoId)}`, { method: 'POST' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     const command = await response.json()
+    if (command.status === 'already_saved') {
+      status.value = command.detail || 'This video is already on the display SD card.'
+      return { filename: String(command.filename || ''), ready: true, reused: true }
+    }
     status.value = 'Copying video to the display SD card for offline playback. It will be converted to MJPEG first.'
     for (let attempt = 0; attempt < 90; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
@@ -1083,16 +1089,68 @@ async function deleteSavedVideo() {
   }
 }
 
+async function fetchDisplaySdCardReport() {
+  const response = await fetch('/display-sd-card')
+  if (!response.ok) throw new Error(`Request failed (${response.status})`)
+  return response.json()
+}
+
 async function loadDisplaySdCard() {
   displaySdCardLoading.value = true
   try {
-    const response = await fetch('/display-sd-card')
-    if (!response.ok) throw new Error(`Request failed (${response.status})`)
-    displaySdCard.value = await response.json()
+    displaySdCard.value = await fetchDisplaySdCardReport()
+    return displaySdCard.value
   } catch {
     displaySdCard.value = { available: false, files: [] }
+    return null
   } finally {
     displaySdCardLoading.value = false
+  }
+}
+
+async function refreshDisplaySdCardInventory() {
+  displaySdCardLoading.value = true
+  try {
+    const previousReport = await fetchDisplaySdCardReport()
+    displaySdCard.value = previousReport
+    const previousVersion = Number(previousReport.report_version) || 0
+    const response = await fetch('/display-sd-card/refresh', { method: 'POST' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const command = await response.json()
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 500))
+      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      if (!commandResponse.ok) continue
+      const result = await commandResponse.json()
+      if (result.status === 'failed') throw new Error(result.detail || 'The display could not refresh its SD card list')
+      if (result.status !== 'complete') continue
+      const requiredVersion = Number(result.report_version) || previousVersion + 1
+      for (let reportAttempt = 0; reportAttempt < 20; reportAttempt += 1) {
+        const report = await fetchDisplaySdCardReport()
+        displaySdCard.value = report
+        if ((Number(report.report_version) || 0) >= requiredVersion) {
+          if (!report.available) throw new Error('The display reported that no SD card is available')
+          return report
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 250))
+      }
+      throw new Error('The display confirmed the refresh, but has not sent its updated SD card list')
+    }
+    throw new Error('The display did not confirm the SD card refresh. Keep it connected and try again.')
+  } finally {
+    displaySdCardLoading.value = false
+  }
+}
+
+async function refreshDisplaySdCard() {
+  error.value = ''
+  try {
+    await refreshDisplaySdCardInventory()
+  } catch (requestError) {
+    error.value = `Could not refresh the display SD card: ${requestError.message}`
   }
 }
 
@@ -1665,6 +1723,8 @@ async function saveImageToDisplaySdCard(savedImage = null) {
   error.value = ''
   status.value = ''
   try {
+    status.value = 'Checking the display SD card for this image...'
+    await refreshDisplaySdCardInventory()
     const endpoint = savedImage
       ? `/display-commands/save-saved-image/${encodeURIComponent(savedImage.id)}`
       : '/display-commands/save-latest'
@@ -2928,7 +2988,10 @@ onUnmounted(() => {
             </v-alert>
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
             <div class="d-flex flex-wrap ga-2 mb-4">
-              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="loadDisplaySdCard">Refresh</v-btn>
+              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="refreshDisplaySdCard">Refresh from display</v-btn>
+            </div>
+            <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-4">
+              Last confirmed by the display: {{ formatDateTime(displaySdCard.reported_at) }}
             </div>
             <v-data-table
               :headers="sdCardTableHeaders"
