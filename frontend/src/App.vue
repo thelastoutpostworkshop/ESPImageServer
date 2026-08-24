@@ -2086,7 +2086,7 @@ onUnmounted(() => {
         </v-list>
         <div v-if="!savedImagesLoading && !savedImages.length && !savedVideos.length" class="text-body-2 text-medium-emphasis">No generated images or videos have been saved yet.</div>
         <div v-else-if="!savedImagesLoading && !filteredCreationsCount" class="text-body-2 text-medium-emphasis">No saved creations match these filters.</div>
-        <template v-if="filteredSavedVideos.length">
+        <template v-if="filteredSavedVideos.length && imageLibraryView === 'thumbnails'">
           <section v-for="group in savedVideoGroups" :key="group.modelName" class="saved-image-group mt-6">
             <div class="text-caption font-weight-bold text-medium-emphasis mb-2">{{ group.modelName }}</div>
             <div class="saved-image-grid" :style="{ '--thumbnail-size': `${imageLibraryThumbnailSize}px` }">
@@ -2108,6 +2108,15 @@ onUnmounted(() => {
             </div>
           </section>
         </template>
+        <v-list v-if="!savedImagesLoading && filteredSavedVideos.length && imageLibraryView === 'list'" class="saved-image-library saved-image-list mt-6" density="compact" lines="two">
+          <v-list-item v-for="savedVideo in filteredSavedVideos" :key="savedVideo.id" prepend-icon="mdi-movie-open-outline" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
+            <v-list-item-title>{{ savedVideo.metadata?.prompt || 'Generated video' }}</v-list-item-title>
+            <template #append>
+              <v-btn icon="mdi-dots-vertical" size="small" variant="text" aria-label="More actions for saved video" title="More actions" @pointerdown.stop @click.stop="openSavedVideoActions($event, savedVideo)" />
+            </template>
+            <v-list-item-subtitle>{{ savedVideo.metadata?.model?.name || 'LTX-Video' }} · {{ new Date(savedVideo.created_at).toLocaleString() }}</v-list-item-subtitle>
+          </v-list-item>
+        </v-list>
         <v-alert v-if="metadataError" type="warning" variant="tonal" density="compact" class="mt-3">{{ metadataError }}</v-alert>
       </div>
     </v-navigation-drawer>
