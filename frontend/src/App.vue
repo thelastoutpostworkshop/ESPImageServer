@@ -136,6 +136,10 @@ const deleteSavedImageDontAskAgain = ref(false)
 const deleteSavedVideoDialog = ref(false)
 const deletingSavedVideo = ref(false)
 const deleteSavedVideoDontAskAgain = ref(false)
+const deleteSdCardFileDialog = ref(false)
+const deletingSdCardFile = ref(false)
+const deleteSdCardFileDontAskAgain = ref(false)
+const sdCardFileToDelete = ref(null)
 const savingToDisplaySdCard = ref(false)
 const showingSavedImageOnDisplay = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
@@ -1124,8 +1128,40 @@ async function sendDisplaySdCardCommand(endpoint, method = 'POST', notify = true
     }
     if (notify) showSDCardSnackbar('Request sent to the display.')
     window.setTimeout(loadDisplaySdCard, 3500)
+    return true
   } catch (requestError) {
     error.value = `Could not update the display SD card: ${requestError.message}`
+    return false
+  }
+}
+
+function displaySdCardMediaType(file) {
+  return file?.type === 'video' || file?.name?.endsWith('.mjpeg') ? 'video' : 'image'
+}
+
+function confirmDeleteDisplaySdCardFile(file) {
+  if (!file || deletingSdCardFile.value) return
+  sdCardFileToDelete.value = file
+  if (!confirmDeletion.value) {
+    void deleteDisplaySdCardFile()
+    return
+  }
+  deleteSdCardFileDontAskAgain.value = false
+  deleteSdCardFileDialog.value = true
+}
+
+async function deleteDisplaySdCardFile() {
+  const file = sdCardFileToDelete.value
+  if (!file || deletingSdCardFile.value) return
+  deletingSdCardFile.value = true
+  try {
+    if (deleteSdCardFileDontAskAgain.value) await setDeleteConfirmation(false)
+    const deleted = await sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(file.name)}`, 'DELETE')
+    if (deleted) deleteSdCardFileDialog.value = false
+  } catch (requestError) {
+    error.value = `Could not remove the display SD card ${displaySdCardMediaType(file)}: ${requestError.message}`
+  } finally {
+    deletingSdCardFile.value = false
   }
 }
 
@@ -2190,6 +2226,22 @@ onUnmounted(() => {
       </v-card>
     </v-dialog>
 
+    <v-dialog v-model="deleteSdCardFileDialog" max-width="440" width="calc(100% - 32px)">
+      <v-card :title="`Delete SD card ${displaySdCardMediaType(sdCardFileToDelete)}`">
+        <v-card-text>
+          Remove this <strong>{{ displaySdCardMediaType(sdCardFileToDelete) }}</strong> from the display SD card?
+          <div class="font-weight-medium text-break mt-3">{{ sdCardFileToDelete?.name }}</div>
+          <div class="text-body-2 text-medium-emphasis mt-2">This cannot be undone.</div>
+          <v-checkbox v-model="deleteSdCardFileDontAskAgain" label="Don't ask again" density="compact" hide-details class="mt-3" />
+        </v-card-text>
+        <v-card-actions class="px-6 pb-5">
+          <v-spacer />
+          <v-btn variant="text" :disabled="deletingSdCardFile" @click="deleteSdCardFileDialog = false">Keep file</v-btn>
+          <v-btn color="error" variant="flat" :loading="deletingSdCardFile" @click="deleteDisplaySdCardFile">Delete {{ displaySdCardMediaType(sdCardFileToDelete) }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-dialog v-model="removeVideoModelDialog" max-width="480" width="calc(100% - 32px)">
       <v-card title="Remove video model">
         <v-card-text>
@@ -2802,7 +2854,7 @@ onUnmounted(() => {
                   </v-tooltip>
                   <v-tooltip text="Delete from SD card">
                     <template #activator="{ props }">
-                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" :disabled="Boolean(displayingSdCardFile)" @click="sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(item.name)}`, 'DELETE')" />
+                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile" @click="confirmDeleteDisplaySdCardFile(item)" />
                     </template>
                   </v-tooltip>
                 </div>
@@ -2862,9 +2914,9 @@ onUnmounted(() => {
               </div>
               <v-switch
                 v-model="confirmDeletion"
-                label="Ask before deleting gallery images and videos"
+                label="Ask before deleting saved images, videos, and SD card files"
                 color="primary"
-                hint="Turn this off to delete saved images and videos immediately."
+                hint="Turn this off to delete saved creations and display SD card files immediately."
                 persistent-hint
                 class="mb-5"
               />
