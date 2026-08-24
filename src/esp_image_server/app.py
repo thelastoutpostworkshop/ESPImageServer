@@ -761,7 +761,20 @@ def create_app(
 
     @app.get("/saved-images")
     def saved_images() -> list[dict[str, object]]:
-        return image_library.list()
+        records: list[dict[str, object]] = []
+        for record in image_library.list():
+            image_path = image_library.find_path(str(record.get("id", "")))
+            if image_path is None:
+                continue
+            try:
+                content_key = f"v1-{hashlib.sha256(image_path.read_bytes()).hexdigest()[:16]}"
+            except OSError:
+                content_key = ""
+            records.append({
+                **record,
+                "sd_card_content_key": content_key,
+            })
+        return records
 
     @app.get("/saved-videos")
     def saved_videos() -> list[dict[str, object]]:

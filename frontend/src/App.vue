@@ -163,6 +163,7 @@ const savedImages = ref([])
 const savedImagesLoading = ref(false)
 const creationModelFilter = ref(null)
 const creationDisplayFilter = ref(null)
+const creationSdCardFilter = ref(null)
 const imageLibraryLocation = ref('')
 const jpegQuality = ref(85)
 const videoJpegQuality = ref(10)
@@ -348,10 +349,79 @@ function creationDisplayName(creation) {
   return creation.metadata?.display?.name || ''
 }
 
-function matchesCreationFilters(creation) {
+const creationSdCardInventoryConfirmed = computed(() => Number(displaySdCard.value?.report_version) > 0)
+const creationSdCardFilterOptions = [
+  { title: 'On display SD card', value: 'on_sd_card' },
+  { title: 'Not on display SD card', value: 'not_on_sd_card' }
+]
+
+function displaySdCardFiles() {
+  return Array.isArray(displaySdCard.value?.files) ? displaySdCard.value.files : []
+}
+
+function savedVideoFps(savedVideo) {
+  const fps = Number(savedVideo.metadata?.fps)
+  return Number.isFinite(fps) ? Math.max(1, Math.min(24, Math.round(fps))) : 15
+}
+
+function creationSdCardStatus(creation, mediaType) {
+  if (!creation) return { known: false, present: false, file: null, activeFormat: false }
+  if (!creationSdCardInventoryConfirmed.value) return { known: false, present: false, file: null, activeFormat: false }
+  if (!displaySdCard.value?.available) return { known: true, present: false, file: null, activeFormat: false }
+  const files = displaySdCardFiles().filter(file => (file.type || (String(file.name || '').endsWith('.mjpeg') ? 'video' : 'image')) === mediaType)
+  if (mediaType === 'image') {
+    const contentKey = String(creation.sd_card_content_key || '')
+    const imageHash = contentKey.startsWith('v1-') ? contentKey.slice(3) : ''
+    const file = files.find(item => {
+      const name = String(item.name || '')
+      return (contentKey && (String(item.content_key || '') === contentKey || name.endsWith(`-${contentKey}.jpg`)))
+        || (imageHash && name.endsWith(`-${imageHash}.jpg`))
+    }) || null
+    return { known: true, present: Boolean(file), file, activeFormat: Boolean(file) }
+  }
+  const videoId = String(creation.id || '')
+  const expectedKey = display.value?.connected
+    ? `v1-${videoId}-${display.value.width}x${display.value.height}-fps${savedVideoFps(creation)}`
+    : ''
+  const file = files.find(item => {
+    const name = String(item.name || '')
+    const contentKey = String(item.content_key || '')
+    return contentKey.startsWith(`v1-${videoId}-`)
+      || name.includes(`-v1-${videoId}-`)
+      || name.endsWith(`-${videoId.slice(0, 8)}-fps${savedVideoFps(creation)}.mjpeg`)
+  }) || null
+  const filename = String(file?.name || '')
+  const activeFormat = Boolean(file) && (
+    (Boolean(expectedKey) && (String(file.content_key || '') === expectedKey || filename.endsWith(`-${expectedKey}.mjpeg`)))
+    || filename.endsWith(`-${videoId.slice(0, 8)}-fps${savedVideoFps(creation)}.mjpeg`)
+  )
+  return { known: true, present: Boolean(file), file, activeFormat }
+}
+
+function creationSdCardLabel(creation, mediaType) {
+  const sdCardStatus = creationSdCardStatus(creation, mediaType)
+  if (!sdCardStatus.present) return ''
+  if (mediaType === 'video' && display.value?.connected && !sdCardStatus.activeFormat) return 'On SD card · another format'
+  if (mediaType === 'video' && !display.value?.connected) return 'On display SD card'
+  if (mediaType === 'video') return `On SD card · ${display?.value?.width}×${display?.value?.height} · ${savedVideoFps(creation)} fps`
+  return 'On display SD card'
+}
+
+function creationIsOnDisplaySdCard(creation, mediaType) {
+  return creationSdCardStatus(creation, mediaType).present
+}
+
+function creationIsSavedForCurrentDisplay(creation, mediaType) {
+  return creationSdCardStatus(creation, mediaType).activeFormat
+}
+
+function matchesCreationFilters(creation, mediaType) {
   if (creationModelFilter.value && creationModelName(creation) !== creationModelFilter.value) return false
-  if (creationDisplayFilter.value === '__no_display__') return !creationDisplayName(creation)
-  return !creationDisplayFilter.value || creationDisplayName(creation) === creationDisplayFilter.value
+  if (creationDisplayFilter.value === '__no_display__' && creationDisplayName(creation)) return false
+  if (creationDisplayFilter.value && creationDisplayFilter.value !== '__no_display__' && creationDisplayName(creation) !== creationDisplayFilter.value) return false
+  if (creationSdCardFilter.value === 'on_sd_card') return creationIsOnDisplaySdCard(creation, mediaType)
+  if (creationSdCardFilter.value === 'not_on_sd_card') return !creationIsOnDisplaySdCard(creation, mediaType)
+  return true
 }
 
 const creationModelOptions = computed(() => [...new Set(
@@ -366,8 +436,8 @@ const creationDisplayOptions = computed(() => {
   }
   return options
 })
-const filteredSavedImages = computed(() => savedImages.value.filter(matchesCreationFilters))
-const filteredSavedVideos = computed(() => savedVideos.value.filter(matchesCreationFilters))
+const filteredSavedImages = computed(() => savedImages.value.filter(image => matchesCreationFilters(image, 'image')))
+const filteredSavedVideos = computed(() => savedVideos.value.filter(video => matchesCreationFilters(video, 'video')))
 const filteredCreationsCount = computed(() => filteredSavedImages.value.length + filteredSavedVideos.value.length)
 const savedImageGroups = computed(() => {
   const groups = new Map()
@@ -1510,6 +1580,15 @@ async function openMetadataPane() {
   await loadDisplaySdCard()
 }
 
+async function refreshCreationLibrarySdCardStatus() {
+  metadataError.value = ''
+  try {
+    await refreshDisplaySdCardInventory()
+  } catch (requestError) {
+    metadataError.value = `Could not refresh the display SD card status: ${requestError.message}`
+  }
+}
+
 async function toggleMetadataPanePin() {
   metadataPanePinned.value = !metadataPanePinned.value
   metadataPane.value = true
@@ -2212,8 +2291,25 @@ onUnmounted(() => {
           class="mb-5"
         />
         <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
+        <div class="d-flex align-center flex-wrap ga-2 mb-3">
+          <v-chip v-if="creationSdCardInventoryConfirmed && displaySdCard.available" size="small" color="success" variant="tonal" prepend-icon="mdi-sd">
+            SD card status reported
+          </v-chip>
+          <v-chip v-else-if="creationSdCardInventoryConfirmed" size="small" color="warning" variant="tonal" prepend-icon="mdi-sd-off">
+            No SD card reported
+          </v-chip>
+          <v-chip v-else size="small" variant="tonal" prepend-icon="mdi-help-circle-outline">
+            SD card status not checked
+          </v-chip>
+          <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="refreshCreationLibrarySdCardStatus">
+            Refresh SD status
+          </v-btn>
+        </div>
+        <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-3">
+          Last reported by the display: {{ formatDateTime(displaySdCard.reported_at) }}
+        </div>
         <v-row dense class="mb-3">
-          <v-col cols="12" sm="6">
+          <v-col cols="12" md="4">
             <v-select
               v-model="creationModelFilter"
               :items="creationModelOptions"
@@ -2225,13 +2321,26 @@ onUnmounted(() => {
               variant="outlined"
             />
           </v-col>
-          <v-col cols="12" sm="6">
+          <v-col cols="12" md="4">
             <v-select
               v-model="creationDisplayFilter"
               :items="creationDisplayOptions"
               label="Filter by display"
               prepend-inner-icon="mdi-monitor-dashboard"
               clearable
+              hide-details
+              density="compact"
+              variant="outlined"
+            />
+          </v-col>
+          <v-col cols="12" md="4">
+            <v-select
+              v-model="creationSdCardFilter"
+              :items="creationSdCardFilterOptions"
+              label="Filter by SD card"
+              prepend-inner-icon="mdi-sd"
+              clearable
+              :disabled="!creationSdCardInventoryConfirmed"
               hide-details
               density="compact"
               variant="outlined"
@@ -2247,6 +2356,7 @@ onUnmounted(() => {
                 <template #activator="{ props }">
                   <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
                     <v-img :src="`/saved-images/${encodeURIComponent(savedImage.id)}/thumbnail`" aspect-ratio="1.33" cover />
+                    <v-chip v-if="creationIsOnDisplaySdCard(savedImage, 'image')" class="saved-image-thumbnail__sd-status" size="x-small" color="success" variant="flat" prepend-icon="mdi-sd" @click.stop>On SD card</v-chip>
                     <v-btn class="saved-image-thumbnail__more" icon="mdi-dots-vertical" size="small" color="surface" variant="flat" elevation="3" aria-label="More actions for saved image" title="More actions" @pointerdown.stop @click.stop="openSavedImageActions($event, savedImage)" />
                     <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
                   </v-card>
@@ -2254,6 +2364,7 @@ onUnmounted(() => {
                 <div class="text-body-2 saved-creation-tooltip">
                   <div class="font-weight-bold">{{ savedImage.metadata?.model?.name || 'ESPImageServer' }}</div>
                   <div class="saved-creation-tooltip__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
+                  <div v-if="creationIsOnDisplaySdCard(savedImage, 'image')" class="text-caption mt-1"><v-icon size="14">mdi-sd</v-icon> {{ creationSdCardLabel(savedImage, 'image') }}</div>
                   <div v-if="formatGenerationTime(savedImage.metadata?.generation_time_seconds)" class="text-caption mt-1">Generated in {{ formatGenerationTime(savedImage.metadata?.generation_time_seconds) }}</div>
                 </div>
               </v-tooltip>
@@ -2264,6 +2375,7 @@ onUnmounted(() => {
           <v-list-item v-for="savedImage in filteredSavedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
             <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
             <template #append>
+              <v-chip v-if="creationIsOnDisplaySdCard(savedImage, 'image')" size="x-small" color="success" variant="tonal" prepend-icon="mdi-sd" class="mr-1">On SD card</v-chip>
               <v-btn icon="mdi-dots-vertical" size="small" variant="text" aria-label="More actions for saved image" title="More actions" @pointerdown.stop @click.stop="openSavedImageActions($event, savedImage)" />
             </template>
             <v-list-item-subtitle>{{ savedImage.metadata?.model?.name || 'ESPImageServer' }} · {{ new Date(savedImage.created_at).toLocaleString() }}</v-list-item-subtitle>
@@ -2280,6 +2392,7 @@ onUnmounted(() => {
                 <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
                   <v-img v-if="savedVideo.thumbnail_filename" :src="`/saved-videos/${encodeURIComponent(savedVideo.id)}/thumbnail`" aspect-ratio="1.33" cover />
                   <v-sheet v-else class="d-flex align-center justify-center" height="120"><v-icon size="40">mdi-movie-open-outline</v-icon></v-sheet>
+                  <v-chip v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" class="saved-image-thumbnail__sd-status" size="x-small" color="success" variant="flat" prepend-icon="mdi-sd" @click.stop>On SD card</v-chip>
                   <v-btn class="saved-image-thumbnail__more" icon="mdi-dots-vertical" size="small" color="surface" variant="flat" elevation="3" aria-label="More actions for saved video" title="More actions" @pointerdown.stop @click.stop="openSavedVideoActions($event, savedVideo)" />
                   <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
                 </v-card>
@@ -2287,6 +2400,7 @@ onUnmounted(() => {
               <div class="text-body-2 saved-creation-tooltip">
                 <div class="font-weight-bold">{{ savedVideo.metadata?.model?.name || 'LTX-Video' }}</div>
                 <div class="saved-creation-tooltip__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
+                <div v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" class="text-caption mt-1"><v-icon size="14">mdi-sd</v-icon> {{ creationSdCardLabel(savedVideo, 'video') }}</div>
                 <div v-if="formatGenerationTime(savedVideo.metadata?.generation_time_seconds)" class="text-caption mt-1">Generated in {{ formatGenerationTime(savedVideo.metadata?.generation_time_seconds) }}</div>
               </div>
             </v-tooltip>
@@ -2297,6 +2411,7 @@ onUnmounted(() => {
           <v-list-item v-for="savedVideo in filteredSavedVideos" :key="savedVideo.id" prepend-icon="mdi-movie-open-outline" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
             <v-list-item-title>{{ savedVideo.metadata?.prompt || 'Generated video' }}</v-list-item-title>
             <template #append>
+              <v-chip v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" size="x-small" color="success" variant="tonal" prepend-icon="mdi-sd" class="mr-1">On SD card</v-chip>
               <v-btn icon="mdi-dots-vertical" size="small" variant="text" aria-label="More actions for saved video" title="More actions" @pointerdown.stop @click.stop="openSavedVideoActions($event, savedVideo)" />
             </template>
             <v-list-item-subtitle>{{ savedVideo.metadata?.model?.name || 'LTX-Video' }} · {{ new Date(savedVideo.created_at).toLocaleString() }}</v-list-item-subtitle>
@@ -2322,7 +2437,13 @@ onUnmounted(() => {
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
         <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" title="Show on display" :disabled="!display?.connected || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
-        <v-list-item color="primary" prepend-icon="mdi-sd" title="Save for offline playback" :disabled="!display?.connected || savingToDisplaySdCard" @click="saveContextMenuImageToDisplaySdCard" />
+        <v-list-item
+          color="primary"
+          :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'mdi-check-circle' : 'mdi-sd'"
+          :title="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'Already saved on display SD card' : 'Save for offline playback'"
+          :disabled="!display?.connected || savingToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image')"
+          @click="saveContextMenuImageToDisplaySdCard"
+        />
         <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Library" @click="confirmDeleteSavedImage" />
@@ -2341,7 +2462,13 @@ onUnmounted(() => {
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
         <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" title="Show on display" :disabled="!display?.connected || showingVideoOnDisplay" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
-        <v-list-item color="primary" prepend-icon="mdi-sd" title="Save for offline playback" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="saveSavedVideoToDisplaySdCard" />
+        <v-list-item
+          color="primary"
+          :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? 'mdi-check-circle' : 'mdi-sd'"
+          :title="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? 'Already saved on display SD card' : 'Save for offline playback'"
+          :disabled="!display?.connected || savingVideoToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video')"
+          @click="saveSavedVideoToDisplaySdCard"
+        />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Gallery" @click="confirmDeleteSavedVideo" />

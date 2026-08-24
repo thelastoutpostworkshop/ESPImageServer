@@ -422,6 +422,19 @@ def test_saved_image_can_be_deleted_from_the_creation_library(tmp_path) -> None:
     assert missing.status_code == 404
 
 
+def test_saved_images_include_their_sd_card_content_key(tmp_path) -> None:
+    library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
+    record = library.save(b"\xff\xd8saved image\xff\xd9", {"prompt": "a tiny robot"})
+    app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+
+    with TestClient(app) as client:
+        saved_images = client.get("/saved-images")
+
+    assert saved_images.status_code == 200
+    assert saved_images.json()[0]["id"] == record["id"]
+    assert saved_images.json()[0]["sd_card_content_key"].startswith("v1-")
+
+
 def test_deletion_confirmation_video_quality_and_auto_save_video_settings_are_saved(tmp_path) -> None:
     app_settings = AppSettingsStore(tmp_path / "app_settings.json")
     app = create_app(Settings(), FakeGenerator(), app_settings_store=app_settings, enable_mdns=False)
