@@ -105,6 +105,8 @@ const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
 const videoFrames = ref(savedVideoGenerationSettings.frames)
 const videoFps = ref(savedVideoGenerationSettings.fps)
+const videoDurationPresetSeconds = ref(null)
+const showAdvancedVideoFrames = ref(false)
 const videoSteps = ref(savedVideoGenerationSettings.steps)
 const videoModelId = ref(savedVideoGenerationSettings.modelId)
 const generatingVideo = ref(false)
@@ -281,6 +283,30 @@ const videoDurationSeconds = computed(() => {
   return Number.isFinite(frames) && frames > 0 && Number.isFinite(fps) && fps > 0 ? frames / fps : 0
 })
 const videoDurationLabel = computed(() => `${videoDurationSeconds.value.toFixed(1)} seconds`)
+const videoDurationPresets = [
+  { title: '1 sec', seconds: 1 },
+  { title: '2 sec', seconds: 2 },
+  { title: '3 sec', seconds: 3 },
+  { title: '5 sec', seconds: 5 },
+  { title: '8 sec', seconds: 8 }
+]
+
+function validVideoFramesForDuration(seconds, fps = Number(videoFps.value)) {
+  const targetFrames = Number(seconds) * fps
+  const block = Math.min(31, Math.max(1, Math.round((targetFrames - 1) / 8)))
+  return block * 8 + 1
+}
+
+function selectVideoDuration(seconds) {
+  videoDurationPresetSeconds.value = seconds
+  videoFrames.value = validVideoFramesForDuration(seconds)
+}
+
+function matchingVideoDurationPreset() {
+  return videoDurationPresets.find(preset => Number(videoFrames.value) === validVideoFramesForDuration(preset.seconds))?.seconds ?? null
+}
+
+videoDurationPresetSeconds.value = matchingVideoDurationPreset()
 const videoModels = [
   { title: 'LTX-Video 2B distilled — fast', value: 'ltx-2b-0.9.6-distilled', description: 'Best for quick short animations. Uses less graphics-card memory.' },
   { title: 'LTX-Video 2B quality — detailed', value: 'ltx-2b-0.9.6-dev', description: 'Best when detail matters more than speed. Much slower and needs more graphics-card memory.' },
@@ -373,11 +399,24 @@ watch([videoPrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed],
     modelId: videoModelId.value,
     seed: videoSeed.value === '' ? null : Number(videoSeed.value)
 }))
+})
 
 watch(videoModelId, modelId => {
   videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' || modelId === 'wan-2.1-t2v-1.3b' || modelId === 'hunyuanvideo-1.5-480p' ? 30 : 8
   if (modelId === 'wan-2.1-t2v-1.3b') videoSourceImage.value = null
 })
+
+watch(videoFps, fps => {
+  if (videoDurationPresetSeconds.value !== null) {
+    videoFrames.value = validVideoFramesForDuration(videoDurationPresetSeconds.value, Number(fps))
+  }
+})
+
+watch(videoFrames, frames => {
+  if (videoDurationPresetSeconds.value === null) return
+  if (Number(frames) !== validVideoFramesForDuration(videoDurationPresetSeconds.value)) {
+    videoDurationPresetSeconds.value = null
+  }
 })
 
 watch(metadataPanePinned, pinned => {
@@ -909,6 +948,7 @@ async function useSavedVideoSettings(metadata, setting) {
   if (!metadata) return
   savedVideoContextMenu.value = false
   if (setting === 'prompt' || setting === 'all') videoPrompt.value = metadata.prompt || videoPrompt.value
+  if (setting === 'frames' || setting === 'fps' || setting === 'all') videoDurationPresetSeconds.value = null
   if (setting === 'frames' || setting === 'all') videoFrames.value = metadata.frames || videoFrames.value
   if (setting === 'fps' || setting === 'all') videoFps.value = metadata.fps || videoFps.value
   if (setting === 'model' || setting === 'all') {
@@ -1783,7 +1823,7 @@ async function cancelGeneration() {
 async function generateVideo() {
   const frames = Number(videoFrames.value)
   if (!Number.isInteger(frames) || frames < 9 || frames > 249 || (frames - 1) % 8 !== 0) {
-    videoError.value = 'Enter a frame count from 9 to 249 that is 1 more than a multiple of 8 (for example, 17, 25, or 33).'
+    videoError.value = 'Choose a duration preset or enter an advanced frame count from 9 to 249 in steps of 8.'
     return
   }
   const alreadyShowingVideoProgress = generatingVideo.value
@@ -2583,8 +2623,30 @@ onUnmounted(() => {
               />
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow class="mb-4" />
               <v-row dense class="mt-1">
-                <v-col cols="12" sm="6"><v-text-field v-model="videoFrames" label="Frames" type="number" min="9" max="249" step="8" variant="outlined" density="comfortable" :hint="`${videoDurationLabel} at ${videoFps} fps. Use 9–249 frames, 1 more than a multiple of 8.`" persistent-hint /></v-col>
                 <v-col cols="12" sm="6"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
+                <v-col cols="12">
+                  <div class="text-subtitle-2 mb-2">Video duration</div>
+                  <div class="d-flex flex-wrap ga-2">
+                    <v-btn
+                      v-for="preset in videoDurationPresets"
+                      :key="preset.seconds"
+                      type="button"
+                      size="small"
+                      :color="videoDurationPresetSeconds === preset.seconds ? 'primary' : undefined"
+                      :variant="videoDurationPresetSeconds === preset.seconds ? 'flat' : 'tonal'"
+                      @click="selectVideoDuration(preset.seconds)"
+                    >
+                      {{ preset.title }}
+                    </v-btn>
+                  </div>
+                  <div class="text-caption text-medium-emphasis mt-2">Selected: {{ videoDurationLabel }} at {{ videoFps }} fps ({{ videoFrames }} frames).</div>
+                </v-col>
+                <v-col cols="12">
+                  <v-btn type="button" size="small" variant="text" prepend-icon="mdi-tune-variant" @click="showAdvancedVideoFrames = !showAdvancedVideoFrames">
+                    {{ showAdvancedVideoFrames ? 'Hide advanced frame count' : 'Advanced: choose frame count' }}
+                  </v-btn>
+                  <v-text-field v-if="showAdvancedVideoFrames" v-model.number="videoFrames" label="Frames" type="number" min="9" max="249" step="8" variant="outlined" density="comfortable" hint="Valid values run from 9 to 249 in steps of 8." persistent-hint class="mt-2" />
+                </v-col>
                 <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'hunyuanvideo-1.5-480p' ? '30 is recommended for HunyuanVideo 1.5.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
