@@ -1,5 +1,29 @@
 # TODO
 
+## Improve frontend UX
+
+- Make browsing the Creation Library non-destructive: selecting a saved image
+  should preview it without replacing the current generator draft or sending it
+  to the connected display. Provide explicit **Use settings** and **Show on
+  display** actions instead.
+- Add a visible per-creation **More actions** control (or a selected-item action
+  bar). Key actions are currently hidden behind right-click context menus, which
+  is difficult to discover and does not work well on touch screens.
+- Make the Creation Library view toggle consistent: list view should include
+  saved videos, or the control should clearly say that it changes image view
+  only.
+- Confirm before deleting a display SD-card file, including the file name and
+  media type in the confirmation. Reuse the gallery's deletion-confirmation
+  pattern where appropriate.
+- Make the Creation Library easier to find by adding it to the primary
+  navigation or showing a labeled control on wider screens instead of relying
+  only on the app-bar icon.
+- Replace the video frame-count constraint with duration presets that calculate
+  valid frame counts from the selected frame rate; keep raw frames as an
+  advanced control if needed.
+- Clarify that **Save to display SD card** stores content for offline playback;
+  pair it with a separate, explicit **Show on display** action.
+
 ## Plan the Hugging Face major-version upgrade
 
 Do not upgrade `transformers` 5.x or `huggingface-hub` 1.x independently.
