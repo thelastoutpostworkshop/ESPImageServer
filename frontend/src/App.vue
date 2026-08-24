@@ -288,8 +288,15 @@ const videoDurationPresets = [
   { title: '2 sec', seconds: 2 },
   { title: '3 sec', seconds: 3 },
   { title: '5 sec', seconds: 5 },
-  { title: '8 sec', seconds: 8 }
+  { title: '8 sec', seconds: 8 },
+  { title: '10 sec', seconds: 10 },
+  { title: '15 sec', seconds: 15 },
+  { title: '20 sec', seconds: 20 }
 ]
+
+function isVideoDurationAvailable(seconds, fps = Number(videoFps.value)) {
+  return Number.isFinite(fps) && fps > 0 && Number(seconds) * fps <= 249
+}
 
 function validVideoFramesForDuration(seconds, fps = Number(videoFps.value)) {
   const targetFrames = Number(seconds) * fps
@@ -303,7 +310,7 @@ function selectVideoDuration(seconds) {
 }
 
 function matchingVideoDurationPreset() {
-  return videoDurationPresets.find(preset => Number(videoFrames.value) === validVideoFramesForDuration(preset.seconds))?.seconds ?? null
+  return videoDurationPresets.find(preset => isVideoDurationAvailable(preset.seconds) && Number(videoFrames.value) === validVideoFramesForDuration(preset.seconds))?.seconds ?? null
 }
 
 videoDurationPresetSeconds.value = matchingVideoDurationPreset()
@@ -408,7 +415,11 @@ watch(videoModelId, modelId => {
 
 watch(videoFps, fps => {
   if (videoDurationPresetSeconds.value !== null) {
-    videoFrames.value = validVideoFramesForDuration(videoDurationPresetSeconds.value, Number(fps))
+    if (isVideoDurationAvailable(videoDurationPresetSeconds.value, Number(fps))) {
+      videoFrames.value = validVideoFramesForDuration(videoDurationPresetSeconds.value, Number(fps))
+    } else {
+      videoDurationPresetSeconds.value = null
+    }
   }
 })
 
@@ -2634,6 +2645,8 @@ onUnmounted(() => {
                       size="small"
                       :color="videoDurationPresetSeconds === preset.seconds ? 'primary' : undefined"
                       :variant="videoDurationPresetSeconds === preset.seconds ? 'flat' : 'tonal'"
+                      :disabled="!isVideoDurationAvailable(preset.seconds)"
+                      :title="isVideoDurationAvailable(preset.seconds) ? `Select about ${preset.title}` : `Unavailable at ${videoFps} fps; the 249-frame limit allows up to ${(249 / Number(videoFps)).toFixed(1)} seconds.`"
                       @click="selectVideoDuration(preset.seconds)"
                     >
                       {{ preset.title }}
