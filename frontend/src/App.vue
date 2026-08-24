@@ -100,6 +100,7 @@ const savedVideoContextMenu = ref(false)
 const savedVideoContextMenuPosition = ref([0, 0])
 const contextMenuSavedVideo = ref(null)
 const savingVideoToDisplaySdCard = ref(false)
+const showingVideoOnDisplay = ref(false)
 const videoSourceImage = ref(null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
@@ -984,7 +985,7 @@ async function saveSavedVideoToDisplaySdCard() {
 }
 
 async function saveVideoToDisplaySdCard(videoId) {
-  if (!videoId || savingVideoToDisplaySdCard.value) return false
+  if (!videoId || savingVideoToDisplaySdCard.value) return null
   savingVideoToDisplaySdCard.value = true
   error.value = ''
   status.value = ''
@@ -995,25 +996,57 @@ async function saveVideoToDisplaySdCard(videoId) {
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     const command = await response.json()
-    status.value = 'Video save request sent to the display. It will be converted to MJPEG and copied to the SD card.'
+    status.value = 'Copying video to the display SD card for offline playback. It will be converted to MJPEG first.'
     for (let attempt = 0; attempt < 90; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
       const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
       if (result.status === 'complete') {
-        status.value = 'Video saved to the display SD card. Open the SD Card page to play it.'
-        return true
+        status.value = 'Video saved to the display SD card for offline playback.'
+        return { filename: String(command.filename || ''), ready: true }
       }
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not play this video')
     }
-    status.value = 'The display is still preparing the video for its SD card.'
-    return true
+    status.value = 'The display is still preparing the video for offline playback.'
+    return { filename: String(command.filename || ''), ready: false }
   } catch (requestError) {
     error.value = `Could not save the video to the display SD card: ${requestError.message}`
-    return false
+    return null
   } finally {
     savingVideoToDisplaySdCard.value = false
+  }
+}
+
+async function showSavedVideoOnDisplay(videoId = completedVideoSavedId.value) {
+  if (!display.value?.connected || showingVideoOnDisplay.value) return
+  showingVideoOnDisplay.value = true
+  videoError.value = ''
+  try {
+    let savedVideoId = videoId
+    if (!savedVideoId) {
+      videoStage.value = 'Saving video to your Creation Gallery before showing it on the display...'
+      savedVideoId = await saveVideoToCreationLibrary()
+      if (!savedVideoId) return
+    }
+    videoStage.value = 'Copying video to the display SD card before playback...'
+    const saved = await saveVideoToDisplaySdCard(savedVideoId)
+    if (!saved) {
+      videoError.value = error.value || 'Could not copy the video to the display SD card.'
+      return
+    }
+    if (!saved.ready || !saved.filename) {
+      videoStage.value = 'The display is still preparing this video. Open the SD Card page once it is ready to play.'
+      return
+    }
+    videoStage.value = 'Starting video on the display...'
+    if (await showSDCardFileOnDisplay(saved.filename)) {
+      videoStage.value = 'Video is now playing on the display.'
+    } else {
+      videoError.value = error.value || 'Could not start the video on the display.'
+    }
+  } finally {
+    showingVideoOnDisplay.value = false
   }
 }
 
@@ -1217,7 +1250,7 @@ async function deleteDisplaySdCardFile() {
 }
 
 async function showSDCardFileOnDisplay(filename) {
-  if (displayingSdCardFile.value) return
+  if (displayingSdCardFile.value) return false
   const isVideo = filename.endsWith('.mjpeg')
   const fileLabel = isVideo ? 'video' : 'image'
   displayingSdCardFile.value = filename
@@ -1237,13 +1270,15 @@ async function showSDCardFileOnDisplay(filename) {
       const result = await commandResponse.json()
       if (result.status === 'complete') {
         showSDCardSnackbar(isVideo ? 'Video is now playing from the SD card.' : 'Image is now showing on the display.')
-        return
+        return true
       }
       if (result.status === 'failed') throw new Error(result.detail || `The display could not show this ${fileLabel}`)
     }
     showSDCardSnackbar(`The display is still processing the ${fileLabel}.`)
+    return true
   } catch (requestError) {
     error.value = `Could not show ${fileLabel} on the display: ${requestError.message}`
+    return false
   } finally {
     displayingSdCardFile.value = ''
   }
@@ -1950,9 +1985,10 @@ async function saveCompletedVideoToDisplaySdCard() {
     videoId = await saveVideoToCreationLibrary()
     if (!videoId) return
   }
-  videoStage.value = 'Sending video to the display SD card...'
+  videoStage.value = 'Copying video to the display SD card for offline playback...'
   const saved = await saveVideoToDisplaySdCard(videoId)
-  if (saved) videoStage.value = 'Video save request sent to the display SD card.'
+  if (saved?.ready) videoStage.value = 'Video saved to the display SD card for offline playback.'
+  else if (saved) videoStage.value = 'The display is still preparing the video for offline playback.'
 }
 
 async function cancelVideoGeneration() {
@@ -2226,7 +2262,7 @@ onUnmounted(() => {
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
         <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" title="Show on display" :disabled="!display?.connected || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
-        <v-list-item color="primary" prepend-icon="mdi-sd" title="Save to display SD card" :disabled="!display?.connected || savingToDisplaySdCard" @click="saveContextMenuImageToDisplaySdCard" />
+        <v-list-item color="primary" prepend-icon="mdi-sd" title="Save for offline playback" :disabled="!display?.connected || savingToDisplaySdCard" @click="saveContextMenuImageToDisplaySdCard" />
         <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Library" @click="confirmDeleteSavedImage" />
@@ -2244,7 +2280,8 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-sd" title="Save to display SD card" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="saveSavedVideoToDisplaySdCard" />
+        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" title="Show on display" :disabled="!display?.connected || showingVideoOnDisplay" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
+        <v-list-item color="primary" prepend-icon="mdi-sd" title="Save for offline playback" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="saveSavedVideoToDisplaySdCard" />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
         <v-divider class="my-1" />
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Gallery" @click="confirmDeleteSavedVideo" />
@@ -2570,7 +2607,7 @@ onUnmounted(() => {
               Download JPEG
             </v-btn>
             <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!display?.connected" @click="saveImageToDisplaySdCard(selectedSavedImage)">
-              Save to display SD card
+              Save to SD card for offline playback
             </v-btn>
             <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
           </v-card-actions>
@@ -2706,8 +2743,11 @@ onUnmounted(() => {
             <v-btn color="primary" variant="tonal" prepend-icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" @click="saveVideoToCreationLibrary">
               {{ videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery' }}
             </v-btn>
+            <v-btn color="primary" prepend-icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="showSavedVideoOnDisplay">
+              Show on display
+            </v-btn>
             <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="saveCompletedVideoToDisplaySdCard">
-              Save to display SD card
+              Save to SD card for offline playback
             </v-btn>
           </v-card-actions>
         </v-card>
