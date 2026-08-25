@@ -103,7 +103,8 @@ begin
   if CurUninstallStep = usUninstall then begin
     { Inno Setup silently runs the previous uninstaller during an upgrade.
       Preserve the virtual environment, models, and user images in that case.
-      A user-initiated uninstall remains a full removal. }
+      A user-initiated uninstall removes the app environment and caches while
+      preserving any user-selected image-library folder and its metadata. }
     if not UninstallSilent then
       Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' +
         ExpandConstant('{app}\cleanup.ps1') + '" -InstallRoot "' + ExpandConstant('{app}') + '"',

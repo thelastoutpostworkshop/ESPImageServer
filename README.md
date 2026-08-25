@@ -75,7 +75,7 @@ The Creation Library keeps your generated images and their settings together.
 - Right-click a thumbnail to reuse just its prompt, seed, steps, model, or rotation in the generator.
 - Choose **Use all** to restore all of that image's generation settings.
 
-In **Settings**, you can choose where the image library is stored, open that folder, and turn automatic saving on or off. Your library location and settings survive app upgrades.
+In **Settings**, you can choose where the image library is stored, open that folder, and turn automatic saving on or off. Your library location and settings survive app upgrades. A user-selected library folder is preserved if you uninstall ESPImageServer.
 
 ## Troubleshooting
 

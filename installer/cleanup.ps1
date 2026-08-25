@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Continue'
 $localData = Join-Path $env:LOCALAPPDATA 'ESPImageServer'
 $roamingData = Join-Path $env:APPDATA 'ESPImageServer'
 $settingsPath = Join-Path $localData 'app_settings.json'
+$defaultLibrary = Join-Path $localData 'images'
 $customLibrary = $null
 
 if (Test-Path -LiteralPath $settingsPath) {
@@ -39,9 +40,28 @@ function Remove-ESPImageServerFolder([string]$Path) {
     }
 }
 
-# A custom library is created only from an empty folder selected in Settings,
-# so it is owned by ESPImageServer and safe to remove during a full uninstall.
-Remove-ESPImageServerFolder $customLibrary
-Remove-ESPImageServerFolder $localData
+function Test-ESPImageServerSamePath([string]$First, [string]$Second) {
+    if ([string]::IsNullOrWhiteSpace($First) -or [string]::IsNullOrWhiteSpace($Second)) { return $false }
+    try {
+        $firstFull = [System.IO.Path]::GetFullPath($First).TrimEnd('\', '/')
+        $secondFull = [System.IO.Path]::GetFullPath($Second).TrimEnd('\', '/')
+        return [string]::Equals($firstFull, $secondFull, [System.StringComparison]::OrdinalIgnoreCase)
+    } catch {
+        return $false
+    }
+}
+
+# The default library is inside ESPImageServer's own local-data folder and is
+# removed with the app. Any other configured location is user-selected data:
+# preserve both it and its local metadata/settings so a reinstall can find it.
+if ($customLibrary -and -not (Test-ESPImageServerSamePath $customLibrary $defaultLibrary)) {
+    Write-Host "Preserving user-selected image library: $customLibrary"
+    Write-Host "Preserving $localData because it contains that library's settings and index."
+    Remove-ESPImageServerFolder (Join-Path $localData 'models')
+    Remove-ESPImageServerFolder (Join-Path $localData 'videos')
+    Remove-ESPImageServerFolder (Join-Path $localData 'display_sd_thumbnails')
+} else {
+    Remove-ESPImageServerFolder $localData
+}
 Remove-ESPImageServerFolder $roamingData
 Remove-ESPImageServerFolder (Join-Path $InstallRoot '.venv')
