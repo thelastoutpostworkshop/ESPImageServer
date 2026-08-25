@@ -131,7 +131,7 @@ def test_console_output_mirrors_server_logs_and_redacts_secrets() -> None:
 def test_generation_job_reports_progress_and_returns_its_image() -> None:
     app = create_app(Settings(output_width=20, output_height=10), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
-        created = client.post("/generation-jobs", json={"prompt": "a tiny robot"})
+        created = client.post("/generation-jobs", json={"prompt": "a tiny robot", "model_id": "segmind/SSD-1B"})
         job_id = created.json()["id"]
         for _ in range(20):
             job = client.get(f"/generation-jobs/{job_id}").json()
@@ -141,6 +141,8 @@ def test_generation_job_reports_progress_and_returns_its_image() -> None:
         image = client.get(f"/generation-jobs/{job_id}/image")
 
     assert created.status_code == 202
+    assert created.json()["metadata"]["model_id"] == "segmind/SSD-1B"
+    assert job["metadata"]["model"]["id"] == "segmind/SSD-1B"
     assert job["progress"] == 100
     assert isinstance(job["generation_time_seconds"], float)
     assert job["generation_time_seconds"] >= 0

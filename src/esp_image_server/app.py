@@ -97,6 +97,7 @@ class ImageGenerator(Protocol):
 class GenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     prompt: str = Field(min_length=1, max_length=1_000, description="Text to turn into an image")
+    model_id: str | None = Field(default=None, min_length=1, max_length=200, description="Image model to use for this job")
     steps: int | None = Field(default=None, ge=1, le=100, description="Model inference steps")
     seed: int | None = Field(default=None, ge=0, le=4_294_967_295, description="Optional repeatable random seed")
     negative_prompt: str | None = Field(default=None, max_length=1_000)
@@ -1067,9 +1068,14 @@ def create_app(
     async def generate(request: GenerateRequest) -> Response:
         if generation_queue.has_active_job():
             raise HTTPException(status_code=409, detail="Wait for queued generation work to finish before using the direct image endpoint")
+        requested_model_id = request.model_id or active_model_id
+        try:
+            requested_settings = model_settings(settings, requested_model_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Image model not found") from exc
         try:
             await run_in_threadpool(video_generator.unload)
-            jpeg = await run_in_threadpool(generate_jpeg, request)
+            jpeg = await run_in_threadpool(generate_jpeg, request, None, None, requested_model_id, requested_settings)
         except RuntimeError as exc:
             logger.exception("Image generation failed")
             raise HTTPException(status_code=500, detail=str(exc)) from None
@@ -1080,8 +1086,15 @@ def create_app(
 
     @app.post("/generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
-        job_model_id = active_model_id
-        job_settings = active_settings
+        nonlocal active_model_id, active_settings
+        job_model_id = request.model_id or active_model_id
+        try:
+            job_settings = model_settings(settings, job_model_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Image model not found") from exc
+        active_model_id = job_model_id
+        active_settings = job_settings
+        model_selection_store.set(job_model_id)
         image_metadata: dict[str, object] = {"label": request.prompt[:80], "model_id": job_model_id}
         job = generation_queue.create(
             "image",

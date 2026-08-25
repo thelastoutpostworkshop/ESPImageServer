@@ -212,7 +212,6 @@ const page = ref('generate')
 let statusTimer
 let consoleRefreshTimer
 let consoleRequestInFlight = false
-let modelSwitchAbortController
 let imageLibraryResizeStartX = 0
 let imageLibraryResizeStartWidth = 0
 let imagePreviewRequestId = 0
@@ -952,52 +951,6 @@ async function openQueuedGeneration(job) {
   }
   await loadCompletedVideoGeneration(job, { force: true })
   page.value = 'video'
-}
-
-async function prepareSelectedModel() {
-  const model = models.value.find(candidate => candidate.id === activeModelId.value)
-  if (!model) throw new Error('Choose an image model before generating.')
-  // The queued job activates this already-selected model when it reaches the
-  // front of the shared GPU queue. Avoid trying to switch models while another
-  // job is running just because its pipeline was unloaded for video work.
-  if (model.active) return
-  const abortController = new AbortController()
-  modelSwitchAbortController = abortController
-  generationStage.value = model.installed
-    ? `Loading ${model.name}...`
-    : `Downloading ${model.name}. This first download can take several minutes...`
-  generationProgress.value = 0
-  const refreshDownloadProgress = async () => {
-    try {
-      const loading = await fetch('/model-loading-status').then(response => response.json())
-      if (loading.active) {
-        generationProgress.value = loading.steps ? Math.round(loading.step * 100 / loading.steps) : 0
-        generationStage.value = loading.stage || generationStage.value
-      }
-    } catch {
-      // The select request itself still reports a useful error if it fails.
-    }
-  }
-  const progressTimer = window.setInterval(refreshDownloadProgress, 350)
-  try {
-    const response = await fetch(`/models/${encodeURIComponent(model.id)}/select`, {
-      method: 'POST',
-      signal: abortController.signal
-    })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.detail || `Request failed (${response.status})`)
-    }
-    await Promise.all([loadServerStatus(), loadModels()])
-  } catch (requestError) {
-    if (requestError.name === 'AbortError') throw new Error('Image generation cancelled.')
-    throw new Error(`Could not prepare ${model.name}: ${requestError.message}`)
-  } finally {
-    window.clearInterval(progressTimer)
-    if (modelSwitchAbortController === abortController) {
-      modelSwitchAbortController = undefined
-    }
-  }
 }
 
 function selectModelById(modelId) {
@@ -1980,13 +1933,14 @@ async function generate() {
   }
   let job
   try {
-    await prepareSelectedModel()
-    if (!alreadyShowingImageProgress) generationStage.value = 'Starting image generation...'
+    if (!models.value.some(model => model.id === activeModelId.value)) throw new Error('Choose an image model before generating.')
+    if (!alreadyShowingImageProgress) generationStage.value = 'Adding image to the queue...'
     const response = await fetch('/generation-jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt: prompt.value,
+        model_id: activeModelId.value,
         negative_prompt: negativePrompt.value || null,
         steps: Number(steps.value),
         seed: seed.value === '' ? null : Number(seed.value)
@@ -1997,10 +1951,8 @@ async function generate() {
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     job = await response.json()
-    if (['running', 'cancelling'].includes(job.status) && !activeJobId.value) {
-      activeJobId.value = job.id
-      activeImageJobRunning.value = true
-    }
+    if (!activeJobId.value) activeJobId.value = job.id
+    activeImageJobRunning.value = ['queued', 'running', 'cancelling'].includes(job.status)
     status.value = `Image job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
     showQueueAddedFeedback('Image', job.queue_position)
     await loadGenerationQueue()
@@ -2045,7 +1997,7 @@ async function generate() {
       status.value = ''
     }
   } finally {
-    if (activeJobId.value === job?.id) {
+    if (!job || activeJobId.value === job.id) {
       generating.value = false
       cancelling.value = false
       activeJobId.value = ''
@@ -2060,12 +2012,10 @@ async function cancelGeneration() {
   if (cancelling.value) return
   cancelling.value = true
   error.value = ''
-  if (modelSwitchAbortController) {
-    generationStage.value = 'Cancelling model preparation...'
-    modelSwitchAbortController.abort()
+  if (!activeJobId.value) {
+    cancelling.value = false
     return
   }
-  if (!activeJobId.value) return
   generationStage.value = 'Cancelling image generation...'
   try {
     const response = await fetch(`/generation-jobs/${activeJobId.value}`, { method: 'DELETE' })
@@ -2242,7 +2192,6 @@ onMounted(async () => {
 onUnmounted(() => {
   window.clearInterval(statusTimer)
   window.clearInterval(consoleRefreshTimer)
-  modelSwitchAbortController?.abort()
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
