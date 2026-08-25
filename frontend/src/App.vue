@@ -2320,7 +2320,7 @@ onUnmounted(() => {
       </template>
     </v-navigation-drawer>
 
-    <v-navigation-drawer v-model="metadataPane" location="right" :width="mobile ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
+    <v-navigation-drawer v-model="metadataPane" class="creation-library-drawer" location="right" :width="mobile ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
       <div
         v-if="!mobile"
         class="image-library-resize-handle"
@@ -2349,7 +2349,7 @@ onUnmounted(() => {
         <v-btn icon="mdi-close" variant="text" aria-label="Close Creation Library" title="Close Creation Library" @click="closeMetadataPane" />
       </div>
       <v-divider />
-      <div class="pa-4">
+      <div class="creation-library-drawer__body pa-4">
         <v-slider
           v-if="imageLibraryView === 'thumbnails'"
           v-model="imageLibraryThumbnailSize"
