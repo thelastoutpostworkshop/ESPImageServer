@@ -37,7 +37,7 @@ from .generation_size import optimal_generation_size
 from .image_processor import to_jpeg
 from .image_library import ImageLibrary
 from .latest_image import LatestImageStore
-from .mdns import MdnsAdvertiser
+from .mdns import MdnsAdvertiser, active_lan_address
 from .models import MODELS, get_model, model_is_cached, model_settings, remove_cached_model
 from .model_settings import ModelSelectionStore
 from .video_generator import LTXVideoGenerator, VIDEO_MODELS, remove_cached_video_model, video_model_is_cached
@@ -327,6 +327,7 @@ def create_app(
 
     @app.get("/server-info")
     def server_info() -> dict[str, object]:
+        lan_address = active_lan_address()
         model_details = {
             "stabilityai/sd-turbo": (
                 "SD-Turbo",
@@ -354,6 +355,8 @@ def create_app(
             "processing": processing,
             "default_width": active_settings.output_width,
             "default_height": active_settings.output_height,
+            "port": settings.port,
+            "local_network_url": f"http://{lan_address}:{settings.port}" if lan_address else None,
         }
 
     @app.get("/models")

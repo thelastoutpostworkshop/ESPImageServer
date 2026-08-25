@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import QRCode from 'qrcode'
 
 function createRandomSeed() {
   return Math.floor(Math.random() * 4_294_967_296)
@@ -13,6 +14,7 @@ const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
 const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thumbnail-size'
 const sdCardItemsPerPageSettingsKey = 'esp-image-server.sd-card-items-per-page'
+const mobileAccessPromptDismissedSettingsKey = 'esp-image-server.mobile-access-prompt-dismissed'
 const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b', 'hunyuanvideo-1.5-480p']
 
 function loadImageLibraryWidth() {
@@ -177,6 +179,11 @@ const openingImageLibrary = ref(false)
 const choosingImageLibrary = ref(false)
 const settingsStatus = ref('')
 const settingsError = ref('')
+const mobileAccessDialog = ref(false)
+const mobileAccessQrCode = ref('')
+const mobileAccessQrCodeLoading = ref(false)
+const mobileAccessCopyStatus = ref('')
+const mobileAccessPromptDismissed = ref(window.localStorage.getItem(mobileAccessPromptDismissedSettingsKey) === 'true')
 const generating = ref(false)
 const cancelling = ref(false)
 const activeJobId = ref('')
@@ -213,6 +220,11 @@ let videoPreviewRequestId = 0
 let loadingImageGenerationJobId = ''
 let loadingVideoGenerationJobId = ''
 const { mobile } = useDisplay()
+const mobileAccessUrl = computed(() => {
+  const port = Number(serverInfo.value?.port) || 8000
+  return `http://espimageserver.local:${port}`
+})
+const mobileAccessFallbackUrl = computed(() => serverInfo.value?.local_network_url || '')
 const selectedImageModelName = computed(() => models.value.find(model => model.id === activeModelId.value)?.name || 'image model')
 const imageGenerationActive = computed(() => generating.value || Boolean(generationStage.value) || health.value?.image_generating === true)
 const videoGenerationActive = computed(() => generatingVideo.value || health.value?.video_generating === true)
@@ -840,6 +852,57 @@ async function clearDiagnostics() {
 async function copyDiagnostics() {
   const text = diagnostics.value.map(entry => `${entry.timestamp} [${entry.level.toUpperCase()}] ${entry.source}: ${entry.message}`).join('\n')
   await navigator.clipboard?.writeText(text)
+}
+
+function dismissMobileAccessPrompt() {
+  mobileAccessPromptDismissed.value = true
+  window.localStorage.setItem(mobileAccessPromptDismissedSettingsKey, 'true')
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const input = document.createElement('textarea')
+  input.value = text
+  input.setAttribute('readonly', '')
+  input.style.position = 'fixed'
+  input.style.opacity = '0'
+  document.body.appendChild(input)
+  input.select()
+  const copied = document.execCommand('copy')
+  input.remove()
+  if (!copied) throw new Error('Copy is not available in this browser')
+}
+
+async function copyMobileAccessUrl(url, label) {
+  mobileAccessCopyStatus.value = ''
+  try {
+    await copyText(url)
+    mobileAccessCopyStatus.value = `${label} address copied.`
+  } catch (copyError) {
+    mobileAccessCopyStatus.value = `Could not copy the address: ${copyError.message}`
+  }
+}
+
+async function openMobileAccessDialog(dismissPrompt = false) {
+  if (dismissPrompt) dismissMobileAccessPrompt()
+  mobileAccessDialog.value = true
+  mobileAccessCopyStatus.value = ''
+  mobileAccessQrCodeLoading.value = true
+  try {
+    mobileAccessQrCode.value = await QRCode.toDataURL(mobileAccessUrl.value, {
+      width: 256,
+      margin: 1,
+      errorCorrectionLevel: 'M'
+    })
+  } catch (qrError) {
+    mobileAccessQrCode.value = ''
+    mobileAccessCopyStatus.value = `Could not create the QR code: ${qrError.message}`
+  } finally {
+    mobileAccessQrCodeLoading.value = false
+  }
 }
 
 function updateConsoleAutoScroll(event) {
@@ -2558,8 +2621,53 @@ onUnmounted(() => {
       </v-card>
     </v-dialog>
 
+    <v-dialog v-model="mobileAccessDialog" max-width="480" width="calc(100% - 32px)">
+      <v-card title="Use ESPImageServer from your phone">
+        <v-card-text>
+          <div class="text-body-2 text-medium-emphasis">Scan this code with your phone camera while it is on the same Wi-Fi network.</div>
+          <div class="d-flex justify-center my-5">
+            <v-progress-circular v-if="mobileAccessQrCodeLoading" indeterminate color="primary" size="72" />
+            <v-img v-else-if="mobileAccessQrCode" :src="mobileAccessQrCode" width="224" max-width="100%" aspect-ratio="1" alt="QR code for opening ESPImageServer on a phone" />
+          </div>
+          <v-text-field :model-value="mobileAccessUrl" label="Phone address" readonly variant="outlined" density="comfortable" hide-details class="mb-4">
+            <template #append-inner>
+              <v-btn icon="mdi-content-copy" size="small" variant="text" aria-label="Copy phone address" title="Copy phone address" @click="copyMobileAccessUrl(mobileAccessUrl, 'Phone')" />
+            </template>
+          </v-text-field>
+          <v-text-field v-if="mobileAccessFallbackUrl" :model-value="mobileAccessFallbackUrl" label="Fallback address" readonly variant="outlined" density="comfortable" hide-details class="mb-4">
+            <template #append-inner>
+              <v-btn icon="mdi-content-copy" size="small" variant="text" aria-label="Copy fallback address" title="Copy fallback address" @click="copyMobileAccessUrl(mobileAccessFallbackUrl, 'Fallback')" />
+            </template>
+          </v-text-field>
+          <v-alert v-if="mobileAccessFallbackUrl" type="info" variant="tonal" density="compact">
+            If the phone address does not open, use the fallback address. It can change when your computer reconnects to Wi-Fi.
+          </v-alert>
+          <v-alert v-else type="warning" variant="tonal" density="compact">
+            A numeric fallback address is unavailable. Check that this computer is connected to your local network.
+          </v-alert>
+          <v-alert v-if="mobileAccessCopyStatus" :type="mobileAccessCopyStatus.startsWith('Could not') ? 'warning' : 'success'" variant="tonal" density="compact" class="mt-4">
+            {{ mobileAccessCopyStatus }}
+          </v-alert>
+        </v-card-text>
+        <v-card-actions class="px-6 pb-5">
+          <v-spacer />
+          <v-btn variant="text" @click="mobileAccessDialog = false">Close</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
+        <v-alert v-if="!mobile && !mobileAccessPromptDismissed" type="info" variant="tonal" icon="mdi-cellphone-link" class="mb-4">
+          <div class="font-weight-medium">Use ESPImageServer from your phone</div>
+          <div class="text-body-2 mt-1">Control generation and your display from another device on the same Wi-Fi network.</div>
+          <template #append>
+            <div class="d-flex flex-wrap ga-2 justify-end">
+              <v-btn size="small" color="primary" variant="flat" @click="openMobileAccessDialog(true)">Show QR code</v-btn>
+              <v-btn size="small" variant="text" @click="dismissMobileAccessPrompt">Not now</v-btn>
+            </div>
+          </template>
+        </v-alert>
         <v-card v-if="page === 'queue'" class="mx-auto" max-width="960">
           <v-card-title class="d-flex align-center text-h6">
             <v-icon class="mr-2">mdi-format-list-numbered</v-icon>Generation queue
@@ -3215,6 +3323,21 @@ onUnmounted(() => {
         <v-card v-if="page === 'settings'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Settings</v-card-title>
           <v-card-text>
+            <v-card v-if="!mobile" variant="tonal" color="primary" class="mb-6">
+              <v-card-title class="text-subtitle-1">Use from your phone</v-card-title>
+              <v-card-text class="pt-0">
+                <div class="text-body-2">Open ESPImageServer on another device connected to the same Wi-Fi network.</div>
+                <div class="text-caption text-medium-emphasis mt-3">Phone address: {{ mobileAccessUrl }}</div>
+                <div v-if="mobileAccessFallbackUrl" class="text-caption text-medium-emphasis mt-1">Fallback: {{ mobileAccessFallbackUrl }}</div>
+              </v-card-text>
+              <v-card-actions>
+                <v-btn color="primary" variant="flat" prepend-icon="mdi-qrcode" @click="openMobileAccessDialog">Show QR code</v-btn>
+                <v-btn variant="text" prepend-icon="mdi-content-copy" @click="copyMobileAccessUrl(mobileAccessUrl, 'Phone')">Copy address</v-btn>
+              </v-card-actions>
+              <v-alert v-if="mobileAccessCopyStatus" :type="mobileAccessCopyStatus.startsWith('Could not') ? 'warning' : 'success'" variant="tonal" density="compact" class="mx-4 mb-4">
+                {{ mobileAccessCopyStatus }}
+              </v-alert>
+            </v-card>
             <v-form @submit.prevent="saveAppSettings">
               <template v-if="!mobile">
                 <v-text-field

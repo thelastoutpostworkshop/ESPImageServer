@@ -278,7 +278,8 @@ def test_ssd_1b_uses_a_larger_aspect_matched_generation_canvas() -> None:
     assert generator.last_size == (1024, 584)
 
 
-def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
+def test_server_info_explains_the_model_in_maker_friendly_terms(monkeypatch) -> None:
+    monkeypatch.setattr("esp_image_server.app.active_lan_address", lambda: "192.168.1.90")
     app = create_app(Settings(model_id="stabilityai/sd-turbo"), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
         response = client.get("/server-info")
@@ -287,6 +288,7 @@ def test_server_info_explains_the_model_in_maker_friendly_terms() -> None:
     assert response.json()["version"] == app.version
     assert response.json()["model_name"] == "SD-Turbo"
     assert "cuda" not in response.json()["processing"].lower()
+    assert response.json()["local_network_url"] == "http://192.168.1.90:8000"
 
 
 def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
