@@ -20,6 +20,8 @@ ESPImageServer works best with an NVIDIA graphics card. It can run on the comput
 4. Choose an initial image model. Its files download during setup or the first time you select it.
 5. Open **ESPImageServer** from the Start Menu or desktop shortcut.
 
+Setup uses CPython 3.12. If it is not already installed, the installer asks Windows Package Manager to install it; other Python versions already on the computer are left alone.
+
 The desktop app starts the local server automatically. You can also open the app in a browser at `http://127.0.0.1:8000` while it is running.
 
 ## Connect your display

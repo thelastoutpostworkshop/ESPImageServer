@@ -2,7 +2,7 @@
 ; The resulting ESPImageServer-Setup.exe is the maker-facing Windows installer.
 
 #define AppName "ESPImageServer"
-#define AppVersion "1.0.57"
+#define AppVersion "1.0.59"
 #define AppPublisher "ESPImageServer"
 #ifndef DesktopBuildOutput
   #define DesktopBuildOutput "..\desktop\release\win-unpacked"
@@ -16,7 +16,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
-OutputBaseFilename=ESPImageServer-Setup-1.0.57
+OutputBaseFilename=ESPImageServer-Setup-1.0.59
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -38,6 +38,8 @@ Source: "{#DesktopBuildOutput}\*"; DestDir: "{app}\desktop"; Flags: recursesubdi
 Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "constraints-cpu.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "constraints-cuda.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "cleanup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start_server.bat"; DestDir: "{app}"; DestName: "Start ESPImageServer.bat"; Flags: ignoreversion
 Source: "assets\espimageserver-icon.ico"; DestDir: "{app}"; Flags: ignoreversion

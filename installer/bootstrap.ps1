@@ -8,6 +8,8 @@ $projectRoot = $PSScriptRoot
 $logPath = Join-Path $projectRoot 'bootstrap.log'
 $statusPath = Join-Path $projectRoot 'installer_status.txt'
 $resultPath = Join-Path $projectRoot 'installer_result.txt'
+$SupportedPythonVersion = '3.12'
+$supportedPythonCheck = "import platform, sys; raise SystemExit(0 if platform.python_implementation() == 'CPython' and sys.version_info[:2] == (3, 12) else 1)"
 
 Remove-Item $statusPath, $resultPath, $logPath -Force -ErrorAction SilentlyContinue
 function Write-SharedText([string]$Path, [string]$Text, [bool]$Append = $false) {
@@ -56,13 +58,27 @@ function Set-InstallStatus([int]$Step, [string]$Message) {
     Write-InstallLog "[$Step/6] $Message"
 }
 
+function Test-SupportedPythonCommand([string[]]$Command) {
+    $allArguments = @($Command | Select-Object -Skip 1) + @('-c', $supportedPythonCheck)
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $Command[0] @allArguments 2>$null
+        return $LASTEXITCODE -eq 0
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+}
+
 function Get-PythonCommand {
     if (Get-Command py -ErrorAction SilentlyContinue) {
-        & py -3.12 -c 'import sys' 2>$null
-        if ($LASTEXITCODE -eq 0) { return @('py', '-3.12') }
-        return @('py')
+        $launcherCommand = @('py', "-$SupportedPythonVersion")
+        if (Test-SupportedPythonCommand $launcherCommand) { return $launcherCommand }
     }
-    if (Get-Command python -ErrorAction SilentlyContinue) { return @('python') }
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        $pythonCommand = @('python')
+        if (Test-SupportedPythonCommand $pythonCommand) { return $pythonCommand }
+    }
     return $null
 }
 
@@ -73,76 +89,66 @@ function Invoke-PythonCommand([string[]]$Command, [string[]]$Arguments) {
     }
 }
 
+function Test-SupportedVirtualEnvironment([string]$Python) {
+    if (-not (Test-Path $Python)) { return $false }
+    return Test-SupportedPythonCommand @($Python)
+}
+
+function Write-ResolvedDependencyVersions([string]$Python) {
+    Write-InstallLog 'Resolved Python package versions (pip freeze --all):'
+    if ((Invoke-LoggedExternal $Python @('-m', 'pip', 'freeze', '--all')) -ne 0) {
+        throw 'Unable to record the installed Python package versions.'
+    }
+}
+
 try {
     $pythonCommand = Get-PythonCommand
     if (-not $pythonCommand) {
         if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
             throw 'Python is missing and Windows Package Manager (winget) is unavailable.'
         }
-        Write-InstallLog 'Installing Python 3.12...'
+        Write-InstallLog "Installing supported CPython $SupportedPythonVersion..."
         if ((Invoke-LoggedExternal 'winget' @('install', '--id', 'Python.Python.3.12', '--exact', '--scope', 'user', '--accept-package-agreements', '--accept-source-agreements')) -ne 0) {
             throw 'Python installation failed.'
         }
         $pythonCommand = Get-PythonCommand
-        if (-not $pythonCommand) { throw 'Python was installed. Run the installer again to continue.' }
+        if (-not $pythonCommand) { throw "CPython $SupportedPythonVersion was installed but is not yet available. Run the installer again to continue." }
     }
+    Invoke-PythonCommand $pythonCommand @('-c', 'import platform, sys; print(platform.python_implementation(), sys.version)')
 
     $venvPath = Join-Path $projectRoot '.venv'
     $venvPython = Join-Path $venvPath 'Scripts\python.exe'
     Set-InstallStatus 1 'Creating the local Python environment...'
+    if ((Test-Path $venvPath) -and -not (Test-SupportedVirtualEnvironment $venvPython)) {
+        Write-InstallLog "Recreating the app-owned virtual environment because it is not CPython $SupportedPythonVersion."
+        Remove-Item -LiteralPath $venvPath -Recurse -Force
+    }
     if (-not (Test-Path $venvPython)) {
         Invoke-PythonCommand $pythonCommand @('-m', 'venv', $venvPath)
     }
 
-    Set-InstallStatus 2 'Installing the selected PyTorch build...'
-    if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--upgrade', 'pip')) -ne 0) {
-        throw 'Unable to update pip.'
+    $constraintsFileName = if ($UseCuda) { 'constraints-cuda.txt' } else { 'constraints-cpu.txt' }
+    $constraintsFile = Join-Path $projectRoot $constraintsFileName
+    if (-not (Test-Path $constraintsFile)) {
+        throw "The required dependency constraints file is missing: $constraintsFileName"
     }
-
-    # A new environment correctly returns a non-zero status here because torch is
-    # not installed yet. Do not let PowerShell turn that expected probe into a
-    # terminating error before the install branch below can run.
-    $previousErrorActionPreference = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        $torchOutput = & $venvPython -c "import torch; print(torch.version.cuda or '')" 2>$null
-        $torchAvailable = $LASTEXITCODE -eq 0
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-    $installedCuda = ($torchOutput | Out-String).Trim()
-    $hasCuda = [bool]$installedCuda
     $torchIndexUrl = if ($UseCuda) { 'https://download.pytorch.org/whl/cu128' } else { 'https://download.pytorch.org/whl/cpu' }
-    $needsTorchInstall = ($UseCuda -and -not $hasCuda) -or (-not $UseCuda -and ($hasCuda -or -not $torchAvailable))
-    if ($needsTorchInstall) {
-        if ($torchAvailable) {
-            Invoke-LoggedExternal $venvPython @('-m', 'pip', 'uninstall', '-y', 'torch', 'torchvision') | Out-Null
-        }
-        $torchExitCode = Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', 'torch', 'torchvision', '--index-url', $torchIndexUrl)
-        if ($torchExitCode -ne 0) {
-            throw 'Unable to install PyTorch and torchvision.'
-        }
-    } else {
-        # Diffusers uses torchvision for image preprocessing. Install it separately
-        # for environments created by earlier installer versions.
-        $previousErrorActionPreference = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try {
-            & $venvPython -c 'import torchvision' 2>$null
-            $torchVisionAvailable = $LASTEXITCODE -eq 0
-        } finally {
-            $ErrorActionPreference = $previousErrorActionPreference
-        }
-        if (-not $torchVisionAvailable) {
-            if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', 'torchvision', '--index-url', $torchIndexUrl)) -ne 0) {
-                throw 'Unable to install torchvision.'
-            }
-        }
+    Write-InstallLog "Using $constraintsFileName and the selected PyTorch wheel index."
+
+    Set-InstallStatus 2 'Installing the pinned Python and PyTorch packages...'
+    if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile, 'pip')) -ne 0) {
+        throw 'Unable to install the pinned pip version.'
+    }
+    # The selected PyTorch index supplies the CPU or CUDA wheels. PyPI remains
+    # available for ordinary pinned Python dependencies that are not mirrored
+    # in that wheel index, such as setuptools and filelock.
+    if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--upgrade', '--force-reinstall', '--constraint', $constraintsFile, '--index-url', $torchIndexUrl, '--extra-index-url', 'https://pypi.org/simple', 'torch', 'torchvision')) -ne 0) {
+        throw 'Unable to install the pinned PyTorch and torchvision packages.'
     }
 
-    Set-InstallStatus 3 'Installing ESPImageServer packages...'
-    if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--editable', $projectRoot)) -ne 0) {
-        throw 'Unable to install ESPImageServer dependencies.'
+    Set-InstallStatus 3 'Installing pinned ESPImageServer packages...'
+    if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile, '--editable', $projectRoot)) -ne 0) {
+        throw 'Unable to install the pinned ESPImageServer dependencies.'
     }
     # Video thumbnails use the FFmpeg binary bundled by imageio-ffmpeg. Verify
     # that the executable was installed now, rather than discovering a missing
@@ -151,7 +157,10 @@ try {
         throw 'Unable to install the bundled FFmpeg tools needed for video thumbnails.'
     }
 
-    Set-InstallStatus 4 'Saving your server settings...'
+    Set-InstallStatus 4 'Recording installed package versions...'
+    Write-ResolvedDependencyVersions $venvPython
+
+    Set-InstallStatus 5 'Saving your server settings...'
     $modelCachePath = Join-Path $env:LOCALAPPDATA 'ESPImageServer\models'
     New-Item -ItemType Directory -Force $modelCachePath | Out-Null
     $env:ESP_IMAGE_MODEL_CACHE = $modelCachePath
@@ -161,7 +170,7 @@ try {
 set "ESP_IMAGE_MODEL_CACHE=%LOCALAPPDATA%\ESPImageServer\models"
 "@ | Set-Content -Path $settingsFile -Encoding ascii
 
-    Set-InstallStatus 5 'Models will download when you select one in ESPImageServer.'
+    Write-InstallLog 'Models will download when you select one in ESPImageServer.'
     Set-InstallStatus 6 'Environment is ready. Finishing installation...'
     Set-Content -Path $resultPath -Value 'success' -Encoding ascii
 } catch {

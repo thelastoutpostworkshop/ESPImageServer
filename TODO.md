@@ -2,34 +2,26 @@
 
 ## Backend and installer hardening
 
-1. **P1 — Make the installer dependency set reproducible.** `bootstrap.ps1`
-   installs unpinned PyTorch and project dependencies, and falls back to any
-   `py` version when Python 3.12 is unavailable. Define and test a supported
-   Python version, maintain CPU and CUDA constraints/lock files with compatible
-   Torch, Diffusers, Transformers, and Hub versions, and have the bootstrapper
-   install from those exact constraints. Record the resolved versions in the
-   installation log for support diagnostics.
-
-2. **P1 — Bound completed-job, command, and conversion-cache retention.**
+1. **P1 — Bound completed-job, command, and conversion-cache retention.**
    Generation results, display-command acknowledgements, and converted MJPEG
    files accumulate in memory or on disk until a user clears them or removes
    files manually. Add size/count/age limits, safe cleanup at startup and
    shutdown, and tests proving active jobs and referenced media are never
    removed prematurely.
 
-3. **P1 — Apply input-size and media-validation limits at API boundaries.**
+2. **P1 — Apply input-size and media-validation limits at API boundaries.**
    Several endpoints read full request bodies or open untrusted image files
    without a shared maximum byte/pixel policy. Enforce request-size limits,
    validate JPEG decoding and dimensions before storing or processing files,
    and return clear 4xx errors. Test oversized, truncated, and decompression-
    bomb-style images.
 
-4. **P2 — Serialize and atomically publish display MJPEG conversions.**
+3. **P2 — Serialize and atomically publish display MJPEG conversions.**
    Concurrent requests for the same saved video can run FFmpeg twice and write
    the same cache file. Add a keyed conversion lock, write to a temporary file
    then rename it, and remove partial files after failure or cancellation.
 
-5. **P2 — Sign and verify release artifacts.** Add Windows code signing for
+4. **P2 — Sign and verify release artifacts.** Add Windows code signing for
    the installer and packaged executable, then document verification of the
    published SHA-256 checksum. This reduces SmartScreen friction and makes a
    downloaded installer verifiable.
