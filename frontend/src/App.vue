@@ -521,6 +521,10 @@ watch(sdCardItemsPerPage, itemsPerPage => {
   window.localStorage.setItem(sdCardItemsPerPageSettingsKey, String(itemsPerPage))
 })
 
+watch(mobile, isMobile => {
+  if (isMobile) drawer.value = false
+}, { immediate: true })
+
 watch(activityPanelOpen, isOpen => {
   window.localStorage.setItem('esp-image-server.activity-panel-open', String(isOpen))
 })
@@ -1227,19 +1231,19 @@ async function refreshDisplaySdCard() {
 }
 
 function openGeneratePage() {
-  page.value = 'generate'
+  navigate('generate')
 }
 
 function openActiveGeneration() {
-  if (appBarStatus.value.page) page.value = appBarStatus.value.page
+  if (appBarStatus.value.page) navigate(appBarStatus.value.page)
 }
 
 function openDisplayHelp() {
-  page.value = 'about'
+  navigate('about')
 }
 
 function openSDCardPage() {
-  page.value = 'sd-card'
+  navigate('sd-card')
   loadDisplaySdCard()
 }
 
@@ -1259,8 +1263,13 @@ async function loadDisplayExperience() {
 }
 
 function openDisplayExperiencePage() {
-  page.value = 'display-experience'
+  navigate('display-experience')
   loadDisplayExperience()
+}
+
+function navigate(nextPage) {
+  page.value = nextPage
+  if (mobile.value) drawer.value = false
 }
 
 async function saveDisplayExperience() {
@@ -2229,26 +2238,26 @@ onUnmounted(() => {
       <v-divider />
       <v-list nav density="comfortable">
         <v-list-item prepend-icon="mdi-image-plus" title="Generate image" :active="page === 'generate'" @click="openGeneratePage" />
-        <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="page = 'video'" />
+        <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="navigate('video')" />
         <v-list-item prepend-icon="mdi-image-text" title="Creation Library" :active="metadataPane" @click="openMetadataPane" />
-        <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="page = 'models'" />
+        <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="navigate('models')" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
-        <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="page = 'settings'" />
-        <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="page = 'about'" />
+        <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="navigate('settings')" />
+        <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="navigate('about')" />
       </v-list>
       <template #append>
         <v-divider />
         <v-list nav density="comfortable">
-          <v-list-item prepend-icon="mdi-format-list-numbered" title="Queue" :active="page === 'queue'" @click="page = 'queue'">
+          <v-list-item prepend-icon="mdi-format-list-numbered" title="Queue" :active="page === 'queue'" @click="navigate('queue')">
             <template #append><v-chip v-if="activeGenerationQueue.length" color="primary" size="x-small" variant="tonal" title="Active generation jobs">{{ activeGenerationQueue.length }}</v-chip></template>
           </v-list-item>
-          <v-list-item prepend-icon="mdi-text-box-outline" title="Diagnostics" :active="page === 'diagnostics'" @click="page = 'diagnostics'" />
+          <v-list-item prepend-icon="mdi-text-box-outline" title="Diagnostics" :active="page === 'diagnostics'" @click="navigate('diagnostics')" />
         </v-list>
       </template>
     </v-navigation-drawer>
 
-    <v-navigation-drawer v-model="metadataPane" location="right" :width="imageLibraryWidth" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
+    <v-navigation-drawer v-model="metadataPane" location="right" :width="mobile ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
       <div
         v-if="!mobile"
         class="image-library-resize-handle"
@@ -2273,7 +2282,7 @@ onUnmounted(() => {
           :title="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
           @click="toggleImageLibraryView"
         />
-        <v-btn :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" :title="metadataPanePinned ? 'Unpin Creation Library' : 'Pin Creation Library open'" @click="toggleMetadataPanePin" />
+        <v-btn v-if="!mobile" :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" :title="metadataPanePinned ? 'Unpin Creation Library' : 'Pin Creation Library open'" @click="toggleMetadataPanePin" />
         <v-btn icon="mdi-close" variant="text" aria-label="Close Creation Library" title="Close Creation Library" @click="closeMetadataPane" />
       </div>
       <v-divider />
@@ -2730,12 +2739,14 @@ onUnmounted(() => {
                   <v-btn class="mt-1" size="small" variant="text" prepend-icon="mdi-dice-5" @click="chooseRandomSeed">Create random seed</v-btn>
                 </v-col>
               </v-row>
-              <v-btn type="submit" color="primary" :disabled="models.length === 0" prepend-icon="mdi-image-plus">
-                {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
-              </v-btn>
-              <v-btn v-if="generating" class="ml-2" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
-                {{ activeJobId ? 'Cancel generation' : 'Cancel' }}
-              </v-btn>
+              <div class="generation-form-actions">
+                <v-btn type="submit" color="primary" :disabled="models.length === 0" prepend-icon="mdi-image-plus">
+                  {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
+                </v-btn>
+                <v-btn v-if="generating" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
+                  {{ activeJobId ? 'Cancel generation' : 'Cancel' }}
+                </v-btn>
+              </div>
               <div v-if="generating && activeImageJobRunning" class="mt-5">
                 <div class="d-flex justify-space-between text-body-2 mb-2">
                   <span>{{ generationStage }}</span><span>{{ activeJobId || generationProgress ? `${generationProgress}%` : 'Preparing' }}</span>
@@ -2782,7 +2793,7 @@ onUnmounted(() => {
               Describe an image, choose your settings, then select Generate image.
             </div>
           </v-sheet>
-          <v-card-actions v-if="imageUrl">
+          <v-card-actions v-if="imageUrl" class="result-actions">
             <v-chip v-if="previewFittedFor" size="small" variant="tonal" prepend-icon="mdi-monitor-dashboard">
               Preview: fitted for {{ previewFittedFor.name }} ({{ previewFittedFor.width }}×{{ previewFittedFor.height }})
             </v-chip>
@@ -2889,8 +2900,10 @@ onUnmounted(() => {
                 <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'hunyuanvideo-1.5-480p' ? '30 is recommended for HunyuanVideo 1.5.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
               </v-row>
-              <v-btn type="submit" class="mt-4" color="primary" :disabled="health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">{{ generationBusy ? 'Add video to queue' : 'Generate video' }}</v-btn>
-              <v-btn v-if="generatingVideo" class="ml-2 mt-4" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
+              <div class="generation-form-actions mt-4">
+                <v-btn type="submit" color="primary" :disabled="health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">{{ generationBusy ? 'Add video to queue' : 'Generate video' }}</v-btn>
+                <v-btn v-if="generatingVideo" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
+              </div>
             </v-form>
             <div v-if="generatingVideo && activeVideoJobRunning" class="mt-5">
               <div class="d-flex justify-space-between text-body-2 mb-2"><span>{{ videoStage }}</span><span>{{ videoProgress }}%</span></div>
@@ -2927,7 +2940,7 @@ onUnmounted(() => {
               </v-col>
             </v-row>
           </v-card-text>
-          <v-card-actions v-if="videoUrl">
+          <v-card-actions v-if="videoUrl" class="result-actions">
             <v-btn :href="videoUrl" download="esp-image-video.mp4" color="secondary" prepend-icon="mdi-download">Download MP4</v-btn>
             <v-btn color="primary" variant="tonal" prepend-icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" @click="saveVideoToCreationLibrary">
               {{ videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery' }}
@@ -3122,7 +3135,31 @@ onUnmounted(() => {
             <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-4">
               Last confirmed by the display: {{ formatDateTime(displaySdCard.reported_at) }}
             </div>
+            <v-progress-linear v-if="mobile && displaySdCardLoading" indeterminate color="primary" class="mb-3" />
+            <v-list v-if="mobile" class="sd-card-mobile-list border rounded" lines="three">
+              <v-list-item v-for="item in displaySdCard.files || []" :key="item.name">
+                <template #prepend>
+                  <v-avatar v-if="item.thumbnail_available" rounded="sm" size="56">
+                    <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(item.name)}`" cover />
+                  </v-avatar>
+                  <v-avatar v-else color="surface-variant" rounded="sm" size="56">
+                    <v-icon>{{ item.type === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline' }}</v-icon>
+                  </v-avatar>
+                </template>
+                <v-list-item-title class="text-break">{{ item.name }}</v-list-item-title>
+                <v-list-item-subtitle>{{ item.type === 'video' ? 'Video' : 'Image' }} · {{ formatDateTime(item.created_at) }}</v-list-item-subtitle>
+                <v-list-item-subtitle>{{ formatFileSize(item.size) }} · Saved on your display SD card</v-list-item-subtitle>
+                <template #append>
+                  <div class="d-flex flex-column">
+                    <v-btn icon="mdi-play" size="small" color="primary" variant="text" :loading="displayingSdCardFile === item.name" :disabled="Boolean(displayingSdCardFile)" :aria-label="`Show ${item.name} on display`" @click="showSDCardFileOnDisplay(item.name)" />
+                    <v-btn icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile" :aria-label="`Delete ${item.name} from SD card`" @click="confirmDeleteDisplaySdCardFile(item)" />
+                  </div>
+                </template>
+              </v-list-item>
+              <div v-if="!(displaySdCard.files || []).length && !displaySdCardLoading" class="py-8 text-center text-medium-emphasis">No saved SD card images or videos yet.</div>
+            </v-list>
             <v-data-table
+              v-else
               :headers="sdCardTableHeaders"
               :items="displaySdCard.files || []"
               :loading="displaySdCardLoading"
@@ -3179,22 +3216,29 @@ onUnmounted(() => {
           <v-card-title class="text-h5 pt-5">Settings</v-card-title>
           <v-card-text>
             <v-form @submit.prevent="saveAppSettings">
-              <v-text-field
-                v-model="imageLibraryLocation"
-                label="Image library location"
-                variant="outlined"
-                readonly
-                hint="Existing generated images move with the library. Choose an empty destination folder."
-                persistent-hint
-                prepend-inner-icon="mdi-folder-image"
-                class="mb-7"
-              />
-              <v-btn type="button" class="mb-3 mr-2" variant="tonal" prepend-icon="mdi-folder-search" :loading="choosingImageLibrary" @click="chooseImageLibrary">
-                Choose image library folder
-              </v-btn>
-              <v-btn type="button" class="mb-6" variant="tonal" prepend-icon="mdi-folder-open" :loading="openingImageLibrary" @click="revealImageLibrary">
-                Open image library folder
-              </v-btn>
+              <template v-if="!mobile">
+                <v-text-field
+                  v-model="imageLibraryLocation"
+                  label="Image library location"
+                  variant="outlined"
+                  readonly
+                  hint="Existing generated images move with the library. Choose an empty destination folder."
+                  persistent-hint
+                  prepend-inner-icon="mdi-folder-image"
+                  class="mb-7"
+                />
+                <div class="d-flex flex-wrap ga-2 mb-6">
+                  <v-btn type="button" variant="tonal" prepend-icon="mdi-folder-search" :loading="choosingImageLibrary" @click="chooseImageLibrary">
+                    Choose image library folder
+                  </v-btn>
+                  <v-btn type="button" variant="tonal" prepend-icon="mdi-folder-open" :loading="openingImageLibrary" @click="revealImageLibrary">
+                    Open image library folder
+                  </v-btn>
+                </div>
+              </template>
+              <v-alert v-else type="info" variant="tonal" density="compact" class="mb-6">
+                Image-library folders are managed on the computer running ESPImageServer. Use the desktop app to choose or open that folder.
+              </v-alert>
               <v-slider
                 v-model="jpegQuality"
                 label="JPEG quality"

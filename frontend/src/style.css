@@ -1,6 +1,6 @@
 html, body, #app { min-height: 100%; }
 body { margin: 0; background: rgb(var(--v-theme-background)); }
-.app-shell { min-height: 100vh; background: rgb(var(--v-theme-background)); }
+.app-shell { min-height: 100vh; min-height: 100dvh; background: rgb(var(--v-theme-background)); }
 
 .model-table th { white-space: nowrap; }
 .model-table__active { background: rgba(var(--v-theme-success), 0.08); }
@@ -39,14 +39,26 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .sd-card-table .v-data-table-header__content { font-weight: 700; color: rgba(var(--v-theme-on-surface), 0.75); }
 .sd-card-table .v-data-table__tr { min-height: 72px; }
 .sd-card-table .v-data-table__td { padding-block: 8px; }
+.generation-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 @media (max-width: 600px) {
   .app-container { padding-inline: 12px !important; }
+  .app-bar .v-toolbar__content { padding-inline: 4px; }
+  .app-bar .v-avatar { margin-right: 8px !important; }
   .app-bar .v-chip { margin-right: 4px !important; padding-inline: 8px; }
-  .app-bar__activity-chip { max-width: 96px; }
+  .app-bar__activity-chip { max-width: 88px; }
   .app-bar__display-chip { min-width: 40px; }
   .activity-drawer { max-height: 72vh !important; }
   .v-card-title { white-space: normal; }
+  .v-field__input { font-size: 16px; }
   .preview-placeholder { min-height: 260px; }
   .model-in-use { align-items: flex-start !important; }
+  .generation-form-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .generation-form-actions .v-btn { width: 100%; min-height: 44px; }
+  .result-actions { display: flex !important; flex-direction: column; align-items: stretch; gap: 8px; padding: 12px !important; }
+  .result-actions .v-btn { width: 100%; min-height: 44px; height: auto; padding-block: 8px; }
+  .result-actions .v-btn__content { white-space: normal; line-height: 1.2; text-align: center; }
+  .result-actions .v-chip { align-self: flex-start; max-width: 100%; }
+  .sd-card-mobile-list .v-list-item { min-height: 104px; padding-block: 8px; }
+  .sd-card-mobile-list .v-list-item-title { overflow-wrap: anywhere; }
 }
