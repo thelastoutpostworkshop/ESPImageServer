@@ -218,7 +218,7 @@ let imagePreviewRequestId = 0
 let videoPreviewRequestId = 0
 let loadingImageGenerationJobId = ''
 let loadingVideoGenerationJobId = ''
-const { mobile } = useDisplay()
+const { smAndDown: compact } = useDisplay()
 const mobileAccessUrl = computed(() => {
   const port = Number(serverInfo.value?.port) || 8000
   return `http://espimageserver.local:${port}`
@@ -536,8 +536,8 @@ watch(sdCardItemsPerPage, itemsPerPage => {
   window.localStorage.setItem(sdCardItemsPerPageSettingsKey, String(itemsPerPage))
 })
 
-watch(mobile, isMobile => {
-  if (isMobile) drawer.value = false
+watch(compact, isCompact => {
+  if (isCompact) drawer.value = false
 }, { immediate: true })
 
 watch(activityPanelOpen, isOpen => {
@@ -1289,7 +1289,7 @@ function openDisplayExperiencePage() {
 
 function navigate(nextPage) {
   page.value = nextPage
-  if (mobile.value) drawer.value = false
+  if (compact.value) drawer.value = false
 }
 
 async function saveDisplayExperience() {
@@ -1605,7 +1605,7 @@ async function chooseImageLibrary() {
 }
 
 async function openMetadataPane() {
-  if (mobile.value) drawer.value = false
+  if (compact.value) drawer.value = false
   metadataPane.value = true
   await loadSavedImages()
   await loadDisplaySdCard()
@@ -1699,7 +1699,7 @@ function toggleImageLibraryView() {
 }
 
 function startImageLibraryResize(event) {
-  if (mobile.value) return
+  if (compact.value) return
   imageLibraryResizeStartX = event.clientX
   imageLibraryResizeStartWidth = imageLibraryWidth.value
   event.currentTarget.setPointerCapture(event.pointerId)
@@ -2181,7 +2181,7 @@ onMounted(async () => {
   await loadAppSettings()
   await loadGenerationQueue()
   await clearDiagnostics()
-  if (metadataPanePinned.value && !mobile.value) metadataPane.value = true
+  if (metadataPanePinned.value && !compact.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
     loadServerStatus()
     loadDisplay()
@@ -2233,16 +2233,16 @@ onUnmounted(() => {
       <v-app-bar-nav-icon :aria-label="drawer ? 'Close navigation menu' : 'Open navigation menu'" :title="drawer ? 'Close navigation menu' : 'Open navigation menu'" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
       <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.label" @click="openActiveGeneration">
-        <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
+        <span>{{ compact ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
       <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height} · Firmware ${display.firmware_version}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
-        <span class="app-bar__display-label">{{ mobile ? compactDisplayLabel : display?.connected ? `${display.name} · ${display.width}×${display.height} · v${display.firmware_version}` : 'Display waiting' }}</span>
+        <span class="app-bar__display-label">{{ compact ? compactDisplayLabel : display?.connected ? `${display.name} · ${display.width}×${display.height} · v${display.firmware_version}` : 'Display waiting' }}</span>
       </v-chip>
       <v-spacer />
       <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
     </v-app-bar>
 
-    <v-navigation-drawer v-model="drawer" width="272" border :temporary="mobile">
+    <v-navigation-drawer v-model="drawer" width="272" border :temporary="compact">
       <v-list-item class="py-4" subtitle="Local AI image & video generation">
         <template #title>
           <div class="d-flex align-baseline ga-2">
@@ -2273,9 +2273,9 @@ onUnmounted(() => {
       </template>
     </v-navigation-drawer>
 
-    <v-navigation-drawer v-model="metadataPane" class="creation-library-drawer" location="right" :width="mobile ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !mobile" :temporary="!metadataPanePinned || mobile" border>
+    <v-navigation-drawer v-model="metadataPane" class="creation-library-drawer" location="right" :width="compact ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !compact" :temporary="!metadataPanePinned || compact" border>
       <div
-        v-if="!mobile"
+        v-if="!compact"
         class="image-library-resize-handle"
         role="separator"
         aria-label="Resize Creation Library"
@@ -2298,7 +2298,7 @@ onUnmounted(() => {
           :title="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
           @click="toggleImageLibraryView"
         />
-        <v-btn v-if="!mobile" :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" :title="metadataPanePinned ? 'Unpin Creation Library' : 'Pin Creation Library open'" @click="toggleMetadataPanePin" />
+        <v-btn v-if="!compact" :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" :title="metadataPanePinned ? 'Unpin Creation Library' : 'Pin Creation Library open'" @click="toggleMetadataPanePin" />
         <v-btn icon="mdi-close" variant="text" aria-label="Close Creation Library" title="Close Creation Library" @click="closeMetadataPane" />
       </div>
       <v-divider />
@@ -2611,7 +2611,7 @@ onUnmounted(() => {
 
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
-        <v-alert v-if="!mobile && !mobileAccessPromptDismissed" type="info" variant="tonal" icon="mdi-cellphone-link" class="mb-4">
+        <v-alert v-if="!compact && !mobileAccessPromptDismissed" type="info" variant="tonal" icon="mdi-cellphone-link" class="mb-4">
           <div class="font-weight-medium">Use ESPImageServer from your phone</div>
           <div class="text-body-2 mt-1">Control generation and your display from another device on the same Wi-Fi network.</div>
           <template #append>
@@ -3020,7 +3020,7 @@ onUnmounted(() => {
           <v-card-text class="text-body-1">
             Compare the available models. Choose the model to use from the Generate image page; it downloads once and stays on this computer.
           </v-card-text>
-          <v-table v-if="!mobile" class="model-table" hover density="comfortable">
+          <v-table v-if="!compact" class="model-table" hover density="comfortable">
             <thead>
               <tr>
                 <th>Model</th>
@@ -3081,7 +3081,7 @@ onUnmounted(() => {
           <v-card-text class="text-body-1">
             Video models download the first time you use them. Remove downloaded models here to recover disk space; you can download them again later.
           </v-card-text>
-          <v-table v-if="!mobile" class="model-table" hover density="comfortable">
+          <v-table v-if="!compact" class="model-table" hover density="comfortable">
             <thead>
               <tr>
                 <th>Model</th>
@@ -3196,8 +3196,8 @@ onUnmounted(() => {
             <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-4">
               Last confirmed by the display: {{ formatDateTime(displaySdCard.reported_at) }}
             </div>
-            <v-progress-linear v-if="mobile && displaySdCardLoading" indeterminate color="primary" class="mb-3" />
-            <v-list v-if="mobile" class="sd-card-mobile-list border rounded" lines="three">
+            <v-progress-linear v-if="compact && displaySdCardLoading" indeterminate color="primary" class="mb-3" />
+            <v-list v-if="compact" class="sd-card-mobile-list border rounded" lines="three">
               <v-list-item v-for="item in displaySdCard.files || []" :key="item.name">
                 <template #prepend>
                   <v-avatar v-if="item.thumbnail_available" rounded="sm" size="56">
@@ -3276,7 +3276,7 @@ onUnmounted(() => {
         <v-card v-if="page === 'settings'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Settings</v-card-title>
           <v-card-text>
-            <v-card v-if="!mobile" variant="tonal" color="primary" class="mb-6">
+            <v-card v-if="!compact" variant="tonal" color="primary" class="mb-6">
               <v-card-title class="text-subtitle-1">Use from your phone</v-card-title>
               <v-card-text class="pt-0">
                 <div class="text-body-2">Open ESPImageServer on another device connected to the same Wi-Fi network.</div>
@@ -3292,7 +3292,7 @@ onUnmounted(() => {
               </v-alert>
             </v-card>
             <v-form @submit.prevent="saveAppSettings">
-              <template v-if="!mobile">
+              <template v-if="!compact">
                 <v-text-field
                   v-model="imageLibraryLocation"
                   label="Image library location"
@@ -3365,7 +3365,7 @@ onUnmounted(() => {
       temporary
       touchless
       :scrim="false"
-      :height="mobile ? '72vh' : 360"
+      :height="compact ? '72vh' : 360"
     >
       <v-toolbar density="comfortable" color="surface">
         <v-icon class="ml-4 mr-3" icon="mdi-text-box-outline" />

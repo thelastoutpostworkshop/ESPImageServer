@@ -46,7 +46,7 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .sd-card-table .v-data-table__td { padding-block: 8px; }
 .generation-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-@media (max-width: 600px) {
+@media (max-width: 959.98px) {
   .app-container { padding-inline: 12px !important; }
   .app-bar .v-toolbar__content { padding-inline: 4px; }
   .app-bar .v-avatar { display: none; }
