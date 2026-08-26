@@ -2,11 +2,7 @@
 
 ## Mobile frontend review
 
-1. **P2 — Add safe-area spacing.** The app opts into `viewport-fit=cover` but
-   does not apply `env(safe-area-inset-*)`. Pad the app bar, compact drawers,
-   and bottom notifications for notched iPhones.
-
-2. **P2 — Add a mobile visual/regression test pass.** Check at 390×844
+1. **P2 — Add a mobile visual/regression test pass.** Check at 390×844
    portrait, 844×390 landscape, and a notched iPhone Safari view. Cover
    opening and closing the Creation Library, navigation, long display names,
    and the Queue, Diagnostics, and result-action layouts.

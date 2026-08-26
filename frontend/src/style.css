@@ -47,6 +47,13 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .generation-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 @media (max-width: 959.98px) {
+  .app-root { --compact-app-bar-height: 64px; }
+  .app-bar { padding-top: max(env(safe-area-inset-top), 0px); padding-inline: max(env(safe-area-inset-left), 0px) max(env(safe-area-inset-right), 0px); }
+  .app-root .v-main { padding-top: calc(var(--v-layout-top) + max(env(safe-area-inset-top), 0px)); padding-right: calc(var(--v-layout-right) + max(env(safe-area-inset-right), 0px)); padding-bottom: calc(var(--v-layout-bottom) + max(env(safe-area-inset-bottom), 0px)); padding-left: calc(var(--v-layout-left) + max(env(safe-area-inset-left), 0px)); }
+  .app-root .v-navigation-drawer--temporary.v-navigation-drawer--left, .app-root .v-navigation-drawer--temporary.v-navigation-drawer--right { top: calc(var(--compact-app-bar-height) + max(env(safe-area-inset-top), 0px)) !important; bottom: max(env(safe-area-inset-bottom), 0px) !important; height: auto !important; }
+  .app-root .v-navigation-drawer--temporary .v-navigation-drawer__content { padding-inline: max(env(safe-area-inset-left), 0px) max(env(safe-area-inset-right), 0px); }
+  .app-root .v-snackbar--top { --v-snackbar-mobile-notch: max(env(safe-area-inset-top), 0px); }
+  .app-root .v-snackbar--bottom { --v-snackbar-mobile-notch: max(env(safe-area-inset-bottom), 0px); }
   .app-container { padding-inline: 12px !important; }
   .app-bar .v-toolbar__content { padding-inline: 4px; }
   .app-bar .v-avatar { display: none; }

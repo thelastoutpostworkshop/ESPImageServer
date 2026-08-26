@@ -2207,7 +2207,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <v-app>
+  <v-app class="app-root">
     <v-snackbar v-model="displayConnectedSnackbar" color="success" location="top" timeout="5000">
       <div class="d-flex align-center ga-2">
         <v-icon icon="mdi-monitor-check" />
