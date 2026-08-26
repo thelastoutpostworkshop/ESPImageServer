@@ -64,6 +64,13 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
   .result-actions .v-btn { width: 100%; min-height: 44px; height: auto; padding-block: 8px; }
   .result-actions .v-btn__content { white-space: normal; line-height: 1.2; text-align: center; }
   .result-actions .v-chip { align-self: flex-start; max-width: 100%; }
+  .page-card-title { flex-wrap: wrap; gap: 12px; }
+  .page-card-title > .v-spacer { display: none; }
+  .page-card-title__actions { flex-basis: 100%; width: 100%; }
+  .page-card-title__actions .v-btn { min-height: 44px; height: auto; padding-block: 8px; }
+  .compact-stack-alert-actions { grid-template-areas: "prepend content" "append append"; grid-template-columns: max-content minmax(0, 1fr); }
+  .compact-stack-alert-actions .v-alert__append { width: 100%; margin: 12px 0 0; }
+  .compact-stack-alert-actions .v-alert__append .v-btn { width: 100%; min-height: 44px; height: auto; padding-block: 8px; }
   .sd-card-mobile-list .v-list-item { min-height: 104px; padding-block: 8px; }
   .sd-card-mobile-list .v-list-item-title { overflow-wrap: anywhere; }
 }

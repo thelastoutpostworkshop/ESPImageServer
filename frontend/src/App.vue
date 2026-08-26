@@ -2626,11 +2626,15 @@ onUnmounted(() => {
           </template>
         </v-alert>
         <v-card v-if="page === 'queue'" class="mx-auto" max-width="960">
-          <v-card-title class="d-flex align-center text-h6">
-            <v-icon class="mr-2">mdi-format-list-numbered</v-icon>Generation queue
+          <v-card-title class="page-card-title d-flex align-center text-h6">
+            <div class="page-card-title__heading d-flex align-center">
+              <v-icon class="mr-2">mdi-format-list-numbered</v-icon><span>Generation queue</span>
+            </div>
             <v-spacer />
-            <v-chip size="small" variant="tonal">{{ activeGenerationQueue.length }} active</v-chip>
-            <v-btn v-if="finishedGenerationQueue.length" class="ml-2" size="small" variant="text" color="error" prepend-icon="mdi-delete-sweep-outline" @click="clearFinishedGenerationQueue">Clear finished</v-btn>
+            <div class="page-card-title__actions d-flex align-center flex-wrap ga-2">
+              <v-chip size="small" variant="tonal">{{ activeGenerationQueue.length }} active</v-chip>
+              <v-btn v-if="finishedGenerationQueue.length" size="small" variant="text" color="error" prepend-icon="mdi-delete-sweep-outline" @click="clearFinishedGenerationQueue">Clear finished</v-btn>
+            </div>
           </v-card-title>
           <v-list v-if="activeGenerationQueue.length" density="comfortable" lines="two">
             <v-list-item v-for="job in activeGenerationQueue" :key="job.id">
@@ -2669,17 +2673,21 @@ onUnmounted(() => {
           </template>
         </v-card>
         <v-card v-if="page === 'diagnostics'" class="mx-auto" max-width="960">
-          <v-card-title class="d-flex align-center text-h6">
-            <v-icon class="mr-2" icon="mdi-text-box-outline" />Diagnostics
+          <v-card-title class="page-card-title d-flex align-center text-h6">
+            <div class="page-card-title__heading d-flex align-center">
+              <v-icon class="mr-2" icon="mdi-text-box-outline" /><span>Diagnostics</span>
+            </div>
             <v-spacer />
-            <template v-if="diagnosticsTab === 'summary'">
-              <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyDiagnostics">Copy diagnostics</v-btn>
-              <v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearDiagnostics">Clear</v-btn>
-            </template>
-            <template v-else>
-              <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyConsoleOutput">Copy console</v-btn>
-              <v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearConsoleOutput">Clear console</v-btn>
-            </template>
+            <div class="page-card-title__actions d-flex align-center flex-wrap ga-2">
+              <template v-if="diagnosticsTab === 'summary'">
+                <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyDiagnostics">Copy diagnostics</v-btn>
+                <v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearDiagnostics">Clear</v-btn>
+              </template>
+              <template v-else>
+                <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copyConsoleOutput">Copy console</v-btn>
+                <v-btn size="small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="clearConsoleOutput">Clear console</v-btn>
+              </template>
+            </div>
           </v-card-title>
           <v-tabs v-model="diagnosticsTab" color="primary">
             <v-tab value="summary" prepend-icon="mdi-clipboard-text-outline">Summary</v-tab>
@@ -2719,7 +2727,7 @@ onUnmounted(() => {
         <v-col cols="12" lg="5">
         <v-card class="generation-card">
           <v-card-text>
-            <v-alert v-if="videoGenerationActive" type="info" variant="tonal" density="compact" class="mb-4">
+            <v-alert v-if="videoGenerationActive" type="info" variant="tonal" density="compact" class="compact-stack-alert-actions mb-4">
               Video generation is using the graphics card. You can add an image to the queue; it will start when the video finishes.
               <template #append><v-btn size="small" variant="text" @click="page = 'queue'">View queue</v-btn></template>
             </v-alert>
@@ -2876,7 +2884,7 @@ onUnmounted(() => {
             </v-btn>
             <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
           </v-card-actions>
-          <v-alert v-if="imageUrl && !autoSaveImages" type="warning" variant="tonal" class="mx-4 mb-4" density="comfortable" icon="mdi-content-save-alert">
+          <v-alert v-if="imageUrl && !autoSaveImages" type="warning" variant="tonal" class="compact-stack-alert-actions mx-4 mb-4" density="comfortable" icon="mdi-content-save-alert">
             <div class="font-weight-medium">This image is not saved in your Creation Library.</div>
             <div class="text-body-2 mt-1">Automatic saving is off. Save this creation to keep its image and generation details in the app.</div>
             <template #append>
@@ -2894,7 +2902,7 @@ onUnmounted(() => {
             <v-alert v-if="health?.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
               Video generation cannot run in CPU mode. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, then restart ESPImageServer.
             </v-alert>
-            <v-alert v-if="imageGenerationActive" type="info" variant="tonal" density="compact" class="mb-4">
+            <v-alert v-if="imageGenerationActive" type="info" variant="tonal" density="compact" class="compact-stack-alert-actions mb-4">
               Image generation is using the graphics card. You can add a video to the queue; it will start when the image finishes.
               <template #append><v-btn size="small" variant="text" @click="page = 'queue'">View queue</v-btn></template>
             </v-alert>

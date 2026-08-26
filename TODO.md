@@ -2,16 +2,11 @@
 
 ## Mobile frontend review
 
-1. **P1 — Stack crowded mobile title and alert actions.** Queue and
-   Diagnostics headers keep several actions in one row, and Vuetify alert
-   append actions sit beside their text. At compact widths, wrap or stack
-   these controls below their content so labels do not truncate or overflow.
-
-2. **P2 — Add safe-area spacing.** The app opts into `viewport-fit=cover` but
+1. **P2 — Add safe-area spacing.** The app opts into `viewport-fit=cover` but
    does not apply `env(safe-area-inset-*)`. Pad the app bar, compact drawers,
    and bottom notifications for notched iPhones.
 
-3. **P2 — Add a mobile visual/regression test pass.** Check at 390×844
+2. **P2 — Add a mobile visual/regression test pass.** Check at 390×844
    portrait, 844×390 landscape, and a notched iPhone Safari view. Cover
    opening and closing the Creation Library, navigation, long display names,
    and the Queue, Diagnostics, and result-action layouts.
