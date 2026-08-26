@@ -219,6 +219,7 @@ let videoPreviewRequestId = 0
 let loadingImageGenerationJobId = ''
 let loadingVideoGenerationJobId = ''
 const { smAndDown: compact } = useDisplay()
+const creationLibraryTemporary = computed(() => compact.value || !metadataPanePinned.value)
 const mobileAccessUrl = computed(() => {
   const port = Number(serverInfo.value?.port) || 8000
   return `http://espimageserver.local:${port}`
@@ -537,7 +538,10 @@ watch(sdCardItemsPerPage, itemsPerPage => {
 })
 
 watch(compact, isCompact => {
-  if (isCompact) drawer.value = false
+  if (isCompact) {
+    drawer.value = false
+    metadataPanePinned.value = false
+  }
 }, { immediate: true })
 
 watch(activityPanelOpen, isOpen => {
@@ -2273,7 +2277,7 @@ onUnmounted(() => {
       </template>
     </v-navigation-drawer>
 
-    <v-navigation-drawer v-model="metadataPane" class="creation-library-drawer" location="right" :width="compact ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !compact" :temporary="!metadataPanePinned || compact" border>
+    <v-navigation-drawer v-model="metadataPane" class="creation-library-drawer" location="right" :width="compact ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !compact" :temporary="creationLibraryTemporary" :scrim="creationLibraryTemporary" border>
       <div
         v-if="!compact"
         class="image-library-resize-handle"
