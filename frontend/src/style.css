@@ -8,6 +8,9 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .app-container { max-width: 1440px; }
 /* Keep the primary controls above navigation drawers while they change mode. */
 .app-bar { z-index: 1202 !important; }
+.app-bar__display-chip { min-width: 0; }
+.app-bar__display-chip .v-chip__content { min-width: 0; overflow: hidden; }
+.app-bar__display-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-drawer { border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); }
 .activity-drawer .v-navigation-drawer__content { display: flex; flex-direction: column; }
 .activity-drawer__content { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
@@ -46,10 +49,10 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 @media (max-width: 600px) {
   .app-container { padding-inline: 12px !important; }
   .app-bar .v-toolbar__content { padding-inline: 4px; }
-  .app-bar .v-avatar { margin-right: 8px !important; }
+  .app-bar .v-avatar { display: none; }
   .app-bar .v-chip { margin-right: 4px !important; padding-inline: 8px; }
-  .app-bar__activity-chip { max-width: 88px; }
-  .app-bar__display-chip { min-width: 40px; }
+  .app-bar__activity-chip { min-width: 0; max-width: 76px; }
+  .app-bar__display-chip { flex: 0 1 auto; max-width: min(48vw, 180px); }
   .activity-drawer { max-height: 72vh !important; }
   .v-card-title { white-space: normal; }
   .v-field__input { font-size: 16px; }

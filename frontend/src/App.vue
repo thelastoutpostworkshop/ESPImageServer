@@ -224,6 +224,10 @@ const mobileAccessUrl = computed(() => {
   return `http://espimageserver.local:${port}`
 })
 const mobileAccessFallbackUrl = computed(() => serverInfo.value?.local_network_url || '')
+const compactDisplayLabel = computed(() => {
+  if (!display.value?.connected) return 'Display waiting'
+  return `${display.value.name} · connected`
+})
 const selectedImageModelName = computed(() => models.value.find(model => model.id === activeModelId.value)?.name || 'image model')
 const imageGenerationActive = computed(() => generating.value || Boolean(generationStage.value) || health.value?.image_generating === true)
 const videoGenerationActive = computed(() => generatingVideo.value || health.value?.video_generating === true)
@@ -2231,8 +2235,8 @@ onUnmounted(() => {
       <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.label" @click="openActiveGeneration">
         <span>{{ mobile ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
-      <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" prepend-icon="mdi-monitor-dashboard" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height} · Firmware ${display.firmware_version}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
-        <span v-if="!mobile">{{ display?.connected ? `${display.name} · ${display.width}×${display.height} · v${display.firmware_version}` : 'Display waiting' }}</span>
+      <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height} · Firmware ${display.firmware_version}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
+        <span class="app-bar__display-label">{{ mobile ? compactDisplayLabel : display?.connected ? `${display.name} · ${display.width}×${display.height} · v${display.firmware_version}` : 'Display waiting' }}</span>
       </v-chip>
       <v-spacer />
       <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
