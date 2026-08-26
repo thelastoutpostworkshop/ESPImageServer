@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from threading import Lock
+from time import time
 from uuid import uuid4
+
+from .retention import DISPLAY_COMMAND_RETENTION, RetentionPolicy
 
 
 class DisplayCommandStore:
-    def __init__(self) -> None:
+    def __init__(self, retention: RetentionPolicy = DISPLAY_COMMAND_RETENTION) -> None:
         self._lock = Lock()
         self._pending: dict[str, object] | None = None
         self._completed: dict[str, dict[str, object]] = {}
+        self._finished_at: dict[str, float] = {}
+        self._retention = retention
         self._sd_card_report_version = 0
         self._sd_card_report: dict[str, object] = {
             "available": False,
@@ -37,6 +43,12 @@ class DisplayCommandStore:
 
     def queue(self, command_type: str, **values: object) -> dict[str, object]:
         with self._lock:
+            if self._pending is not None:
+                previous_id = str(self._pending["id"])
+                previous = self._completed.get(previous_id)
+                if previous is not None and previous.get("status") == "pending":
+                    previous["status"] = "superseded"
+                    self._finished_at[previous_id] = time()
             command_id = uuid4().hex
             command = {
                 "id": command_id,
@@ -46,6 +58,7 @@ class DisplayCommandStore:
             command.update({key: value for key, value in values.items() if value is not None})
             self._pending = command
             self._completed[command_id] = command
+            self._prune_completed_locked()
             return dict(command)
 
     def report_sd_card(self, report: dict[str, object]) -> None:
@@ -138,9 +151,53 @@ class DisplayCommandStore:
                 command["report_version"] = self._sd_card_report_version + 1
             if self._pending is not None and self._pending.get("id") == command_id:
                 self._pending = None
+            self._finished_at[command_id] = time()
+            self._prune_completed_locked()
             return dict(command)
 
     def get(self, command_id: str) -> dict[str, object] | None:
         with self._lock:
             command = self._completed.get(command_id)
             return dict(command) if command is not None else None
+
+    def referenced_video_ids(self) -> set[str]:
+        """Return media still needed by the command waiting for the display."""
+        with self._lock:
+            if self._pending is None or self._pending.get("type") != "save_saved_video":
+                return set()
+            video_id = self._pending.get("video_id")
+            return {str(video_id)} if video_id else set()
+
+    def prune_completed(self, now: float | None = None) -> int:
+        with self._lock:
+            return self._prune_completed_locked(time() if now is None else now)
+
+    def _prune_completed_locked(self, now: float | None = None) -> int:
+        now = time() if now is None else now
+        active_id = str(self._pending["id"]) if self._pending is not None else None
+        finished_ids = [
+            command_id for command_id in self._completed
+            if command_id != active_id and command_id in self._finished_at
+        ]
+        expired_ids = [
+            command_id for command_id in finished_ids
+            if self._finished_at[command_id] + self._retention.max_age_seconds < now
+        ]
+        remove_ids = list(expired_ids)
+        remaining_ids = [command_id for command_id in finished_ids if command_id not in set(remove_ids)]
+        total_bytes = sum(self._command_size(self._completed[command_id]) for command_id in remaining_ids)
+        while len(remaining_ids) > self._retention.max_items or (
+            self._retention.max_bytes is not None and total_bytes > self._retention.max_bytes
+        ):
+            command_id = min(remaining_ids, key=lambda candidate: self._finished_at[candidate])
+            remaining_ids.remove(command_id)
+            remove_ids.append(command_id)
+            total_bytes -= self._command_size(self._completed[command_id])
+        for command_id in dict.fromkeys(remove_ids):
+            self._completed.pop(command_id, None)
+            self._finished_at.pop(command_id, None)
+        return len(set(remove_ids))
+
+    @staticmethod
+    def _command_size(command: dict[str, object]) -> int:
+        return len(json.dumps(command, default=str, separators=(",", ":")).encode("utf-8"))

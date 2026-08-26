@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image
+from starlette.background import BackgroundTask
 
 from .config import Settings
 from .app_settings import AppSettingsStore
@@ -40,6 +41,7 @@ from .latest_image import LatestImageStore
 from .mdns import MdnsAdvertiser, active_lan_address
 from .models import MODELS, get_model, model_is_cached, model_settings, remove_cached_model
 from .model_settings import ModelSelectionStore
+from .mjpeg_cache import MjpegConversionCache
 from .video_generator import LTXVideoGenerator, VIDEO_MODELS, remove_cached_video_model, video_model_is_cached
 from .video_library import VideoLibrary, bundled_ffmpeg_executable
 from .version import APP_VERSION
@@ -183,6 +185,7 @@ def create_app(
     app_settings_store: AppSettingsStore | None = None,
     generation_queue: GenerationQueue | None = None,
     display_command_store: DisplayCommandStore | None = None,
+    mjpeg_cache: MjpegConversionCache | None = None,
     video_generator: LTXVideoGenerator | None = None,
     enable_mdns: bool = True,
 ) -> FastAPI:
@@ -200,7 +203,8 @@ def create_app(
     latest_image_store = latest_image_store or LatestImageStore()
     active_display_store = active_display_store or ActiveDisplayStore()
     display_settings_store = display_settings_store or DisplaySettingsStore()
-    generation_queue = generation_queue or GenerationQueue()
+    video_output_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "videos"
+    generation_queue = generation_queue or GenerationQueue(video_result_root=video_output_path)
     diagnostics = DiagnosticLogStore()
     diagnostics.setFormatter(logging.Formatter("%(message)s"))
     console_output = ConsoleLogStore()
@@ -212,7 +216,7 @@ def create_app(
     display_command_store = display_command_store or DisplayCommandStore()
     video_generator = video_generator or LTXVideoGenerator()
     model_loading_status: dict[str, object] = {"active": False, "step": 0, "steps": 0, "stage": ""}
-    video_output_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "videos"
+    mjpeg_cache = mjpeg_cache or MjpegConversionCache(video_output_path / "display-mjpeg")
     sd_thumbnail_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
     persisted_app_settings = app_settings_store.get()
@@ -230,11 +234,24 @@ def create_app(
     confirm_deletion = persisted_app_settings.get("confirm_deletion", True)
     confirm_deletion = confirm_deletion if isinstance(confirm_deletion, bool) else True
 
+    def cleanup_temporary_data() -> None:
+        """Bound disposable data without ever evicting active or in-use media."""
+        removed_jobs = generation_queue.prune_completed()
+        removed_commands = display_command_store.prune_completed()
+        referenced_cache_files = mjpeg_cache.paths_for_video_ids(display_command_store.referenced_video_ids())
+        removed_conversions = mjpeg_cache.cleanup(referenced_cache_files)
+        if removed_jobs or removed_commands or removed_conversions:
+            logger.info(
+                "Temporary-data cleanup removed %s generation jobs, %s display commands, and %s MJPEG conversions",
+                removed_jobs, removed_commands, removed_conversions,
+            )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         # Uvicorn keeps its own non-propagating console logger. Mirror it as
         # well so startup and server errors are visible in the Console tab.
         uvicorn_logger.addHandler(console_output)
+        cleanup_temporary_data()
         mdns = MdnsAdvertiser(settings.port) if enable_mdns else None
         if mdns is not None:
             try:
@@ -259,6 +276,7 @@ def create_app(
         finally:
             if mdns is not None:
                 mdns.close()
+            cleanup_temporary_data()
             generation_queue.close()
             root_logger.removeHandler(diagnostics)
             root_logger.removeHandler(console_output)
@@ -274,6 +292,7 @@ def create_app(
     app.state.diagnostics = diagnostics
     app.state.console_output = console_output
     app.state.display_command_store = display_command_store
+    app.state.mjpeg_cache = mjpeg_cache
     app.state.image_library = image_library
     app.state.video_library = video_library
     app.state.app_settings_store = app_settings_store
@@ -821,9 +840,8 @@ def create_app(
         ffmpeg = bundled_ffmpeg_executable()
         if ffmpeg is None:
             raise HTTPException(status_code=503, detail="Bundled FFmpeg is unavailable")
-        output_dir = video_output_path / "display-mjpeg"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{video_id}-{width}x{height}-{fps}fps-q{video_jpeg_quality}.mjpeg"
+        output_path = mjpeg_cache.output_path(video_id, width, height, fps, video_jpeg_quality)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             if not output_path.is_file() or output_path.stat().st_mtime < video_path.stat().st_mtime:
                 subprocess.run(
@@ -834,7 +852,18 @@ def create_app(
                 )
         except (OSError, subprocess.SubprocessError) as exc:
             raise HTTPException(status_code=500, detail=f"Could not prepare video for the display: {exc}") from exc
-        return FileResponse(output_path, media_type="video/x-motion-jpeg", filename=output_path.name)
+        mjpeg_cache.acquire(output_path)
+
+        def release_conversion() -> None:
+            mjpeg_cache.release(output_path)
+            cleanup_temporary_data()
+
+        return FileResponse(
+            output_path,
+            media_type="video/x-motion-jpeg",
+            filename=output_path.name,
+            background=BackgroundTask(release_conversion),
+        )
 
     @app.get("/saved-videos/{video_id}/thumbnail", response_class=Response)
     def saved_video_thumbnail(video_id: str) -> FileResponse:
@@ -1229,7 +1258,12 @@ def create_app(
                 video_metadata["saved_video_id"] = saved_video["id"]
             return result
 
-        job = generation_queue.create("video", generate_video, video_metadata)
+        job = generation_queue.create(
+            "video",
+            generate_video,
+            video_metadata,
+            temporary_media_path=output_path,
+        )
         return job.as_dict()
 
     @app.get("/video-generation-jobs/{job_id}")
@@ -1241,10 +1275,13 @@ def create_app(
 
     @app.post("/video-generation-jobs/{job_id}/save", status_code=status.HTTP_201_CREATED)
     def save_video_to_creation_library(job_id: str) -> dict[str, object]:
-        job = generation_queue.get(job_id, "video")
-        if job is None or job.status != "complete" or job.video_path is None:
+        job = generation_queue.acquire_media(job_id, "video")
+        if job is None or job.video_path is None:
             raise HTTPException(status_code=409, detail="Video is not ready to save")
-        return video_library.save(job.video_path, job.metadata or {})
+        try:
+            return video_library.save(job.video_path, job.metadata or {})
+        finally:
+            generation_queue.release_media(job_id)
 
     @app.delete("/video-generation-jobs/{job_id}")
     def cancel_video_generation_job(job_id: str) -> dict[str, object]:
@@ -1255,12 +1292,18 @@ def create_app(
 
     @app.get("/video-generation-jobs/{job_id}/video")
     def video_generation_job_video(job_id: str) -> FileResponse:
-        job = generation_queue.get(job_id, "video")
+        job = generation_queue.acquire_media(job_id, "video")
         if job is None:
             raise HTTPException(status_code=404, detail="Video generation job not found")
-        if job.status != "complete" or job.video_path is None or not job.video_path.is_file():
+        if job.video_path is None or not job.video_path.is_file():
+            generation_queue.release_media(job_id)
             raise HTTPException(status_code=409, detail="Video is not ready")
-        return FileResponse(job.video_path, media_type="video/mp4", filename=job.video_path.name)
+        return FileResponse(
+            job.video_path,
+            media_type="video/mp4",
+            filename=job.video_path.name,
+            background=BackgroundTask(generation_queue.release_media, job_id),
+        )
 
     return app
 

@@ -1,5 +1,6 @@
 from io import BytesIO
 import logging
+import os
 from pathlib import Path
 from threading import Event
 import time
@@ -16,6 +17,8 @@ from esp_image_server.model_settings import ModelSelectionStore
 from esp_image_server.generation_jobs import GenerationCancelled
 from esp_image_server.generation_queue import GenerationQueue
 from esp_image_server.image_library import ImageLibrary
+from esp_image_server.mjpeg_cache import MjpegConversionCache
+from esp_image_server.retention import RetentionPolicy
 from esp_image_server.video_library import VideoLibrary
 
 
@@ -111,6 +114,50 @@ def test_health_reports_that_no_generation_is_active() -> None:
     assert response.json()["video_generating"] is False
     assert response.json()["active_image_job"] is None
     assert response.json()["active_video_job"] is None
+
+
+def test_lifespan_cleans_stale_mjpeg_files_on_startup_and_shutdown_without_removing_referenced_files(tmp_path) -> None:
+    cache = MjpegConversionCache(
+        tmp_path / "display-mjpeg",
+        RetentionPolicy(max_items=2, max_age_seconds=0, max_bytes=1024),
+    )
+    stale_at_startup = cache.output_path("old", 480, 272, 8, 10)
+    protected = cache.output_path("in-use", 480, 272, 8, 10)
+    stale_at_startup.parent.mkdir(parents=True)
+    stale_at_startup.write_bytes(b"old")
+    protected.write_bytes(b"in use")
+    os.utime(stale_at_startup, (1, 1))
+    os.utime(protected, (1, 1))
+    cache.acquire(protected)
+    app = create_app(Settings(), FakeGenerator(), mjpeg_cache=cache, enable_mdns=False)
+
+    with TestClient(app):
+        assert not stale_at_startup.exists()
+        assert protected.is_file()
+        stale_at_shutdown = cache.output_path("shutdown", 480, 272, 8, 10)
+        stale_at_shutdown.write_bytes(b"shutdown")
+        os.utime(stale_at_shutdown, (1, 1))
+
+    assert not stale_at_shutdown.exists()
+    assert protected.is_file()
+    cache.release(protected)
+    assert cache.cleanup(now=2) == 1
+
+
+def test_startup_cleans_orphaned_temporary_generation_videos(tmp_path) -> None:
+    temporary_results = tmp_path / "temporary-results"
+    temporary_results.mkdir()
+    orphan = temporary_results / "ltx-video-orphan.mp4"
+    orphan.write_bytes(b"temporary video")
+    os.utime(orphan, (1, 1))
+    queue = GenerationQueue(
+        RetentionPolicy(max_items=2, max_age_seconds=0, max_bytes=1024),
+        video_result_root=temporary_results,
+    )
+    app = create_app(Settings(), FakeGenerator(), generation_queue=queue, enable_mdns=False)
+
+    with TestClient(app):
+        assert not orphan.exists()
 
 
 def test_console_output_mirrors_server_logs_and_redacts_secrets() -> None:
