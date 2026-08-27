@@ -802,3 +802,101 @@ def test_device_registration_rejects_an_invalid_pairing_code() -> None:
         )
 
     assert response.status_code == 400
+
+
+def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+
+    def register(
+        client: TestClient, hardware_id: str, name: str, width: int, height: int,
+    ) -> dict[str, object]:
+        pairing = client.post("/displays/pairing-codes")
+        response = client.post("/displays/register", json={
+            "pairing_code": pairing.json()["code"],
+            "hardware_id": hardware_id,
+            "name": name,
+            "width": width,
+            "height": height,
+            "firmware_version": "1.0.0",
+            "capabilities": {"sd_card": True},
+        })
+        assert response.status_code == 201
+        return response.json()
+
+    with TestClient(app) as client:
+        kitchen = register(client, "aa:bb:cc:dd:ee:01", "Kitchen", 480, 272)
+        office = register(client, "aa:bb:cc:dd:ee:02", "Office", 320, 820)
+        kitchen_id, office_id = str(kitchen["id"]), str(office["id"])
+        kitchen_headers = {"X-ESPImage-Token": str(kitchen["token"])}
+        office_headers = {"X-ESPImage-Token": str(office["token"])}
+
+        displays = client.get("/displays")
+        kitchen_rotation = client.put(
+            f"/displays/{kitchen_id}/display-settings", json={"rotation": 90},
+        )
+        office_settings = client.get(f"/displays/{office_id}/display-settings")
+        renamed_office = client.patch(f"/displays/{office_id}", json={"name": "Studio"})
+        unauthorized_heartbeat = client.post(f"/displays/{kitchen_id}/heartbeat")
+        heartbeat = client.post(
+            f"/displays/{kitchen_id}/heartbeat",
+            headers=kitchen_headers,
+            json={"firmware_version": "1.0.1", "capabilities": {"sd_card": True, "touch": False}},
+        )
+
+        kitchen_command = client.post(
+            f"/displays/{kitchen_id}/display-sd-card/mode/live_images",
+        )
+        office_command = client.post(
+            f"/displays/{office_id}/display-sd-card/mode/sd_card",
+        )
+        kitchen_next = client.get(
+            f"/displays/{kitchen_id}/display-commands/next", headers=kitchen_headers,
+        )
+        office_next = client.get(
+            f"/displays/{office_id}/display-commands/next", headers=office_headers,
+        )
+        wrong_acknowledgement = client.post(
+            f"/displays/{office_id}/display-commands/{kitchen_command.json()['id']}/ack",
+            headers=office_headers,
+            json={"success": True, "detail": "wrong display"},
+        )
+        kitchen_acknowledgement = client.post(
+            f"/displays/{kitchen_id}/display-commands/{kitchen_command.json()['id']}/ack",
+            headers=kitchen_headers,
+            json={"success": True, "detail": "done"},
+        )
+        kitchen_report = client.post(
+            f"/displays/{kitchen_id}/display-sd-card/report",
+            headers=kitchen_headers,
+            json={
+                "available": True, "mode": "server_controlled", "total_bytes": 1024,
+                "used_bytes": 100, "files": [{"name": "kitchen.jpg", "type": "image"}],
+            },
+        )
+        office_report = client.post(
+            f"/displays/{office_id}/display-sd-card/report",
+            headers=office_headers,
+            json={
+                "available": True, "mode": "sd_card", "total_bytes": 2048,
+                "used_bytes": 200, "files": [{"name": "office.jpg", "type": "image"}],
+            },
+        )
+        kitchen_sd_card = client.get(f"/displays/{kitchen_id}/display-sd-card")
+        office_sd_card = client.get(f"/displays/{office_id}/display-sd-card")
+
+    assert [display["name"] for display in displays.json()] == ["Kitchen", "Office"]
+    assert kitchen_rotation.json() == {"rotation": 90}
+    assert office_settings.json() == {"rotation": 0}
+    assert renamed_office.json()["name"] == "Studio"
+    assert unauthorized_heartbeat.status_code == 401
+    assert heartbeat.json()["display"]["firmware_version"] == "1.0.1"
+    assert kitchen_command.status_code == 202
+    assert office_command.status_code == 202
+    assert kitchen_next.json()["id"] == kitchen_command.json()["id"]
+    assert office_next.json()["id"] == office_command.json()["id"]
+    assert wrong_acknowledgement.status_code == 404
+    assert kitchen_acknowledgement.json()["status"] == "complete"
+    assert kitchen_report.status_code == 204
+    assert office_report.status_code == 204
+    assert kitchen_sd_card.json()["files"][0]["name"] == "kitchen.jpg"
+    assert office_sd_card.json()["files"][0]["name"] == "office.jpg"

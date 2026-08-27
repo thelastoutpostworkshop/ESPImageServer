@@ -27,7 +27,15 @@ from starlette.background import BackgroundTask
 from .config import Settings
 from .app_settings import AppSettingsStore
 from .display import ActiveDisplayStore
-from .display_commands import DisplayCommandStore
+from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandStore
+from .display_registry import (
+    DisplayAuthenticationError,
+    DisplayDevice,
+    DisplayNotFoundError,
+    DisplayRegistry,
+    DisplayRegistryError,
+    PairingCodeError,
+)
 from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
 from .diagnostics import ConsoleLogStore, DiagnosticLogStore
@@ -120,6 +128,29 @@ class DisplaySettingsRequest(BaseModel):
     rotation: int
 
 
+class RegisterDisplayRequest(DisplayAnnouncement):
+    model_config = ConfigDict(extra="forbid")
+    pairing_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    hardware_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9:._-]+$")
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+
+
+class DisplayHeartbeatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    firmware_version: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=32,
+        pattern=r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$",
+    )
+    capabilities: dict[str, bool] | None = None
+
+
+class UpdateDisplayRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=64)
+
+
 class AppSettingsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     image_library_location: str | None = Field(default=None, min_length=1)
@@ -180,6 +211,7 @@ def create_app(
     latest_image_store: LatestImageStore | None = None,
     active_display_store: ActiveDisplayStore | None = None,
     display_settings_store: DisplaySettingsStore | None = None,
+    display_registry: DisplayRegistry | None = None,
     model_selection_store: ModelSelectionStore | None = None,
     image_library: ImageLibrary | None = None,
     app_settings_store: AppSettingsStore | None = None,
@@ -203,6 +235,7 @@ def create_app(
     latest_image_store = latest_image_store or LatestImageStore()
     active_display_store = active_display_store or ActiveDisplayStore()
     display_settings_store = display_settings_store or DisplaySettingsStore()
+    display_registry = display_registry or DisplayRegistry()
     video_output_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "videos"
     generation_queue = generation_queue or GenerationQueue(video_result_root=video_output_path)
     diagnostics = DiagnosticLogStore()
@@ -287,6 +320,7 @@ def create_app(
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
     app.state.display_settings_store = display_settings_store
+    app.state.display_registry = display_registry
     app.state.model_selection_store = model_selection_store
     app.state.generation_queue = generation_queue
     app.state.diagnostics = diagnostics
@@ -496,6 +530,89 @@ def create_app(
             raise HTTPException(status_code=422, detail="Image rotation must be 0, 90, 180, or 270 degrees")
         return {"rotation": display_settings_store.set_rotation(request.rotation)}
 
+    def get_registered_display(display_id: str) -> DisplayDevice:
+        try:
+            return display_registry.get(display_id)
+        except DisplayNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    def authenticate_registered_display(display_id: str, token: str) -> DisplayDevice:
+        try:
+            return display_registry.authenticate(display_id, token)
+        except DisplayAuthenticationError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    @app.post("/displays/pairing-codes", status_code=status.HTTP_201_CREATED)
+    def create_display_pairing_code() -> dict[str, object]:
+        code, expires_in_seconds = display_registry.create_pairing_code()
+        return {"code": code, "expires_in_seconds": expires_in_seconds}
+
+    @app.post("/displays/register", status_code=status.HTTP_201_CREATED)
+    def register_display(request: RegisterDisplayRequest) -> dict[str, object]:
+        try:
+            display, token = display_registry.register(
+                request.pairing_code,
+                request.hardware_id,
+                request.name,
+                request.width,
+                request.height,
+                request.firmware_version,
+                request.capabilities,
+            )
+        except PairingCodeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {**display.as_dict(), "token": token}
+
+    @app.get("/displays")
+    def list_registered_displays() -> list[dict[str, object]]:
+        return [display.as_dict() for display in display_registry.list()]
+
+    @app.get("/displays/{display_id}")
+    def get_registered_display_route(display_id: str) -> dict[str, object]:
+        return get_registered_display(display_id).as_dict()
+
+    @app.patch("/displays/{display_id}")
+    def update_registered_display(
+        display_id: str, request: UpdateDisplayRequest,
+    ) -> dict[str, object]:
+        try:
+            return display_registry.set_name(display_id, request.name).as_dict()
+        except DisplayNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/displays/{display_id}/heartbeat")
+    def heartbeat_registered_display(
+        display_id: str,
+        request: DisplayHeartbeatRequest | None = None,
+        x_espimage_token: str = Header(default=""),
+    ) -> dict[str, object]:
+        try:
+            display = display_registry.heartbeat(
+                display_id,
+                x_espimage_token,
+                request.firmware_version if request is not None else None,
+                request.capabilities if request is not None else None,
+            )
+        except DisplayAuthenticationError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        return {"status": "ok", "display": display.as_dict()}
+
+    @app.get("/displays/{display_id}/display-settings")
+    def get_registered_display_settings(display_id: str) -> dict[str, int]:
+        return {"rotation": get_registered_display(display_id).rotation}
+
+    @app.put("/displays/{display_id}/display-settings")
+    def update_registered_display_settings(
+        display_id: str, request: DisplaySettingsRequest,
+    ) -> dict[str, int]:
+        try:
+            display = display_registry.set_rotation(display_id, request.rotation)
+        except DisplayNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except DisplayRegistryError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"rotation": display.rotation}
+
     @app.post("/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
     def save_latest_to_display_sd_card() -> dict[str, object]:
         latest_image = latest_image_store.get()
@@ -513,8 +630,19 @@ def create_app(
     @app.post("/display-commands/save-saved-video/{video_id}", status_code=status.HTTP_202_ACCEPTED)
     def save_saved_video_to_display_sd_card(video_id: str) -> dict[str, object]:
         """Queue one saved video for conversion and storage on the display SD card."""
-        video_path = video_library.find_path(video_id)
-        if video_path is None:
+        profile = active_display_store.get()
+        if profile is None:
+            raise HTTPException(status_code=409, detail="Connect a display before saving a video to its SD card")
+        return queue_saved_video_to_display_sd_card(video_id, profile.width, profile.height)
+
+    def queue_saved_video_to_display_sd_card(
+        video_id: str,
+        width: int,
+        height: int,
+        *,
+        display_id: str = LEGACY_DISPLAY_ID,
+    ) -> dict[str, object]:
+        if video_library.find_path(video_id) is None:
             raise HTTPException(status_code=404, detail="Saved video not found")
         record = next((item for item in video_library.list(limit=10_000) if item.get("id") == video_id), {})
         metadata = record.get("metadata", {}) if isinstance(record, dict) else {}
@@ -523,11 +651,10 @@ def create_app(
             fps = max(1, min(24, int(fps)))
         except (TypeError, ValueError):
             fps = 15
-        profile = active_display_store.get()
-        if profile is None:
-            raise HTTPException(status_code=409, detail="Connect a display before saving a video to its SD card")
-        content_key = f"v1-{video_id}-{profile.width}x{profile.height}-fps{fps}"
-        existing_filename = display_command_store.find_sd_card_video(content_key, video_id, fps)
+        content_key = f"v1-{video_id}-{width}x{height}-fps{fps}"
+        existing_filename = display_command_store.find_sd_card_video(
+            content_key, video_id, fps, display_id=display_id,
+        )
         if existing_filename is not None:
             return {
                 "status": "already_saved",
@@ -538,17 +665,19 @@ def create_app(
         filename = f"esp-video-{content_key}.mjpeg"
         thumbnail_path = video_library.find_thumbnail_path(video_id)
         if thumbnail_path is not None:
-            write_sd_thumbnail(filename, thumbnail_path.read_bytes())
+            write_sd_thumbnail(filename, thumbnail_path.read_bytes(), display_id=display_id)
         return display_command_store.queue(
-            "save_saved_video", filename=filename, video_id=video_id,
+            "save_saved_video", display_id=display_id, filename=filename, video_id=video_id,
             video_url=f"/saved-videos/{video_id}/mjpeg-download", fps=fps,
             content_key=content_key, thumbnail_url=f"/saved-videos/{video_id}/thumbnail",
         )
 
-    def queue_image_save(jpeg: bytes, image_id: str | None = None) -> dict[str, object]:
+    def queue_image_save(
+        jpeg: bytes, image_id: str | None = None, *, display_id: str = LEGACY_DISPLAY_ID,
+    ) -> dict[str, object]:
         image_hash = hashlib.sha256(jpeg).hexdigest()[:16]
         content_key = f"v1-{image_hash}"
-        existing_filename = display_command_store.find_sd_card_image(image_hash)
+        existing_filename = display_command_store.find_sd_card_image(image_hash, display_id=display_id)
         if existing_filename is not None:
             return {
                 "status": "already_saved",
@@ -557,18 +686,35 @@ def create_app(
                 "detail": "This image is already on the display SD card",
             }
         filename = f"esp-image-{content_key}.jpg"
-        command = display_command_store.queue_save(filename, image_id, content_key=content_key)
-        write_sd_thumbnail(filename, jpeg)
+        command = display_command_store.queue_save(
+            filename,
+            image_id,
+            content_key=content_key,
+            display_id=display_id,
+            thumbnail_url=sd_thumbnail_url(display_id, filename),
+        )
+        write_sd_thumbnail(filename, jpeg, display_id=display_id)
         return command
 
-    def write_sd_thumbnail(filename: str, jpeg: bytes) -> None:
+    def sd_thumbnail_path_for(display_id: str, filename: str) -> Path:
+        folder = sd_thumbnail_path if display_id == LEGACY_DISPLAY_ID else sd_thumbnail_path / display_id
+        return folder / Path(filename).name
+
+    def sd_thumbnail_url(display_id: str, filename: str) -> str:
+        if display_id == LEGACY_DISPLAY_ID:
+            return f"/display-sd-card/thumbnails/{Path(filename).name}"
+        return f"/displays/{display_id}/display-sd-card/thumbnails/{Path(filename).name}"
+
+    def write_sd_thumbnail(
+        filename: str, jpeg: bytes, *, display_id: str = LEGACY_DISPLAY_ID,
+    ) -> None:
         """Keep the server copy paired with the thumbnail written to the SD card."""
-        thumbnail_path = sd_thumbnail_path / Path(filename).name
+        thumbnail_path = sd_thumbnail_path_for(display_id, filename)
         thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
         with Image.open(BytesIO(jpeg)) as source:
             thumbnail_path.write_bytes(to_jpeg(source, width=160, height=120, quality=70))
 
-    def restore_sd_video_thumbnail(filename: str) -> None:
+    def restore_sd_video_thumbnail(filename: str, *, display_id: str = LEGACY_DISPLAY_ID) -> None:
         """Rebuild the server thumbnail cache for an MJPEG file already on the card."""
         if not filename.endswith(".mjpeg") or "-fps" not in filename:
             return
@@ -584,27 +730,45 @@ def create_app(
             return
         thumbnail_path = video_library.find_thumbnail_path(str(record["id"]))
         if thumbnail_path is not None:
-            write_sd_thumbnail(filename, thumbnail_path.read_bytes())
+            write_sd_thumbnail(filename, thumbnail_path.read_bytes(), display_id=display_id)
 
-    @app.get("/display-sd-card")
-    def get_display_sd_card() -> dict[str, object]:
-        report = display_command_store.sd_card_report()
+    def get_display_sd_card_report(display_id: str = LEGACY_DISPLAY_ID) -> dict[str, object]:
+        report = display_command_store.sd_card_report(display_id)
         files = report.get("files", [])
         if isinstance(files, list):
             for file in files:
                 if isinstance(file, dict):
                     filename = Path(str(file.get("name", ""))).name
-                    if filename.endswith(".mjpeg") and not (sd_thumbnail_path / filename).is_file():
-                        restore_sd_video_thumbnail(filename)
+                    if filename.endswith(".mjpeg") and not sd_thumbnail_path_for(display_id, filename).is_file():
+                        restore_sd_video_thumbnail(filename, display_id=display_id)
             report["files"] = [
-                {**file, "thumbnail_available": (sd_thumbnail_path / Path(str(file.get("name", ""))).name).is_file()}
+                {
+                    **file,
+                    "thumbnail_available": sd_thumbnail_path_for(
+                        display_id, str(file.get("name", "")),
+                    ).is_file(),
+                }
                 for file in files if isinstance(file, dict)
             ]
         return report
 
+    def get_display_experience_response(display_id: str = LEGACY_DISPLAY_ID) -> dict[str, object]:
+        report = display_command_store.sd_card_report(display_id)
+        return {
+            "connected": bool(report.get("available", False)),
+            "current_mode": report.get("mode", "server_controlled"),
+            "offline_experience": report.get("offline_experience", "slideshow"),
+            "slideshow_interval_ms": report.get("slideshow_interval_ms", 15_000),
+            "slideshow_order": report.get("slideshow_order", "newest_first"),
+        }
+
+    @app.get("/display-sd-card")
+    def get_display_sd_card() -> dict[str, object]:
+        return get_display_sd_card_report()
+
     @app.get("/display-sd-card/thumbnails/{filename}", response_class=Response)
     def get_display_sd_card_thumbnail(filename: str) -> Response:
-        thumbnail_path = sd_thumbnail_path / Path(filename).name
+        thumbnail_path = sd_thumbnail_path_for(LEGACY_DISPLAY_ID, filename)
         if not thumbnail_path.is_file():
             raise HTTPException(status_code=404, detail="SD card thumbnail not available")
         return FileResponse(thumbnail_path, media_type="image/jpeg")
@@ -616,14 +780,7 @@ def create_app(
 
     @app.get("/display-experience")
     def get_display_experience() -> dict[str, object]:
-        report = display_command_store.sd_card_report()
-        return {
-            "connected": bool(report.get("available", False)),
-            "current_mode": report.get("mode", "server_controlled"),
-            "offline_experience": report.get("offline_experience", "slideshow"),
-            "slideshow_interval_ms": report.get("slideshow_interval_ms", 15_000),
-            "slideshow_order": report.get("slideshow_order", "newest_first"),
-        }
+        return get_display_experience_response()
 
     @app.put("/display-experience", status_code=status.HTTP_202_ACCEPTED)
     def set_display_experience(request: DisplayExperienceRequest) -> dict[str, object]:
@@ -680,6 +837,157 @@ def create_app(
     @app.get("/display-commands/{command_id}")
     def get_display_command(command_id: str) -> dict[str, object]:
         command = display_command_store.get(command_id)
+        if command is None:
+            raise HTTPException(status_code=404, detail="Display command not found")
+        return command
+
+    @app.post("/displays/{display_id}/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
+    def save_latest_to_registered_display_sd_card(display_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        latest_image = latest_image_store.get()
+        if latest_image is None:
+            raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
+        return queue_image_save(latest_image.jpeg, display_id=display_id)
+
+    @app.post(
+        "/displays/{display_id}/display-commands/save-saved-image/{image_id}",
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def save_creation_library_image_to_registered_display_sd_card(
+        display_id: str, image_id: str,
+    ) -> dict[str, object]:
+        get_registered_display(display_id)
+        image_path = image_library.find_path(image_id)
+        if image_path is None:
+            raise HTTPException(status_code=404, detail="Saved image not found")
+        return queue_image_save(image_path.read_bytes(), image_id, display_id=display_id)
+
+    @app.post(
+        "/displays/{display_id}/display-commands/save-saved-video/{video_id}",
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def save_saved_video_to_registered_display_sd_card(
+        display_id: str, video_id: str,
+    ) -> dict[str, object]:
+        display = get_registered_display(display_id)
+        return queue_saved_video_to_display_sd_card(
+            video_id, display.width, display.height, display_id=display_id,
+        )
+
+    @app.get("/displays/{display_id}/display-sd-card")
+    def get_registered_display_sd_card(display_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        return get_display_sd_card_report(display_id)
+
+    @app.get("/displays/{display_id}/display-sd-card/thumbnails/{filename}", response_class=Response)
+    def get_registered_display_sd_card_thumbnail(display_id: str, filename: str) -> Response:
+        get_registered_display(display_id)
+        thumbnail_path = sd_thumbnail_path_for(display_id, filename)
+        if not thumbnail_path.is_file():
+            raise HTTPException(status_code=404, detail="SD card thumbnail not available")
+        return FileResponse(thumbnail_path, media_type="image/jpeg")
+
+    @app.post("/displays/{display_id}/display-sd-card/report", status_code=status.HTTP_204_NO_CONTENT)
+    def report_registered_display_sd_card(
+        display_id: str,
+        report: DisplaySDCardReport,
+        x_espimage_token: str = Header(default=""),
+    ) -> Response:
+        authenticate_registered_display(display_id, x_espimage_token)
+        display_command_store.report_sd_card(report.model_dump(), display_id=display_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/displays/{display_id}/display-experience")
+    def get_registered_display_experience(display_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        return get_display_experience_response(display_id)
+
+    @app.put("/displays/{display_id}/display-experience", status_code=status.HTTP_202_ACCEPTED)
+    def set_registered_display_experience(
+        display_id: str, request: DisplayExperienceRequest,
+    ) -> dict[str, object]:
+        get_registered_display(display_id)
+        return display_command_store.queue(
+            "set_display_experience",
+            display_id=display_id,
+            offline_experience=request.offline_experience,
+            slideshow_interval_ms=request.slideshow_interval_ms,
+            slideshow_order=request.slideshow_order,
+        )
+
+    @app.post("/displays/{display_id}/display-experience/preview", status_code=status.HTTP_202_ACCEPTED)
+    def preview_registered_display_experience(
+        display_id: str, request: DisplayExperienceRequest,
+    ) -> dict[str, object]:
+        get_registered_display(display_id)
+        return display_command_store.queue(
+            "preview_display_experience",
+            display_id=display_id,
+            offline_experience=request.offline_experience,
+            slideshow_interval_ms=request.slideshow_interval_ms,
+            slideshow_order=request.slideshow_order,
+        )
+
+    @app.delete("/displays/{display_id}/display-experience/preview", status_code=status.HTTP_202_ACCEPTED)
+    def stop_registered_display_experience_preview(display_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        return display_command_store.queue("stop_display_experience_preview", display_id=display_id)
+
+    @app.post("/displays/{display_id}/display-sd-card/mode/{mode}", status_code=status.HTTP_202_ACCEPTED)
+    def set_registered_display_mode(display_id: str, mode: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        if mode not in {"live_images", "sd_card"}:
+            raise HTTPException(status_code=422, detail="Mode must be live_images or sd_card")
+        return display_command_store.queue("set_mode", display_id=display_id, mode=mode)
+
+    @app.post("/displays/{display_id}/display-sd-card/refresh", status_code=status.HTTP_202_ACCEPTED)
+    def refresh_registered_display_sd_card(display_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        return display_command_store.queue("refresh_sd_card", display_id=display_id)
+
+    @app.post(
+        "/displays/{display_id}/display-sd-card/files/{filename}/display",
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def display_registered_sd_card_file(display_id: str, filename: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        return display_command_store.queue("display_sd_file", display_id=display_id, filename=filename)
+
+    @app.delete("/displays/{display_id}/display-sd-card/files/{filename}", status_code=status.HTTP_202_ACCEPTED)
+    def delete_registered_sd_card_file(display_id: str, filename: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        return display_command_store.queue("delete_sd_file", display_id=display_id, filename=filename)
+
+    @app.get("/displays/{display_id}/display-commands/next")
+    def next_registered_display_command(
+        display_id: str, x_espimage_token: str = Header(default=""),
+    ) -> Response:
+        authenticate_registered_display(display_id, x_espimage_token)
+        command = display_command_store.next(display_id)
+        return JSONResponse(command) if command is not None else Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.post("/displays/{display_id}/display-commands/{command_id}/ack")
+    def acknowledge_registered_display_command(
+        display_id: str,
+        command_id: str,
+        acknowledgement: DisplayCommandAcknowledgement,
+        x_espimage_token: str = Header(default=""),
+    ) -> dict[str, object]:
+        authenticate_registered_display(display_id, x_espimage_token)
+        command = display_command_store.acknowledge(
+            command_id,
+            acknowledgement.success,
+            acknowledgement.detail,
+            display_id=display_id,
+        )
+        if command is None:
+            raise HTTPException(status_code=404, detail="Display command not found")
+        return command
+
+    @app.get("/displays/{display_id}/display-commands/{command_id}")
+    def get_registered_display_command(display_id: str, command_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        command = display_command_store.get(command_id, display_id=display_id)
         if command is None:
             raise HTTPException(status_code=404, detail="Display command not found")
         return command

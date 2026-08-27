@@ -14,17 +14,18 @@ device-targeted display registry. Do not enable multiple displays by merely
 accepting more `/display` announcements: the last board would still control
 the shared dimensions, rotation, JPEG, SD-card report, and command queue.
 
-1. **P1 — Introduce persistent display identities and pairing.** Give every
-   ESP32 a stable hardware ID (eFuse MAC or a UUID stored in NVS), an editable
-   friendly name, and a per-device authentication token obtained through
-   one-time pairing. Persist device profile, dimensions, firmware version,
-   capabilities, rotation, and last-seen time locally (prefer SQLite) so they
-   survive server restarts. Do not use the friendly name as the identifier.
+1. **P1 — Introduce persistent display identities and pairing.** **Complete:**
+   every display now has a stable hardware ID, paired credential, editable
+   friendly name, persistent profile, per-device rotation, and last-seen
+   status in the local SQLite registry. Firmware pairing/client work remains
+   in item 7; use the ESP32 eFuse MAC or a UUID stored in NVS for the hardware
+   ID and never use the friendly name as identity.
 
 2. **P1 — Replace global display endpoints and state with display-scoped
-   equivalents.** Add APIs such as `/displays`,
-   `/displays/{id}/heartbeat`, `/displays/{id}/latest.jpg`, and per-device
-   settings routes. Keep the legacy single-display API only as a temporary
+   equivalents.** **Complete for the server foundation:** pairing,
+   registration, list/detail, authenticated heartbeat, and per-device settings
+   routes now live under `/displays`. Target-specific `/latest.jpg` delivery is
+   part of item 3. Keep the legacy single-display API only as a temporary
    compatibility layer while firmware is upgraded.
 
 3. **P1 — Deliver target-specific image renditions.** Retain a source/master
@@ -33,11 +34,10 @@ the shared dimensions, rotation, JPEG, SD-card report, and command queue.
    revision and the target display settings. Update generation and saved-image
    actions to accept one or more target display IDs.
 
-4. **P1 — Make display commands and SD-card state per device.** Replace the
-   single command queue, acknowledgement history, SD-card inventory, slideshow
-   settings, preview state, media deduplication, and thumbnail cache with
-   display-ID-keyed versions. A command retrieved or acknowledged by one board
-   must never affect another board.
+4. **P1 — Make display commands and SD-card state per device.** **Complete:**
+   commands, acknowledgements, SD-card reports, experience settings,
+   deduplication, and thumbnail paths are now display-ID scoped. A command
+   retrieved or acknowledged by one board cannot affect another board.
 
 5. **P2 — Add multi-display targeting to the web app.** Show a display list
    with connection status, dimensions, firmware, and last-seen time; add a
