@@ -1,19 +1,16 @@
-"""Persistent identities, profiles, and credentials for ESP32 displays."""
+"""Persistent display profiles identified by each ESP32's eFuse MAC address."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
 import sqlite3
 from threading import RLock
 import time
-from uuid import uuid4
 
 from .display_settings import VALID_ROTATIONS
 
@@ -22,21 +19,13 @@ class DisplayRegistryError(ValueError):
     """Base error for display registry requests."""
 
 
-class PairingCodeError(DisplayRegistryError):
-    """Raised when a display pairing code is invalid or expired."""
-
-
 class DisplayNotFoundError(DisplayRegistryError):
     """Raised when a requested display does not exist."""
 
 
-class DisplayAuthenticationError(DisplayRegistryError):
-    """Raised when a display credential is invalid."""
-
-
 @dataclass(frozen=True)
 class DisplayDevice:
-    """The non-secret state associated with one paired physical display."""
+    """The persistent profile associated with one physical display."""
 
     id: str
     hardware_id: str
@@ -67,80 +56,58 @@ class DisplayDevice:
 
 
 class DisplayRegistry:
-    """SQLite-backed registry for displays that survive server restarts."""
+    """SQLite-backed display registry for a trusted local network."""
 
-    pairing_code_lifetime_seconds = 600
     online_after_seconds = 90
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or self._default_path()
         self._lock = RLock()
-        self._pairing_codes: dict[str, float] = {}
         self._initialize_database()
 
     @staticmethod
     def _default_path() -> Path:
         return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "displays.sqlite3"
 
-    def create_pairing_code(self) -> tuple[str, int]:
-        with self._lock:
-            self._remove_expired_codes()
-            while True:
-                code = f"{secrets.randbelow(1_000_000):06d}"
-                if code not in self._pairing_codes:
-                    break
-            self._pairing_codes[code] = time.monotonic() + self.pairing_code_lifetime_seconds
-            return code, self.pairing_code_lifetime_seconds
-
     def register(
         self,
-        pairing_code: str,
         hardware_id: str,
         name: str,
         width: int,
         height: int,
         firmware_version: str,
         capabilities: dict[str, bool] | None = None,
-    ) -> tuple[DisplayDevice, str]:
-        """Pair a display and rotate its credential if it was paired before."""
-        with self._lock:
-            self._remove_expired_codes()
-            if pairing_code not in self._pairing_codes:
-                raise PairingCodeError("Pairing code is invalid or has expired")
-            del self._pairing_codes[pairing_code]
-
-            now = time.time()
-            token = secrets.token_urlsafe(32)
-            token_digest = self._token_digest(token)
-            normalized_capabilities = self._normalize_capabilities(capabilities)
-            with self._connection() as connection:
-                existing = connection.execute(
-                    "SELECT id FROM displays WHERE hardware_id = ?", (hardware_id,)
-                ).fetchone()
-                display_id = str(existing["id"]) if existing is not None else uuid4().hex
-                connection.execute(
-                    """
-                    INSERT INTO displays (
-                        id, hardware_id, token_digest, name, width, height,
-                        firmware_version, rotation, capabilities, paired_at, last_seen
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
-                    ON CONFLICT(hardware_id) DO UPDATE SET
-                        token_digest = excluded.token_digest,
-                        name = excluded.name,
-                        width = excluded.width,
-                        height = excluded.height,
-                        firmware_version = excluded.firmware_version,
-                        capabilities = excluded.capabilities,
-                        paired_at = excluded.paired_at,
-                        last_seen = excluded.last_seen
-                    """,
-                    (
-                        display_id, hardware_id, token_digest, name.strip(), width, height,
-                        firmware_version, json.dumps(normalized_capabilities, separators=(",", ":")), now, now,
-                    ),
-                )
-                row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
-            return self._row_to_device(row), token
+    ) -> DisplayDevice:
+        """Create or refresh a display profile identified by its hardware MAC."""
+        normalized_hardware_id = hardware_id.strip().lower()
+        normalized_capabilities = self._normalize_capabilities(capabilities)
+        now = time.time()
+        with self._lock, self._connection() as connection:
+            existing = connection.execute(
+                "SELECT id FROM displays WHERE hardware_id = ?", (normalized_hardware_id,)
+            ).fetchone()
+            display_id = str(existing["id"]) if existing is not None else normalized_hardware_id
+            connection.execute(
+                """
+                INSERT INTO displays (
+                    id, hardware_id, token_digest, name, width, height,
+                    firmware_version, rotation, capabilities, paired_at, last_seen
+                ) VALUES (?, ?, '', ?, ?, ?, ?, 0, ?, ?, ?)
+                ON CONFLICT(hardware_id) DO UPDATE SET
+                    name = excluded.name,
+                    width = excluded.width,
+                    height = excluded.height,
+                    firmware_version = excluded.firmware_version,
+                    capabilities = excluded.capabilities,
+                    last_seen = excluded.last_seen
+                """,
+                (
+                    display_id, normalized_hardware_id, name.strip(), width, height,
+                    firmware_version, json.dumps(normalized_capabilities, separators=(",", ":")), now, now,
+                ),
+            )
+            row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
+        return self._row_to_device(row)
 
     def list(self) -> list[DisplayDevice]:
         with self._lock, self._connection() as connection:
@@ -154,54 +121,28 @@ class DisplayRegistry:
             raise DisplayNotFoundError("Display was not found")
         return self._row_to_device(row)
 
-    def authenticate(self, display_id: str, token: str) -> DisplayDevice:
-        """Check a device credential and record that the board is online."""
-        with self._lock, self._connection() as connection:
-            row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
-            if row is None or not token or not secrets.compare_digest(
-                str(row["token_digest"]), self._token_digest(token)
-            ):
-                raise DisplayAuthenticationError("Display credential is invalid")
-            now = time.time()
-            connection.execute("UPDATE displays SET last_seen = ? WHERE id = ?", (now, display_id))
-            row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
-        return self._row_to_device(row)
-
     def heartbeat(
         self,
         display_id: str,
-        token: str,
         firmware_version: str | None = None,
         capabilities: dict[str, bool] | None = None,
     ) -> DisplayDevice:
-        """Authenticate a display and update details that may change after a flash."""
+        """Record that a known display is online and refresh optional details."""
+        fields = ["last_seen = ?"]
+        values: list[object] = [time.time()]
+        if firmware_version is not None:
+            fields.append("firmware_version = ?")
+            values.append(firmware_version)
+        if capabilities is not None:
+            fields.append("capabilities = ?")
+            values.append(json.dumps(self._normalize_capabilities(capabilities), separators=(",", ":")))
+        values.append(display_id)
         with self._lock, self._connection() as connection:
-            row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
-            if row is None or not token or not secrets.compare_digest(
-                str(row["token_digest"]), self._token_digest(token)
-            ):
-                raise DisplayAuthenticationError("Display credential is invalid")
-            now = time.time()
-            if firmware_version is None and capabilities is None:
-                connection.execute("UPDATE displays SET last_seen = ? WHERE id = ?", (now, display_id))
-            elif capabilities is None:
-                connection.execute(
-                    "UPDATE displays SET last_seen = ?, firmware_version = ? WHERE id = ?",
-                    (now, firmware_version, display_id),
-                )
-            elif firmware_version is None:
-                connection.execute(
-                    "UPDATE displays SET last_seen = ?, capabilities = ? WHERE id = ?",
-                    (now, json.dumps(self._normalize_capabilities(capabilities), separators=(",", ":")), display_id),
-                )
-            else:
-                connection.execute(
-                    "UPDATE displays SET last_seen = ?, firmware_version = ?, capabilities = ? WHERE id = ?",
-                    (
-                        now, firmware_version,
-                        json.dumps(self._normalize_capabilities(capabilities), separators=(",", ":")), display_id,
-                    ),
-                )
+            updated = connection.execute(
+                f"UPDATE displays SET {', '.join(fields)} WHERE id = ?", values,
+            ).rowcount
+            if not updated:
+                raise DisplayNotFoundError("Display was not found")
             row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
         return self._row_to_device(row)
 
@@ -230,12 +171,14 @@ class DisplayRegistry:
     def _initialize_database(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as connection:
+            # Keep the unused column so databases created by the pairing preview
+            # remain readable. MAC registration never writes or reads a token.
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS displays (
                     id TEXT PRIMARY KEY,
                     hardware_id TEXT NOT NULL UNIQUE,
-                    token_digest TEXT NOT NULL,
+                    token_digest TEXT NOT NULL DEFAULT '',
                     name TEXT NOT NULL,
                     width INTEGER NOT NULL,
                     height INTEGER NOT NULL,
@@ -264,16 +207,6 @@ class DisplayRegistry:
             raise
         finally:
             connection.close()
-
-    def _remove_expired_codes(self) -> None:
-        now = time.monotonic()
-        for code, expires_at in list(self._pairing_codes.items()):
-            if expires_at <= now:
-                del self._pairing_codes[code]
-
-    @staticmethod
-    def _token_digest(token: str) -> str:
-        return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _normalize_capabilities(capabilities: dict[str, bool] | None) -> dict[str, bool]:

@@ -14,19 +14,18 @@ device-targeted display registry. Do not enable multiple displays by merely
 accepting more `/display` announcements: the last board would still control
 the shared dimensions, rotation, JPEG, SD-card report, and command queue.
 
-1. **P1 — Introduce persistent display identities and pairing.** **Complete:**
-   every display now has a stable hardware ID, paired credential, editable
-   friendly name, persistent profile, per-device rotation, and last-seen
-   status in the local SQLite registry. Firmware pairing/client work remains
-   in item 7; use the ESP32 eFuse MAC or a UUID stored in NVS for the hardware
-   ID and never use the friendly name as identity.
+1. **P1 — Introduce persistent MAC display identities.** **Complete:** every
+   display now has a stable eFuse-MAC hardware ID, editable friendly name,
+   persistent profile, per-device rotation, and last-seen status in the local
+   SQLite registry. Firmware client work remains in item 7; never use the
+   friendly name as identity.
 
 2. **P1 — Replace global display endpoints and state with display-scoped
-   equivalents.** **Complete for the server foundation:** pairing,
-   registration, list/detail, authenticated heartbeat, and per-device settings
-   routes now live under `/displays`. Target-specific `/latest.jpg` delivery is
-   part of item 3. Keep the legacy single-display API only as a temporary
-   compatibility layer while firmware is upgraded.
+   equivalents.** **Complete for the server foundation:** MAC registration,
+   list/detail, MAC-identified heartbeat, and per-device settings routes now
+   live under `/displays`. Target-specific `/latest.jpg` delivery is part of
+   item 3. Keep the legacy single-display API only as a temporary compatibility
+   layer while firmware is upgraded.
 
 3. **P1 — Deliver target-specific image renditions.** Retain a source/master
    creation, then produce or cache a JPEG for each display's native dimensions,
@@ -51,12 +50,15 @@ the shared dimensions, rotation, JPEG, SD-card report, and command queue.
    require an explicit user choice before cropping displays with different
    aspect ratios.
 
-7. **P1 — Update the ESP32 firmware API client.** After pairing, store the
-   token in NVS and use device-scoped, authenticated requests for registration
-   or heartbeat, latest-image polling, command polling, acknowledgements, and
-   SD-card reports. Preserve the device-specific ETag across polls. Do not
-   build firmware as part of the server task; the firmware repository is
-   upgraded and flashed separately.
+7. **P1 — Update the ESP32 firmware API client.** Automatically register each
+   board's stable eFuse MAC address, then use its MAC-identified scoped routes
+   for latest-image polling, command polling, acknowledgements, and SD-card
+   reports. Preserve the device-specific ETag across polls. The MAC is an
+   identifier, not a password, so this design is for a trusted home LAN. Do
+   not build firmware as part of the server task; the firmware repository is
+   upgraded and flashed separately. **Complete in source:** a manually flashed
+   1.1.0 board automatically registers with its MAC address. Per-display image
+   renditions remain item 3.
 
 8. **P1 — Test and stage the migration.** Cover device isolation, per-display
    rotations and resolutions, independent ETags, broadcasts, offline boards,

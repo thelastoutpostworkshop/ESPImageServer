@@ -29,12 +29,10 @@ from .app_settings import AppSettingsStore
 from .display import ActiveDisplayStore
 from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandStore
 from .display_registry import (
-    DisplayAuthenticationError,
     DisplayDevice,
     DisplayNotFoundError,
     DisplayRegistry,
     DisplayRegistryError,
-    PairingCodeError,
 )
 from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
@@ -130,7 +128,6 @@ class DisplaySettingsRequest(BaseModel):
 
 class RegisterDisplayRequest(DisplayAnnouncement):
     model_config = ConfigDict(extra="forbid")
-    pairing_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
     hardware_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9:._-]+$")
     capabilities: dict[str, bool] = Field(default_factory=dict)
 
@@ -536,32 +533,16 @@ def create_app(
         except DisplayNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    def authenticate_registered_display(display_id: str, token: str) -> DisplayDevice:
-        try:
-            return display_registry.authenticate(display_id, token)
-        except DisplayAuthenticationError as exc:
-            raise HTTPException(status_code=401, detail=str(exc)) from exc
-
-    @app.post("/displays/pairing-codes", status_code=status.HTTP_201_CREATED)
-    def create_display_pairing_code() -> dict[str, object]:
-        code, expires_in_seconds = display_registry.create_pairing_code()
-        return {"code": code, "expires_in_seconds": expires_in_seconds}
-
     @app.post("/displays/register", status_code=status.HTTP_201_CREATED)
     def register_display(request: RegisterDisplayRequest) -> dict[str, object]:
-        try:
-            display, token = display_registry.register(
-                request.pairing_code,
-                request.hardware_id,
-                request.name,
-                request.width,
-                request.height,
-                request.firmware_version,
-                request.capabilities,
-            )
-        except PairingCodeError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {**display.as_dict(), "token": token}
+        return display_registry.register(
+            request.hardware_id,
+            request.name,
+            request.width,
+            request.height,
+            request.firmware_version,
+            request.capabilities,
+        ).as_dict()
 
     @app.get("/displays")
     def list_registered_displays() -> list[dict[str, object]]:
@@ -584,17 +565,15 @@ def create_app(
     def heartbeat_registered_display(
         display_id: str,
         request: DisplayHeartbeatRequest | None = None,
-        x_espimage_token: str = Header(default=""),
     ) -> dict[str, object]:
         try:
             display = display_registry.heartbeat(
                 display_id,
-                x_espimage_token,
                 request.firmware_version if request is not None else None,
                 request.capabilities if request is not None else None,
             )
-        except DisplayAuthenticationError as exc:
-            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except DisplayNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"status": "ok", "display": display.as_dict()}
 
     @app.get("/displays/{display_id}/display-settings")
@@ -891,9 +870,9 @@ def create_app(
     def report_registered_display_sd_card(
         display_id: str,
         report: DisplaySDCardReport,
-        x_espimage_token: str = Header(default=""),
     ) -> Response:
-        authenticate_registered_display(display_id, x_espimage_token)
+        get_registered_display(display_id)
+        display_registry.heartbeat(display_id)
         display_command_store.report_sd_card(report.model_dump(), display_id=display_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -959,10 +938,8 @@ def create_app(
         return display_command_store.queue("delete_sd_file", display_id=display_id, filename=filename)
 
     @app.get("/displays/{display_id}/display-commands/next")
-    def next_registered_display_command(
-        display_id: str, x_espimage_token: str = Header(default=""),
-    ) -> Response:
-        authenticate_registered_display(display_id, x_espimage_token)
+    def next_registered_display_command(display_id: str) -> Response:
+        get_registered_display(display_id)
         command = display_command_store.next(display_id)
         return JSONResponse(command) if command is not None else Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -971,9 +948,8 @@ def create_app(
         display_id: str,
         command_id: str,
         acknowledgement: DisplayCommandAcknowledgement,
-        x_espimage_token: str = Header(default=""),
     ) -> dict[str, object]:
-        authenticate_registered_display(display_id, x_espimage_token)
+        get_registered_display(display_id)
         command = display_command_store.acknowledge(
             command_id,
             acknowledgement.success,
@@ -1110,6 +1086,17 @@ def create_app(
             media_type="image/jpeg",
             headers={"ETag": etag, "Cache-Control": "no-cache"},
         )
+
+    @app.get("/displays/{display_id}/latest.jpg", response_class=Response)
+    def registered_display_latest_image(
+        display_id: str,
+        if_none_match: str | None = Header(default=None),
+        width: int | None = Query(default=None, ge=1, le=1024),
+        height: int | None = Query(default=None, ge=1, le=1024),
+    ) -> Response:
+        """MAC-identified compatibility route until per-display renditions ship."""
+        get_registered_display(display_id)
+        return latest_image(if_none_match, width, height)
 
     @app.get("/saved-images")
     def saved_images() -> list[dict[str, object]]:

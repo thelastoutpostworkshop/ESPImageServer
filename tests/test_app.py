@@ -810,9 +810,7 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
     def register(
         client: TestClient, hardware_id: str, name: str, width: int, height: int,
     ) -> dict[str, object]:
-        pairing = client.post("/displays/pairing-codes")
         response = client.post("/displays/register", json={
-            "pairing_code": pairing.json()["code"],
             "hardware_id": hardware_id,
             "name": name,
             "width": width,
@@ -827,8 +825,6 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
         kitchen = register(client, "aa:bb:cc:dd:ee:01", "Kitchen", 480, 272)
         office = register(client, "aa:bb:cc:dd:ee:02", "Office", 320, 820)
         kitchen_id, office_id = str(kitchen["id"]), str(office["id"])
-        kitchen_headers = {"X-ESPImage-Token": str(kitchen["token"])}
-        office_headers = {"X-ESPImage-Token": str(office["token"])}
 
         displays = client.get("/displays")
         kitchen_rotation = client.put(
@@ -836,10 +832,8 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
         )
         office_settings = client.get(f"/displays/{office_id}/display-settings")
         renamed_office = client.patch(f"/displays/{office_id}", json={"name": "Studio"})
-        unauthorized_heartbeat = client.post(f"/displays/{kitchen_id}/heartbeat")
         heartbeat = client.post(
             f"/displays/{kitchen_id}/heartbeat",
-            headers=kitchen_headers,
             json={"firmware_version": "1.0.1", "capabilities": {"sd_card": True, "touch": False}},
         )
 
@@ -850,24 +844,21 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
             f"/displays/{office_id}/display-sd-card/mode/sd_card",
         )
         kitchen_next = client.get(
-            f"/displays/{kitchen_id}/display-commands/next", headers=kitchen_headers,
+            f"/displays/{kitchen_id}/display-commands/next",
         )
         office_next = client.get(
-            f"/displays/{office_id}/display-commands/next", headers=office_headers,
+            f"/displays/{office_id}/display-commands/next",
         )
         wrong_acknowledgement = client.post(
             f"/displays/{office_id}/display-commands/{kitchen_command.json()['id']}/ack",
-            headers=office_headers,
             json={"success": True, "detail": "wrong display"},
         )
         kitchen_acknowledgement = client.post(
             f"/displays/{kitchen_id}/display-commands/{kitchen_command.json()['id']}/ack",
-            headers=kitchen_headers,
             json={"success": True, "detail": "done"},
         )
         kitchen_report = client.post(
             f"/displays/{kitchen_id}/display-sd-card/report",
-            headers=kitchen_headers,
             json={
                 "available": True, "mode": "server_controlled", "total_bytes": 1024,
                 "used_bytes": 100, "files": [{"name": "kitchen.jpg", "type": "image"}],
@@ -875,7 +866,6 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
         )
         office_report = client.post(
             f"/displays/{office_id}/display-sd-card/report",
-            headers=office_headers,
             json={
                 "available": True, "mode": "sd_card", "total_bytes": 2048,
                 "used_bytes": 200, "files": [{"name": "office.jpg", "type": "image"}],
@@ -888,7 +878,6 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
     assert kitchen_rotation.json() == {"rotation": 90}
     assert office_settings.json() == {"rotation": 0}
     assert renamed_office.json()["name"] == "Studio"
-    assert unauthorized_heartbeat.status_code == 401
     assert heartbeat.json()["display"]["firmware_version"] == "1.0.1"
     assert kitchen_command.status_code == 202
     assert office_command.status_code == 202
@@ -900,3 +889,27 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
     assert office_report.status_code == 204
     assert kitchen_sd_card.json()["files"][0]["name"] == "kitchen.jpg"
     assert office_sd_card.json()["files"][0]["name"] == "office.jpg"
+
+
+def test_registered_display_reads_its_mac_identified_compatibility_latest_image_route() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        registration = client.post("/displays/register", json={
+            "hardware_id": "aa:bb:cc:dd:ee:03",
+            "name": "Hallway",
+            "width": 480,
+            "height": 272,
+            "firmware_version": "1.0.0",
+        }).json()
+        display_id = registration["id"]
+
+        generated = client.post("/generate", json={"prompt": "a tiny robot"})
+        latest = client.get(f"/displays/{display_id}/latest.jpg")
+        unchanged = client.get(
+            f"/displays/{display_id}/latest.jpg",
+            headers={"If-None-Match": latest.headers["etag"]},
+        )
+
+    assert latest.status_code == 200
+    assert latest.content == generated.content
+    assert unchanged.status_code == 304
