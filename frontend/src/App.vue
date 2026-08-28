@@ -204,7 +204,6 @@ const consoleOutput = ref([])
 const consoleSearch = ref('')
 const consoleAutoScroll = ref(true)
 const consoleOutputElement = ref(null)
-const latestDiagnosticError = ref('')
 const generationProgress = ref(0)
 const generationStage = ref('')
 const steps = ref(savedGenerationSettings.steps)
@@ -903,12 +902,6 @@ async function loadDiagnostics() {
   try {
     const response = await fetch('/diagnostics', { cache: 'no-store' })
     diagnostics.value = response.ok ? await response.json() : []
-    const newestError = diagnostics.value.find(entry => entry.level === 'error')?.timestamp || ''
-    if (newestError && newestError !== latestDiagnosticError.value) {
-      latestDiagnosticError.value = newestError
-      page.value = 'diagnostics'
-      diagnosticsTab.value = 'summary'
-    }
   } catch {
     diagnostics.value = []
   }
@@ -940,7 +933,6 @@ function updateConsoleRefresh() {
 async function clearDiagnostics() {
   await fetch('/diagnostics', { method: 'DELETE' })
   diagnostics.value = []
-  latestDiagnosticError.value = ''
 }
 
 async function copyDiagnostics() {

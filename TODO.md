@@ -8,7 +8,6 @@
    and the Queue, Diagnostics, and result-action layouts.
 
 ## Changes in the UI
-1. When multiple displays are connected, it's now obvious for the user than it can select another display
 2. When an error occur, the ui should not change to the diagnostics page automatically
 3. Saving to an sd card and looking at the sd card, created date is "Unknown"
 4. In Display SD card, the user should be able to select multiple files for deletion
