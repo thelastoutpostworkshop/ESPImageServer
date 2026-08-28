@@ -27,11 +27,12 @@ the shared dimensions, rotation, JPEG, SD-card report, and command queue.
    item 3. Keep the legacy single-display API only as a temporary compatibility
    layer while firmware is upgraded.
 
-3. **P1 — Deliver target-specific image renditions.** Retain a source/master
-   creation, then produce or cache a JPEG for each display's native dimensions,
-   rotation, and JPEG quality. Make each ETag depend on both the artwork
-   revision and the target display settings. Update generation and saved-image
-   actions to accept one or more target display IDs.
+3. **P1 — Deliver target-specific image renditions.** **Complete in source:**
+   retain a master creation, then lazily produce and cache a JPEG for each
+   display's native dimensions, rotation, and JPEG quality. Each ETag includes
+   the artwork revision and target settings. Generation and saved-image actions
+   accept optional target display IDs; explicit multi-target generation is
+   limited to matching aspect ratios until the broadcast crop/fit policy lands.
 
 4. **P1 — Make display commands and SD-card state per device.** **Complete:**
    commands, acknowledgements, SD-card reports, experience settings,

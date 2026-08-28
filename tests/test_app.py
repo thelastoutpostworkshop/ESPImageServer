@@ -891,25 +891,99 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
     assert office_sd_card.json()["files"][0]["name"] == "office.jpg"
 
 
-def test_registered_display_reads_its_mac_identified_compatibility_latest_image_route() -> None:
+def test_registered_displays_receive_native_renditions_with_independent_etags() -> None:
     app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
-        registration = client.post("/displays/register", json={
+        kitchen = client.post("/displays/register", json={
             "hardware_id": "aa:bb:cc:dd:ee:03",
-            "name": "Hallway",
+            "name": "Kitchen",
             "width": 480,
             "height": 272,
             "firmware_version": "1.0.0",
         }).json()
-        display_id = registration["id"]
+        office = client.post("/displays/register", json={
+            "hardware_id": "aa:bb:cc:dd:ee:04",
+            "name": "Office",
+            "width": 320,
+            "height": 820,
+            "firmware_version": "1.0.0",
+        }).json()
+        kitchen_id, office_id = kitchen["id"], office["id"]
+        assert client.put(f"/displays/{kitchen_id}/display-settings", json={"rotation": 90}).status_code == 200
 
-        generated = client.post("/generate", json={"prompt": "a tiny robot"})
-        latest = client.get(f"/displays/{display_id}/latest.jpg")
-        unchanged = client.get(
-            f"/displays/{display_id}/latest.jpg",
-            headers={"If-None-Match": latest.headers["etag"]},
+        assert client.post("/generate", json={"prompt": "a tiny robot"}).status_code == 200
+        kitchen_latest = client.get(f"/displays/{kitchen_id}/latest.jpg")
+        office_latest = client.get(f"/displays/{office_id}/latest.jpg")
+        kitchen_unchanged = client.get(
+            f"/displays/{kitchen_id}/latest.jpg",
+            headers={"If-None-Match": kitchen_latest.headers["etag"]},
+        )
+        assert client.put(f"/displays/{kitchen_id}/display-settings", json={"rotation": 0}).status_code == 200
+        kitchen_after_rotation = client.get(
+            f"/displays/{kitchen_id}/latest.jpg",
+            headers={"If-None-Match": kitchen_latest.headers["etag"]},
+        )
+        targeted = client.post(
+            "/generate",
+            json={"prompt": "a tiny robot", "display_ids": [office_id]},
+        )
+        kitchen_still_unchanged = client.get(
+            f"/displays/{kitchen_id}/latest.jpg",
+            headers={"If-None-Match": kitchen_after_rotation.headers["etag"]},
+        )
+        office_after_targeted_generation = client.get(f"/displays/{office_id}/latest.jpg")
+        incompatible_targeting = client.post(
+            "/generate",
+            json={"prompt": "a tiny robot", "display_ids": [kitchen_id, office_id]},
         )
 
-    assert latest.status_code == 200
-    assert latest.content == generated.content
-    assert unchanged.status_code == 304
+    assert kitchen_latest.status_code == 200
+    assert Image.open(BytesIO(kitchen_latest.content)).size == (480, 272)
+    assert Image.open(BytesIO(office_latest.content)).size == (320, 820)
+    assert kitchen_latest.headers["etag"] != office_latest.headers["etag"]
+    assert kitchen_unchanged.status_code == 304
+    assert kitchen_after_rotation.status_code == 200
+    assert kitchen_after_rotation.headers["etag"] != kitchen_latest.headers["etag"]
+    assert targeted.status_code == 200
+    assert kitchen_still_unchanged.status_code == 304
+    assert office_after_targeted_generation.headers["etag"] != office_latest.headers["etag"]
+    assert incompatible_targeting.status_code == 422
+
+
+def test_saved_image_can_target_registered_displays_and_use_their_rendition_route(tmp_path) -> None:
+    library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
+    source = BytesIO()
+    Image.new("RGB", (64, 32), "red").save(source, format="JPEG")
+    record = library.save(source.getvalue(), {"prompt": "wide saved creation"})
+    app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+
+    with TestClient(app) as client:
+        kitchen = client.post("/displays/register", json={
+            "hardware_id": "aa:bb:cc:dd:ee:05",
+            "name": "Kitchen",
+            "width": 480,
+            "height": 272,
+            "firmware_version": "1.0.0",
+        }).json()
+        office = client.post("/displays/register", json={
+            "hardware_id": "aa:bb:cc:dd:ee:06",
+            "name": "Office",
+            "width": 320,
+            "height": 820,
+            "firmware_version": "1.0.0",
+        }).json()
+        selected = client.post(
+            f"/saved-images/{record['id']}/display",
+            json={"display_ids": [office["id"]]},
+        )
+        kitchen_latest = client.get(f"/displays/{kitchen['id']}/latest.jpg")
+        office_latest = client.get(f"/displays/{office['id']}/latest.jpg")
+        saved_for_office = client.get(
+            f"/displays/{office['id']}/saved-images/{record['id']}/image?width=320&height=820",
+        )
+
+    assert selected.status_code == 202
+    assert selected.json()["display_ids"] == [office["id"]]
+    assert kitchen_latest.status_code == 204
+    assert Image.open(BytesIO(office_latest.content)).size == (320, 820)
+    assert Image.open(BytesIO(saved_for_office.content)).size == (320, 820)

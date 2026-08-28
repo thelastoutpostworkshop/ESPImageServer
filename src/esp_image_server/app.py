@@ -41,9 +41,9 @@ from .generator import DiffusersGenerator
 from .generation_jobs import GenerationCancelled
 from .generation_queue import GenerationQueue
 from .generation_size import optimal_generation_size
-from .image_processor import to_jpeg
+from .image_processor import to_display_jpeg, to_jpeg
 from .image_library import ImageLibrary
-from .latest_image import LatestImageStore
+from .latest_image import LatestImage, LatestImageStore
 from .mdns import MdnsAdvertiser, active_lan_address
 from .models import MODELS, get_model, model_is_cached, model_settings, remove_cached_model
 from .model_settings import ModelSelectionStore
@@ -109,6 +109,12 @@ class GenerateRequest(BaseModel):
     steps: int | None = Field(default=None, ge=1, le=100, description="Model inference steps")
     seed: int | None = Field(default=None, ge=0, le=4_294_967_295, description="Optional repeatable random seed")
     negative_prompt: str | None = Field(default=None, max_length=1_000)
+    display_ids: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=32,
+        description="Optional registered displays that should receive this image",
+    )
 
 
 class DisplayAnnouncement(BaseModel):
@@ -146,6 +152,13 @@ class DisplayHeartbeatRequest(BaseModel):
 class UpdateDisplayRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=64)
+
+
+class DisplayTargetsRequest(BaseModel):
+    """Optional explicit recipients for an existing Creation Gallery image."""
+
+    model_config = ConfigDict(extra="forbid")
+    display_ids: list[str] | None = Field(default=None, min_length=1, max_length=32)
 
 
 class AppSettingsRequest(BaseModel):
@@ -533,6 +546,76 @@ def create_app(
         except DisplayNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    def requested_target_displays(display_ids: list[str] | None) -> list[DisplayDevice]:
+        """Resolve an explicit recipient list while preserving its chosen order."""
+        if display_ids is None:
+            return []
+        unique_ids = list(dict.fromkeys(display_ids))
+        return [get_registered_display(display_id) for display_id in unique_ids]
+
+    def generation_display_for(targets: list[DisplayDevice]) -> DisplayDevice | None:
+        """Return the target which defines the model canvas for a request.
+
+        Multiple targets are safe before an aspect policy exists only when their
+        pre-rotation compositions have the same ratio. This avoids silently
+        generating a composition that must be cropped for one of the screens.
+        """
+        if not targets:
+            return None
+        first = targets[0]
+        first_width, first_height = display_artwork_dimensions(first)
+        for display in targets[1:]:
+            width, height = display_artwork_dimensions(display)
+            if width * first_height != height * first_width:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Selected displays have different aspect ratios. "
+                        "Choose displays with matching orientations until broadcast crop/fit options are added."
+                    ),
+                )
+        return first
+
+    def display_artwork_dimensions(display: DisplayDevice) -> tuple[int, int]:
+        return (
+            (display.height, display.width)
+            if display.rotation in {90, 270}
+            else (display.width, display.height)
+        )
+
+    def rendered_jpeg(
+        image: LatestImage,
+        *,
+        width: int,
+        height: int,
+        rotation: int,
+    ) -> tuple[bytes, str]:
+        rendition = latest_image_store.rendition(
+            image, width=width, height=height, rotation=rotation, quality=jpeg_quality,
+        )
+        metadata = extract_jpeg_metadata(image.jpeg)
+        jpeg = embed_jpeg_metadata(rendition.jpeg, metadata) if metadata is not None else rendition.jpeg
+        return jpeg, rendition.etag
+
+    def latest_image_response(
+        image: LatestImage | None,
+        *,
+        width: int,
+        height: int,
+        rotation: int,
+        if_none_match: str | None,
+    ) -> Response:
+        if image is None:
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        jpeg, etag = rendered_jpeg(image, width=width, height=height, rotation=rotation)
+        if if_none_match == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+        return Response(
+            content=jpeg,
+            media_type="image/jpeg",
+            headers={"ETag": etag, "Cache-Control": "no-cache"},
+        )
+
     @app.post("/displays/register", status_code=status.HTTP_201_CREATED)
     def register_display(request: RegisterDisplayRequest) -> dict[str, object]:
         return display_registry.register(
@@ -597,7 +680,16 @@ def create_app(
         latest_image = latest_image_store.get()
         if latest_image is None:
             raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
-        return queue_image_save(latest_image.jpeg)
+        profile = active_display_store.get()
+        width = profile.width if profile else settings.output_width
+        height = profile.height if profile else settings.output_height
+        jpeg, _ = rendered_jpeg(
+            latest_image,
+            width=width,
+            height=height,
+            rotation=display_settings_store.get_rotation(),
+        )
+        return queue_image_save(jpeg)
 
     @app.post("/display-commands/save-saved-image/{image_id}", status_code=status.HTTP_202_ACCEPTED)
     def save_creation_library_image_to_display_sd_card(image_id: str) -> dict[str, object]:
@@ -822,11 +914,17 @@ def create_app(
 
     @app.post("/displays/{display_id}/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
     def save_latest_to_registered_display_sd_card(display_id: str) -> dict[str, object]:
-        get_registered_display(display_id)
-        latest_image = latest_image_store.get()
+        display = get_registered_display(display_id)
+        latest_image = latest_image_store.get(display_id)
         if latest_image is None:
             raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
-        return queue_image_save(latest_image.jpeg, display_id=display_id)
+        jpeg, _ = rendered_jpeg(
+            latest_image,
+            width=display.width,
+            height=display.height,
+            rotation=display.rotation,
+        )
+        return queue_image_save(jpeg, display_id=display_id)
 
     @app.post(
         "/displays/{display_id}/display-commands/save-saved-image/{image_id}",
@@ -1070,21 +1168,15 @@ def create_app(
         height: int | None = Query(default=None, ge=1, le=1024),
     ) -> Response:
         image = latest_image_store.get()
-        if image is None:
-            return Response(status_code=status.HTTP_204_NO_CONTENT)
         if (width is None) != (height is None):
             raise HTTPException(status_code=422, detail="Width and height must be provided together")
-        if width is not None and height is not None:
-            with Image.open(BytesIO(image.jpeg)) as source:
-                jpeg = to_jpeg(source, width=width, height=height, quality=jpeg_quality)
-            return Response(content=jpeg, media_type="image/jpeg")
-        etag = f'"{image.image_id}"'
-        if if_none_match == etag:
-            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
-        return Response(
-            content=image.jpeg,
-            media_type="image/jpeg",
-            headers={"ETag": etag, "Cache-Control": "no-cache"},
+        profile = active_display_store.get()
+        return latest_image_response(
+            image,
+            width=width if width is not None else (profile.width if profile else settings.output_width),
+            height=height if height is not None else (profile.height if profile else settings.output_height),
+            rotation=display_settings_store.get_rotation(),
+            if_none_match=if_none_match,
         )
 
     @app.get("/displays/{display_id}/latest.jpg", response_class=Response)
@@ -1094,9 +1186,19 @@ def create_app(
         width: int | None = Query(default=None, ge=1, le=1024),
         height: int | None = Query(default=None, ge=1, le=1024),
     ) -> Response:
-        """MAC-identified compatibility route until per-display renditions ship."""
-        get_registered_display(display_id)
-        return latest_image(if_none_match, width, height)
+        """Deliver cached source artwork at this display's native configuration."""
+        display = get_registered_display(display_id)
+        if (width is None) != (height is None):
+            raise HTTPException(status_code=422, detail="Width and height must be provided together")
+        if width is not None and (width != display.width or height != display.height):
+            raise HTTPException(status_code=422, detail="Use the registered display's native dimensions")
+        return latest_image_response(
+            latest_image_store.get(display_id),
+            width=display.width,
+            height=display.height,
+            rotation=display.rotation,
+            if_none_match=if_none_match,
+        )
 
     @app.get("/saved-images")
     def saved_images() -> list[dict[str, object]]:
@@ -1207,21 +1309,46 @@ def create_app(
             return Response(content=jpeg, media_type="image/jpeg")
         return FileResponse(image_path, media_type="image/jpeg", filename=image_path.name)
 
-    @app.post("/saved-images/{image_id}/display", status_code=status.HTTP_202_ACCEPTED)
-    def show_saved_image_on_display(image_id: str) -> dict[str, object]:
-        """Make a saved creation the next image retrieved by the ESP32."""
+    @app.get("/displays/{display_id}/saved-images/{image_id}/image", response_class=Response)
+    def saved_image_for_registered_display(display_id: str, image_id: str) -> Response:
+        """Fit a Creation Gallery source for one display's size and rotation."""
+        display = get_registered_display(display_id)
         image_path = image_library.find_path(image_id)
         if image_path is None:
             raise HTTPException(status_code=404, detail="Saved image not found")
         try:
-            profile = active_display_store.get()
-            width = profile.width if profile else settings.output_width
-            height = profile.height if profile else settings.output_height
             with Image.open(image_path) as source:
-                latest_image_store.set(to_jpeg(source, width=width, height=height, quality=jpeg_quality))
+                jpeg = to_display_jpeg(
+                    source,
+                    width=display.width,
+                    height=display.height,
+                    rotation=display.rotation,
+                    quality=jpeg_quality,
+                )
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=f"Could not prepare saved image for the display: {exc}") from exc
-        return {"message": "Saved image is ready for the display"}
+        return Response(content=jpeg, media_type="image/jpeg")
+
+    @app.post("/saved-images/{image_id}/display", status_code=status.HTTP_202_ACCEPTED)
+    def show_saved_image_on_display(
+        image_id: str, targets: DisplayTargetsRequest | None = None,
+    ) -> dict[str, object]:
+        """Broadcast or send a saved creation to selected ESP32 displays."""
+        image_path = image_library.find_path(image_id)
+        if image_path is None:
+            raise HTTPException(status_code=404, detail="Saved image not found")
+        try:
+            target_displays = requested_target_displays(targets.display_ids if targets is not None else None)
+            latest_image_store.set(
+                image_path.read_bytes(),
+                [display.id for display in target_displays] if targets is not None else None,
+            )
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"Could not prepare saved image for the display: {exc}") from exc
+        return {
+            "message": "Saved image is ready for the selected displays" if targets is not None else "Saved image is ready for the display",
+            "display_ids": [display.id for display in target_displays],
+        }
 
     @app.delete("/saved-images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_saved_image(image_id: str) -> Response:
@@ -1307,7 +1434,16 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "acknowledged"}
 
-    def generate_jpeg(request: GenerateRequest, progress=None, is_cancelled=None, model_id: str | None = None, selected_settings: Settings | None = None, generation_metadata: dict[str, object] | None = None) -> bytes:
+    def generate_jpeg(
+        request: GenerateRequest,
+        progress=None,
+        is_cancelled=None,
+        model_id: str | None = None,
+        selected_settings: Settings | None = None,
+        generation_metadata: dict[str, object] | None = None,
+        target_displays: list[DisplayDevice] | None = None,
+        target_display_ids: list[str] | None = None,
+    ) -> bytes:
         generation_started_at = perf_counter()
 
         def ensure_not_cancelled() -> None:
@@ -1318,10 +1454,11 @@ def create_app(
         job_model_id = model_id or active_model_id
         job_settings = selected_settings or active_settings
         generator.activate_model(job_settings)
-        profile = active_display_store.get()
+        selected_display = generation_display_for(target_displays or [])
+        profile = selected_display or active_display_store.get()
         output_width = profile.width if profile else settings.output_width
         output_height = profile.height if profile else settings.output_height
-        rotation = display_settings_store.get_rotation()
+        rotation = profile.rotation if isinstance(profile, DisplayDevice) else display_settings_store.get_rotation()
         artwork_width, artwork_height = (
             (output_height, output_width) if rotation in {90, 270} else (output_width, output_height)
         )
@@ -1346,23 +1483,9 @@ def create_app(
         ensure_not_cancelled()
         if image.convert("RGB").getbbox() is None:
             raise RuntimeError("The model returned a blank image. Please try generating again.")
-        if progress is not None:
-            if rotation:
-                progress(1, 1, "Rotating image for your ESP32 display")
-            else:
-                progress(1, 1, "Fitting the image to your ESP32 display")
-        if rotation == 90:
-            image = image.transpose(Image.Transpose.ROTATE_270)
-        elif rotation == 180:
-            image = image.transpose(Image.Transpose.ROTATE_180)
-        elif rotation == 270:
-            image = image.transpose(Image.Transpose.ROTATE_90)
         ensure_not_cancelled()
-        if progress is not None and rotation:
-            progress(1, 1, "Fitting the image to your ESP32 display")
         if progress is not None:
-            progress(1, 1, "Encoding image for your ESP32 display")
-        jpeg = to_jpeg(image, width=output_width, height=output_height, quality=jpeg_quality)
+            progress(1, 1, "Saving source artwork and preparing display JPEGs")
         metadata = generation_metadata if generation_metadata is not None else {}
         metadata.update({
             "version": 1,
@@ -1373,25 +1496,37 @@ def create_app(
             "steps": steps,
             "seed": request.seed,
             "rotation": rotation,
+            "display_ids": target_display_ids,
             "generation_time_seconds": round(perf_counter() - generation_started_at, 2),
             "display": (
                 {"name": profile.name, "width": profile.width, "height": profile.height}
                 if profile is not None else None
             ),
         })
-        jpeg = embed_jpeg_metadata(jpeg, metadata)
+        master_jpeg = embed_jpeg_metadata(
+            to_jpeg(image, width=image.width, height=image.height, quality=95), metadata,
+        )
         ensure_not_cancelled()
-        latest_image_store.set(jpeg)
+        latest_image = latest_image_store.set(master_jpeg, target_display_ids)
         if auto_save_images:
             if progress is not None:
                 progress(1, 1, "Saving image to your Creation Gallery")
-            image_library.save(jpeg, metadata)
+            image_library.save(master_jpeg, metadata)
+        jpeg, _ = rendered_jpeg(
+            latest_image,
+            width=output_width,
+            height=output_height,
+            rotation=rotation,
+        )
         return jpeg
 
     @app.post("/generate", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
     async def generate(request: GenerateRequest) -> Response:
         if generation_queue.has_active_job():
             raise HTTPException(status_code=409, detail="Wait for queued generation work to finish before using the direct image endpoint")
+        target_displays = requested_target_displays(request.display_ids)
+        generation_display_for(target_displays)
+        target_display_ids = [display.id for display in target_displays] if request.display_ids is not None else None
         requested_model_id = request.model_id or active_model_id
         try:
             requested_settings = model_settings(settings, requested_model_id)
@@ -1399,7 +1534,17 @@ def create_app(
             raise HTTPException(status_code=404, detail="Image model not found") from exc
         try:
             await run_in_threadpool(video_generator.unload)
-            jpeg = await run_in_threadpool(generate_jpeg, request, None, None, requested_model_id, requested_settings)
+            jpeg = await run_in_threadpool(
+                generate_jpeg,
+                request,
+                None,
+                None,
+                requested_model_id,
+                requested_settings,
+                None,
+                target_displays,
+                target_display_ids,
+            )
         except RuntimeError as exc:
             logger.exception("Image generation failed")
             raise HTTPException(status_code=500, detail=str(exc)) from None
@@ -1411,6 +1556,9 @@ def create_app(
     @app.post("/generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
         nonlocal active_model_id, active_settings
+        target_displays = requested_target_displays(request.display_ids)
+        generation_display_for(target_displays)
+        target_display_ids = [display.id for display in target_displays] if request.display_ids is not None else None
         job_model_id = request.model_id or active_model_id
         try:
             job_settings = model_settings(settings, job_model_id)
@@ -1419,10 +1567,26 @@ def create_app(
         active_model_id = job_model_id
         active_settings = job_settings
         model_selection_store.set(job_model_id)
-        image_metadata: dict[str, object] = {"label": request.prompt[:80], "model_id": job_model_id}
+        image_metadata: dict[str, object] = {
+            "label": request.prompt[:80],
+            "model_id": job_model_id,
+            "display_ids": target_display_ids,
+        }
         job = generation_queue.create(
             "image",
-            lambda progress, is_cancelled: (video_generator.unload(), generate_jpeg(request, progress, is_cancelled, job_model_id, job_settings, image_metadata))[1],
+            lambda progress, is_cancelled: (
+                video_generator.unload(),
+                generate_jpeg(
+                    request,
+                    progress,
+                    is_cancelled,
+                    job_model_id,
+                    job_settings,
+                    image_metadata,
+                    target_displays,
+                    target_display_ids,
+                ),
+            )[1],
             image_metadata,
         )
         return job.as_dict()
