@@ -242,8 +242,8 @@ const selectedTargetDisplayIds = computed(() => (
   selectedRegisteredDisplay.value ? [selectedRegisteredDisplay.value.id] : []
 ))
 const displayTargetLabel = computed(() => {
-  if (display.value?.connected) return `${display.value.name} · ${display.value.width}×${display.value.height} · v${display.value.firmware_version}`
-  return displays.value.length ? 'Choose active display' : 'Display waiting'
+  if (display.value?.connected) return `Active display: ${display.value.name} · ${display.value.width}×${display.value.height} · v${display.value.firmware_version}`
+  return displays.value.length ? 'Choose active display' : 'Active display waiting'
 })
 const displayManagementLabel = computed(() => {
   if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height}`
@@ -251,7 +251,7 @@ const displayManagementLabel = computed(() => {
 })
 const compactDisplayLabel = computed(() => {
   if (!display.value?.connected) return displays.value.length ? 'Choose display' : 'Display waiting'
-  return `${display.value.name} · connected`
+  return `Active: ${display.value.name}`
 })
 const selectedImageModelName = computed(() => models.value.find(model => model.id === activeModelId.value)?.name || 'image model')
 const imageGenerationActive = computed(() => generating.value || Boolean(generationStage.value) || health.value?.image_generating === true)
@@ -2361,8 +2361,9 @@ onUnmounted(() => {
       </v-chip>
       <v-menu v-model="displayPickerOpen" location="bottom start" :close-on-content-click="true">
         <template #activator="{ props }">
-          <v-chip v-bind="props" class="app-bar__display-chip" :color="hasDisplayTargets || display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="hasDisplayTargets || display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :aria-label="displayTargetLabel" :title="`${displayTargetLabel}. Choose active display.`">
+          <v-chip v-bind="props" class="app-bar__display-chip" :color="hasDisplayTargets || display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="hasDisplayTargets || display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :aria-label="`${displayTargetLabel}. Open display chooser.`" :title="`${displayTargetLabel}. Choose active display.`">
             <span class="app-bar__display-label">{{ compact ? compactDisplayLabel : displayTargetLabel }}</span>
+            <v-icon class="app-bar__display-chevron" size="18">{{ displayPickerOpen ? 'mdi-menu-up' : 'mdi-menu-down' }}</v-icon>
           </v-chip>
         </template>
         <v-card min-width="300" max-width="420">

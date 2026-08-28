@@ -9,8 +9,9 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 /* Keep the primary controls above navigation drawers while they change mode. */
 .app-bar { z-index: 1202 !important; }
 .app-bar__display-chip { min-width: 0; }
-.app-bar__display-chip .v-chip__content { min-width: 0; overflow: hidden; }
-.app-bar__display-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-bar__display-chip .v-chip__content { display: flex; min-width: 0; overflow: hidden; }
+.app-bar__display-label { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-bar__display-chevron { flex: 0 0 auto; }
 .activity-drawer { border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); }
 .activity-drawer .v-navigation-drawer__content { display: flex; flex-direction: column; }
 .activity-drawer__content { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
