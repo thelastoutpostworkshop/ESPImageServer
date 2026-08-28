@@ -7,11 +7,6 @@
    opening and closing the Creation Library, navigation, long display names,
    and the Queue, Diagnostics, and result-action layouts.
 
-## Changes in the UI
-
-5. When saving to an sd card, does the image is saved on the currently selected display ?
-6. the job queue list should be from the most recent to the oldest
-
 ## Backend and installer hardening
 
 1. **P1 — Bound completed-job, command, and conversion-cache retention.**
