@@ -77,6 +77,7 @@ const serverInfo = ref(null)
 const health = ref(null)
 const displays = ref([])
 const selectedDisplayIds = ref([])
+const broadcastAspectMode = ref('')
 const legacyDisplay = ref(null)
 const displayConnectedSnackbar = ref(false)
 const displayConnectedMessage = ref('')
@@ -254,6 +255,34 @@ const selectedTargetsHaveCompatibleAspect = computed(() => {
     return width * firstHeight === height * firstWidth
   })
 })
+const requiresBroadcastAspectPolicy = computed(() => (
+  hasDisplayTargets.value && !selectedTargetsHaveCompatibleAspect.value
+))
+const selectedBroadcastAspectMode = computed(() => (
+  requiresBroadcastAspectPolicy.value ? broadcastAspectMode.value : 'crop'
+))
+const canShowSavedImageOnTargets = computed(() => (
+  !requiresBroadcastAspectPolicy.value || (
+    Boolean(broadcastAspectMode.value) && broadcastAspectMode.value !== 'separate'
+  )
+))
+const broadcastAspectOptions = [
+  {
+    title: 'Crop to fill every screen',
+    value: 'crop',
+    subtitle: 'One artwork fills every display. Edges may be trimmed on screens with a different shape.'
+  },
+  {
+    title: 'Fit with black borders',
+    value: 'fit',
+    subtitle: 'One artwork stays fully visible. Black bars fill unused space on different screen shapes.'
+  },
+  {
+    title: 'Generate separate artwork',
+    value: 'separate',
+    subtitle: 'Creates one new composition for each screen shape. This takes one generation per shape.'
+  }
+]
 const displayTargetOptions = computed(() => displays.value.map(display => ({
   title: `${display.online ? 'Online' : 'Offline'} · ${display.name} · ${display.width} × ${display.height} · v${display.firmware_version}`,
   value: display.id,
@@ -1804,13 +1833,22 @@ async function useSelectedSavedImageSettings() {
 
 async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
   if (!savedImage || !hasDisplayTargets.value || showingSavedImageOnDisplay.value) return
+  if (!canShowSavedImageOnTargets.value) {
+    error.value = broadcastAspectMode.value === 'separate'
+      ? 'Separate artwork creates new images. Choose Crop or Fit before sending an existing Creation Gallery image.'
+      : 'Choose Crop or Fit for the selected mixed-shape displays before sending this image.'
+    return
+  }
   showingSavedImageOnDisplay.value = true
   error.value = ''
   try {
     const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display_ids: selectedTargetDisplayIds.value })
+      body: JSON.stringify({
+        display_ids: selectedTargetDisplayIds.value,
+        broadcast_aspect_mode: selectedBroadcastAspectMode.value
+      })
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -2087,6 +2125,9 @@ async function generate() {
   let job
   try {
     if (!models.value.some(model => model.id === activeModelId.value)) throw new Error('Choose an image model before generating.')
+    if (requiresBroadcastAspectPolicy.value && !broadcastAspectMode.value) {
+      throw new Error('Choose how one image should reach the selected mixed-shape displays.')
+    }
     if (!alreadyShowingImageProgress) generationStage.value = 'Adding image to the queue...'
     const response = await fetch('/generation-jobs', {
       method: 'POST',
@@ -2097,7 +2138,12 @@ async function generate() {
         negative_prompt: negativePrompt.value || null,
         steps: Number(steps.value),
         seed: seed.value === '' ? null : Number(seed.value),
-        ...(hasDisplayTargets.value ? { display_ids: selectedTargetDisplayIds.value } : {})
+        ...(hasDisplayTargets.value
+          ? {
+              display_ids: selectedTargetDisplayIds.value,
+              broadcast_aspect_mode: selectedBroadcastAspectMode.value
+            }
+          : {})
       })
     })
     if (!response.ok) {
@@ -2107,7 +2153,7 @@ async function generate() {
     job = await response.json()
     if (!activeJobId.value) activeJobId.value = job.id
     activeImageJobRunning.value = ['queued', 'running', 'cancelling'].includes(job.status)
-    status.value = `Image job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
+    status.value = `${selectedBroadcastAspectMode.value === 'separate' ? 'Separate artwork job added to the queue' : 'Image job added to the queue'}${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
     showQueueAddedFeedback('Image', job.queue_position)
     await loadGenerationQueue()
     let currentJob = job
@@ -2613,7 +2659,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="selectedTargetDisplayIds.length > 1 ? 'Show on selected displays' : 'Show on display'" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
+        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="selectedTargetDisplayIds.length > 1 ? 'Show on selected displays' : 'Show on display'" :disabled="!hasDisplayTargets || !canShowSavedImageOnTargets || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'mdi-check-circle' : 'mdi-sd'"
@@ -2922,7 +2968,7 @@ onUnmounted(() => {
                       variant="outlined"
                       density="comfortable"
                       :disabled="generationBusy"
-                      hint="Select one screen, several matching screens, or all displays."
+                      hint="Select one screen, several screens, or all displays."
                       persistent-hint
                     />
                     <div class="d-flex flex-wrap ga-2 mt-3">
@@ -2940,9 +2986,30 @@ onUnmounted(() => {
                     <v-alert v-if="!selectedTargetDisplayIds.length" type="warning" variant="tonal" density="compact" class="mt-3">
                       Select at least one registered display before generating for multiple screens.
                     </v-alert>
-                    <v-alert v-else-if="!selectedTargetsHaveCompatibleAspect" type="warning" variant="tonal" density="compact" class="mt-3">
-                      The selected screens have different aspect ratios. Choose matching screens; crop and fit choices will be added next.
-                    </v-alert>
+                    <template v-else-if="requiresBroadcastAspectPolicy">
+                      <v-alert type="info" variant="tonal" density="compact" class="mt-3">
+                        These screens have different shapes. Choose how this broadcast should reach each one.
+                      </v-alert>
+                      <v-radio-group v-model="broadcastAspectMode" :disabled="generationBusy" class="mt-2" hide-details>
+                        <v-radio
+                          v-for="option in broadcastAspectOptions"
+                          :key="option.value"
+                          :value="option.value"
+                          :label="option.title"
+                          color="primary"
+                        >
+                          <template #label>
+                            <div>
+                              <div>{{ option.title }}</div>
+                              <div class="text-caption text-medium-emphasis">{{ option.subtitle }}</div>
+                            </div>
+                          </template>
+                        </v-radio>
+                      </v-radio-group>
+                      <div v-if="broadcastAspectMode === 'separate'" class="text-caption text-medium-emphasis mt-2">
+                        Separate artwork applies to a new generation. To show an existing Creation Gallery image, choose Crop or Fit.
+                      </div>
+                    </template>
                     <div v-else class="text-caption text-medium-emphasis mt-3">
                       {{ selectedTargetDisplayIds.length === 1 ? 'Rotation and SD-card controls below apply to this selected display.' : 'Rotation and SD-card controls require one selected display.' }}
                     </div>
@@ -3009,7 +3076,7 @@ onUnmounted(() => {
                 </v-col>
               </v-row>
               <div class="generation-form-actions">
-                <v-btn type="submit" color="primary" :disabled="models.length === 0 || !selectedTargetsHaveCompatibleAspect || Boolean(displays.length && !selectedTargetDisplayIds.length)" prepend-icon="mdi-image-plus">
+                <v-btn type="submit" color="primary" :disabled="models.length === 0 || (requiresBroadcastAspectPolicy && !broadcastAspectMode) || Boolean(displays.length && !selectedTargetDisplayIds.length)" prepend-icon="mdi-image-plus">
                   {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
                 </v-btn>
                 <v-btn v-if="generating" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
@@ -3069,7 +3136,7 @@ onUnmounted(() => {
             <v-btn v-if="selectedSavedImage" color="primary" prepend-icon="mdi-restore" @click="useSelectedSavedImageSettings">
               Use saved settings
             </v-btn>
-            <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets" @click="showSavedImageOnDisplay()">
+            <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets || !canShowSavedImageOnTargets" @click="showSavedImageOnDisplay()">
               {{ selectedTargetDisplayIds.length > 1 ? 'Show on selected displays' : 'Show on display' }}
             </v-btn>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">

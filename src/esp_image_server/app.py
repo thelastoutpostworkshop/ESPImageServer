@@ -8,12 +8,13 @@ import hashlib
 from io import BytesIO
 import json
 import logging
+from math import gcd
 import os
 from pathlib import Path
 import subprocess
 from threading import Timer
 from time import perf_counter
-from typing import Protocol
+from typing import Literal, Protocol
 import webbrowser
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, status
@@ -43,7 +44,7 @@ from .generation_queue import GenerationQueue
 from .generation_size import optimal_generation_size
 from .image_processor import to_display_jpeg, to_jpeg
 from .image_library import ImageLibrary
-from .latest_image import LatestImage, LatestImageStore
+from .latest_image import LatestImage, LatestImageAssignment, LatestImageStore
 from .mdns import MdnsAdvertiser, active_lan_address
 from .models import MODELS, get_model, model_is_cached, model_settings, remove_cached_model
 from .model_settings import ModelSelectionStore
@@ -115,6 +116,13 @@ class GenerateRequest(BaseModel):
         max_length=32,
         description="Optional registered displays that should receive this image",
     )
+    broadcast_aspect_mode: Literal["crop", "fit", "separate"] | None = Field(
+        default=None,
+        description=(
+            "Required for targets with mixed display aspect ratios: crop to fill, "
+            "fit with black borders, or generate separate compositions per aspect ratio"
+        ),
+    )
 
 
 class DisplayAnnouncement(BaseModel):
@@ -159,6 +167,10 @@ class DisplayTargetsRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     display_ids: list[str] | None = Field(default=None, min_length=1, max_length=32)
+    broadcast_aspect_mode: Literal["crop", "fit"] | None = Field(
+        default=None,
+        description="Required for mixed-aspect targets: crop to fill or fit with black borders",
+    )
 
 
 class AppSettingsRequest(BaseModel):
@@ -553,29 +565,6 @@ def create_app(
         unique_ids = list(dict.fromkeys(display_ids))
         return [get_registered_display(display_id) for display_id in unique_ids]
 
-    def generation_display_for(targets: list[DisplayDevice]) -> DisplayDevice | None:
-        """Return the target which defines the model canvas for a request.
-
-        Multiple targets are safe before an aspect policy exists only when their
-        pre-rotation compositions have the same ratio. This avoids silently
-        generating a composition that must be cropped for one of the screens.
-        """
-        if not targets:
-            return None
-        first = targets[0]
-        first_width, first_height = display_artwork_dimensions(first)
-        for display in targets[1:]:
-            width, height = display_artwork_dimensions(display)
-            if width * first_height != height * first_width:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        "Selected displays have different aspect ratios. "
-                        "Choose displays with matching orientations until broadcast crop/fit options are added."
-                    ),
-                )
-        return first
-
     def display_artwork_dimensions(display: DisplayDevice) -> tuple[int, int]:
         return (
             (display.height, display.width)
@@ -583,31 +572,72 @@ def create_app(
             else (display.width, display.height)
         )
 
+    def target_aspect_groups(targets: list[DisplayDevice]) -> list[list[DisplayDevice]]:
+        """Group targets by their physical artwork aspect ratio in chosen order."""
+        groups: dict[tuple[int, int], list[DisplayDevice]] = {}
+        for display in targets:
+            width, height = display_artwork_dimensions(display)
+            divisor = gcd(width, height)
+            groups.setdefault((width // divisor, height // divisor), []).append(display)
+        return list(groups.values())
+
+    def resolve_broadcast_aspect_mode(
+        targets: list[DisplayDevice], requested_mode: str | None, *, allow_separate: bool,
+    ) -> str:
+        """Require an explicit crop, fit, or separate-artwork policy when needed."""
+        if requested_mode == "separate" and not allow_separate:
+            raise HTTPException(
+                status_code=422,
+                detail="Separate artwork is available only when generating a new image.",
+            )
+        if len(target_aspect_groups(targets)) > 1 and requested_mode is None:
+            choices = "crop, fit, or separate artwork" if allow_separate else "crop or fit"
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Selected displays have different aspect ratios. "
+                    f"Choose {choices} with broadcast_aspect_mode."
+                ),
+            )
+        return requested_mode or "crop"
+
     def rendered_jpeg(
         image: LatestImage,
         *,
         width: int,
         height: int,
         rotation: int,
+        aspect_mode: str = "crop",
     ) -> tuple[bytes, str]:
         rendition = latest_image_store.rendition(
-            image, width=width, height=height, rotation=rotation, quality=jpeg_quality,
+            image,
+            width=width,
+            height=height,
+            rotation=rotation,
+            quality=jpeg_quality,
+            aspect_mode=aspect_mode,
         )
         metadata = extract_jpeg_metadata(image.jpeg)
         jpeg = embed_jpeg_metadata(rendition.jpeg, metadata) if metadata is not None else rendition.jpeg
         return jpeg, rendition.etag
 
     def latest_image_response(
-        image: LatestImage | None,
+        assignment: LatestImageAssignment | None,
         *,
         width: int,
         height: int,
         rotation: int,
         if_none_match: str | None,
     ) -> Response:
-        if image is None:
+        if assignment is None:
             return Response(status_code=status.HTTP_204_NO_CONTENT)
-        jpeg, etag = rendered_jpeg(image, width=width, height=height, rotation=rotation)
+        jpeg, etag = rendered_jpeg(
+            assignment.image,
+            width=width,
+            height=height,
+            rotation=rotation,
+            aspect_mode=assignment.aspect_mode,
+        )
         if if_none_match == etag:
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
         return Response(
@@ -677,17 +707,18 @@ def create_app(
 
     @app.post("/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
     def save_latest_to_display_sd_card() -> dict[str, object]:
-        latest_image = latest_image_store.get()
-        if latest_image is None:
+        assignment = latest_image_store.get_assignment()
+        if assignment is None:
             raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
         profile = active_display_store.get()
         width = profile.width if profile else settings.output_width
         height = profile.height if profile else settings.output_height
         jpeg, _ = rendered_jpeg(
-            latest_image,
+            assignment.image,
             width=width,
             height=height,
             rotation=display_settings_store.get_rotation(),
+            aspect_mode=assignment.aspect_mode,
         )
         return queue_image_save(jpeg)
 
@@ -915,14 +946,15 @@ def create_app(
     @app.post("/displays/{display_id}/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
     def save_latest_to_registered_display_sd_card(display_id: str) -> dict[str, object]:
         display = get_registered_display(display_id)
-        latest_image = latest_image_store.get(display_id)
-        if latest_image is None:
+        assignment = latest_image_store.get_assignment(display_id)
+        if assignment is None:
             raise HTTPException(status_code=409, detail="Generate an image before saving it to the display SD card")
         jpeg, _ = rendered_jpeg(
-            latest_image,
+            assignment.image,
             width=display.width,
             height=display.height,
             rotation=display.rotation,
+            aspect_mode=assignment.aspect_mode,
         )
         return queue_image_save(jpeg, display_id=display_id)
 
@@ -1167,12 +1199,12 @@ def create_app(
         width: int | None = Query(default=None, ge=1, le=1024),
         height: int | None = Query(default=None, ge=1, le=1024),
     ) -> Response:
-        image = latest_image_store.get()
+        assignment = latest_image_store.get_assignment()
         if (width is None) != (height is None):
             raise HTTPException(status_code=422, detail="Width and height must be provided together")
         profile = active_display_store.get()
         return latest_image_response(
-            image,
+            assignment,
             width=width if width is not None else (profile.width if profile else settings.output_width),
             height=height if height is not None else (profile.height if profile else settings.output_height),
             rotation=display_settings_store.get_rotation(),
@@ -1193,7 +1225,7 @@ def create_app(
         if width is not None and (width != display.width or height != display.height):
             raise HTTPException(status_code=422, detail="Use the registered display's native dimensions")
         return latest_image_response(
-            latest_image_store.get(display_id),
+            latest_image_store.get_assignment(display_id),
             width=display.width,
             height=display.height,
             rotation=display.rotation,
@@ -1339,9 +1371,15 @@ def create_app(
             raise HTTPException(status_code=404, detail="Saved image not found")
         try:
             target_displays = requested_target_displays(targets.display_ids if targets is not None else None)
+            aspect_mode = resolve_broadcast_aspect_mode(
+                target_displays,
+                targets.broadcast_aspect_mode if targets is not None else None,
+                allow_separate=False,
+            )
             latest_image_store.set(
                 image_path.read_bytes(),
                 [display.id for display in target_displays] if targets is not None else None,
+                aspect_mode=aspect_mode,
             )
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=f"Could not prepare saved image for the display: {exc}") from exc
@@ -1443,6 +1481,7 @@ def create_app(
         generation_metadata: dict[str, object] | None = None,
         target_displays: list[DisplayDevice] | None = None,
         target_display_ids: list[str] | None = None,
+        broadcast_aspect_mode: str = "crop",
     ) -> bytes:
         generation_started_at = perf_counter()
 
@@ -1454,78 +1493,134 @@ def create_app(
         job_model_id = model_id or active_model_id
         job_settings = selected_settings or active_settings
         generator.activate_model(job_settings)
-        selected_display = generation_display_for(target_displays or [])
-        profile = selected_display or active_display_store.get()
-        output_width = profile.width if profile else settings.output_width
-        output_height = profile.height if profile else settings.output_height
-        rotation = profile.rotation if isinstance(profile, DisplayDevice) else display_settings_store.get_rotation()
-        artwork_width, artwork_height = (
-            (output_height, output_width) if rotation in {90, 270} else (output_width, output_height)
-        )
-        generation_width, generation_height = optimal_generation_size(job_model_id, artwork_width, artwork_height)
         model = get_model(job_model_id)
         if request.negative_prompt and not model.supports_negative_prompt:
             raise ValueError(f"{model.name} does not support negative prompts")
         steps = request.steps if request.steps is not None else model.inference_steps
         if not model.minimum_steps <= steps <= model.maximum_steps:
             raise ValueError(f"{model.name} supports {model.minimum_steps} to {model.maximum_steps} steps")
-        if progress is not None:
-            progress(0, 0, "Preparing the image model")
-        ensure_not_cancelled()
-        image = generator.generate(
-            request.prompt, generation_width, generation_height,
-            progress=(lambda step, steps: progress(step, steps, "Generating image")) if progress else None,
-            inference_steps=steps,
-            seed=request.seed,
-            cancelled=is_cancelled,
-            negative_prompt=request.negative_prompt,
+        targets = target_displays or []
+        target_groups = (
+            target_aspect_groups(targets)
+            if broadcast_aspect_mode == "separate" and targets
+            else [targets]
         )
-        ensure_not_cancelled()
-        if image.convert("RGB").getbbox() is None:
-            raise RuntimeError("The model returned a blank image. Please try generating again.")
-        ensure_not_cancelled()
-        if progress is not None:
-            progress(1, 1, "Saving source artwork and preparing display JPEGs")
-        metadata = generation_metadata if generation_metadata is not None else {}
-        metadata.update({
-            "version": 1,
-            "createdAt": datetime.now(UTC).isoformat(),
-            "model": {"id": job_model_id, "name": model.name},
-            "prompt": request.prompt,
-            "negative_prompt": request.negative_prompt,
-            "steps": steps,
-            "seed": request.seed,
-            "rotation": rotation,
-            "display_ids": target_display_ids,
-            "generation_time_seconds": round(perf_counter() - generation_started_at, 2),
-            "display": (
-                {"name": profile.name, "width": profile.width, "height": profile.height}
-                if profile is not None else None
-            ),
-        })
-        master_jpeg = embed_jpeg_metadata(
-            to_jpeg(image, width=image.width, height=image.height, quality=95), metadata,
-        )
-        ensure_not_cancelled()
-        latest_image = latest_image_store.set(master_jpeg, target_display_ids)
-        if auto_save_images:
+        source_aspect_mode = "crop" if broadcast_aspect_mode == "separate" else broadcast_aspect_mode
+        first_preview: bytes | None = None
+        first_profile: DisplayDevice | None = None
+        first_rotation = display_settings_store.get_rotation()
+
+        for group_index, group in enumerate(target_groups, start=1):
+            ensure_not_cancelled()
+            profile = group[0] if group else active_display_store.get()
+            output_width = profile.width if profile else settings.output_width
+            output_height = profile.height if profile else settings.output_height
+            rotation = profile.rotation if isinstance(profile, DisplayDevice) else display_settings_store.get_rotation()
+            artwork_width, artwork_height = (
+                (output_height, output_width) if rotation in {90, 270} else (output_width, output_height)
+            )
+            generation_width, generation_height = optimal_generation_size(
+                job_model_id, artwork_width, artwork_height,
+            )
+            group_label = (
+                f" {group_index} of {len(target_groups)}"
+                if len(target_groups) > 1 else ""
+            )
             if progress is not None:
-                progress(1, 1, "Saving image to your Creation Gallery")
-            image_library.save(master_jpeg, metadata)
-        jpeg, _ = rendered_jpeg(
-            latest_image,
-            width=output_width,
-            height=output_height,
-            rotation=rotation,
-        )
-        return jpeg
+                progress(0, 0, f"Preparing the image model{group_label}")
+            image = generator.generate(
+                request.prompt,
+                generation_width,
+                generation_height,
+                progress=(
+                    lambda step, total, label=group_label: progress(
+                        step, total, f"Generating image{label}",
+                    )
+                ) if progress else None,
+                inference_steps=steps,
+                seed=request.seed,
+                cancelled=is_cancelled,
+                negative_prompt=request.negative_prompt,
+            )
+            ensure_not_cancelled()
+            if image.convert("RGB").getbbox() is None:
+                raise RuntimeError("The model returned a blank image. Please try generating again.")
+            if progress is not None:
+                progress(1, 1, f"Saving source artwork and preparing display JPEGs{group_label}")
+
+            group_target_ids = [display.id for display in group] if target_display_ids is not None else None
+            metadata = {
+                "version": 1,
+                "createdAt": datetime.now(UTC).isoformat(),
+                "model": {"id": job_model_id, "name": model.name},
+                "prompt": request.prompt,
+                "negative_prompt": request.negative_prompt,
+                "steps": steps,
+                "seed": request.seed,
+                "rotation": rotation,
+                "display_ids": group_target_ids,
+                "broadcast_aspect_mode": broadcast_aspect_mode,
+                "generation_time_seconds": round(perf_counter() - generation_started_at, 2),
+                "display": (
+                    {"name": profile.name, "width": profile.width, "height": profile.height}
+                    if profile is not None else None
+                ),
+            }
+            master_jpeg = embed_jpeg_metadata(
+                to_jpeg(image, width=image.width, height=image.height, quality=95), metadata,
+            )
+            ensure_not_cancelled()
+            latest_image = latest_image_store.set(
+                master_jpeg,
+                group_target_ids,
+                aspect_mode=source_aspect_mode,
+            )
+            if auto_save_images:
+                if progress is not None:
+                    progress(1, 1, f"Saving image to your Creation Gallery{group_label}")
+                image_library.save(master_jpeg, metadata)
+            if first_preview is None:
+                first_preview, _ = rendered_jpeg(
+                    latest_image,
+                    width=output_width,
+                    height=output_height,
+                    rotation=rotation,
+                    aspect_mode=source_aspect_mode,
+                )
+                first_profile = profile if isinstance(profile, DisplayDevice) else None
+                first_rotation = rotation
+
+        if generation_metadata is not None:
+            generation_metadata.update({
+                "version": 1,
+                "createdAt": datetime.now(UTC).isoformat(),
+                "model": {"id": job_model_id, "name": model.name},
+                "prompt": request.prompt,
+                "negative_prompt": request.negative_prompt,
+                "steps": steps,
+                "seed": request.seed,
+                "rotation": first_rotation,
+                "display_ids": target_display_ids,
+                "broadcast_aspect_mode": broadcast_aspect_mode,
+                "separate_artwork_count": len(target_groups),
+                "generation_time_seconds": round(perf_counter() - generation_started_at, 2),
+                "display": (
+                    {"name": first_profile.name, "width": first_profile.width, "height": first_profile.height}
+                    if first_profile is not None else None
+                ),
+            })
+        if first_preview is None:
+            raise RuntimeError("The model did not produce an image")
+        return first_preview
 
     @app.post("/generate", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
     async def generate(request: GenerateRequest) -> Response:
         if generation_queue.has_active_job():
             raise HTTPException(status_code=409, detail="Wait for queued generation work to finish before using the direct image endpoint")
         target_displays = requested_target_displays(request.display_ids)
-        generation_display_for(target_displays)
+        broadcast_aspect_mode = resolve_broadcast_aspect_mode(
+            target_displays, request.broadcast_aspect_mode, allow_separate=True,
+        )
         target_display_ids = [display.id for display in target_displays] if request.display_ids is not None else None
         requested_model_id = request.model_id or active_model_id
         try:
@@ -1544,6 +1639,7 @@ def create_app(
                 None,
                 target_displays,
                 target_display_ids,
+                broadcast_aspect_mode,
             )
         except RuntimeError as exc:
             logger.exception("Image generation failed")
@@ -1557,7 +1653,9 @@ def create_app(
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
         nonlocal active_model_id, active_settings
         target_displays = requested_target_displays(request.display_ids)
-        generation_display_for(target_displays)
+        broadcast_aspect_mode = resolve_broadcast_aspect_mode(
+            target_displays, request.broadcast_aspect_mode, allow_separate=True,
+        )
         target_display_ids = [display.id for display in target_displays] if request.display_ids is not None else None
         job_model_id = request.model_id or active_model_id
         try:
@@ -1571,6 +1669,7 @@ def create_app(
             "label": request.prompt[:80],
             "model_id": job_model_id,
             "display_ids": target_display_ids,
+            "broadcast_aspect_mode": broadcast_aspect_mode,
         }
         job = generation_queue.create(
             "image",
@@ -1585,6 +1684,7 @@ def create_app(
                     image_metadata,
                     target_displays,
                     target_display_ids,
+                    broadcast_aspect_mode,
                 ),
             )[1],
             image_metadata,

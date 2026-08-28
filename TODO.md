@@ -31,8 +31,8 @@ the shared dimensions, rotation, JPEG, SD-card report, and command queue.
    retain a master creation, then lazily produce and cache a JPEG for each
    display's native dimensions, rotation, and JPEG quality. Each ETag includes
    the artwork revision and target settings. Generation and saved-image actions
-   accept optional target display IDs; explicit multi-target generation is
-   limited to matching aspect ratios until the broadcast crop/fit policy lands.
+   accept optional target display IDs; each assignment also retains its chosen
+   crop or fit treatment so an ESP32 always receives its native JPEG.
 
 4. **P1 — Make display commands and SD-card state per device.** **Complete:**
    commands, acknowledgements, SD-card reports, experience settings,
@@ -46,11 +46,11 @@ the shared dimensions, rotation, JPEG, SD-card report, and command queue.
    SD-card management, and offline-experience settings visibly use one
    selected display at a time.
 
-6. **P2 — Define the broadcast-aspect policy.** Broadcasting one generated
-   composition to portrait and landscape screens requires crop/fit behavior or
-   separate generation. Default broadcasts to compatible aspect-ratio groups;
-   require an explicit user choice before cropping displays with different
-   aspect ratios.
+6. **P2 — Define the broadcast-aspect policy.** **Complete:** mixed-shape
+   target selections require an explicit choice: center-crop one composition,
+   fit one composition with black borders, or generate separate compositions
+   for each aspect-ratio group. Existing Creation Gallery images support crop
+   and fit; separate artwork is intentionally limited to new generation.
 
 7. **P1 — Update the ESP32 firmware API client.** Automatically register each
    board's stable eFuse MAC address, then use its MAC-identified scoped routes

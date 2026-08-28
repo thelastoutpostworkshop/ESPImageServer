@@ -36,6 +36,7 @@ class FakeGenerator:
         self.last_size: tuple[int | None, int | None] | None = None
         self.last_steps: int | None = None
         self.last_seed: int | None = None
+        self.generate_calls = 0
 
     def load(self) -> None:
         self.ready = True
@@ -49,6 +50,7 @@ class FakeGenerator:
 
     def generate(self, prompt: str, width: int | None = None, height: int | None = None, progress=None, inference_steps=None, seed=None, cancelled=None, negative_prompt=None) -> Image.Image:
         assert prompt == "a tiny robot"
+        self.generate_calls += 1
         self.last_size = (width, height)
         self.last_steps, self.last_seed = inference_steps, seed
         if progress is not None:
@@ -892,7 +894,8 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
 
 
 def test_registered_displays_receive_native_renditions_with_independent_etags() -> None:
-    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    generator = FakeGenerator()
+    app = create_app(Settings(), generator, enable_mdns=False)
     with TestClient(app) as client:
         kitchen = client.post("/displays/register", json={
             "hardware_id": "aa:bb:cc:dd:ee:03",
@@ -936,6 +939,36 @@ def test_registered_displays_receive_native_renditions_with_independent_etags() 
             "/generate",
             json={"prompt": "a tiny robot", "display_ids": [kitchen_id, office_id]},
         )
+        cropped = client.post(
+            "/generate",
+            json={
+                "prompt": "a tiny robot",
+                "display_ids": [kitchen_id, office_id],
+                "broadcast_aspect_mode": "crop",
+            },
+        )
+        kitchen_cropped = client.get(f"/displays/{kitchen_id}/latest.jpg")
+        office_cropped = client.get(f"/displays/{office_id}/latest.jpg")
+        fitted = client.post(
+            "/generate",
+            json={
+                "prompt": "a tiny robot",
+                "display_ids": [kitchen_id, office_id],
+                "broadcast_aspect_mode": "fit",
+            },
+        )
+        office_fitted = client.get(f"/displays/{office_id}/latest.jpg")
+        calls_before_separate = generator.generate_calls
+        separate = client.post(
+            "/generate",
+            json={
+                "prompt": "a tiny robot",
+                "display_ids": [kitchen_id, office_id],
+                "broadcast_aspect_mode": "separate",
+            },
+        )
+        kitchen_separate = client.get(f"/displays/{kitchen_id}/latest.jpg")
+        office_separate = client.get(f"/displays/{office_id}/latest.jpg")
 
     assert kitchen_latest.status_code == 200
     assert Image.open(BytesIO(kitchen_latest.content)).size == (480, 272)
@@ -948,6 +981,16 @@ def test_registered_displays_receive_native_renditions_with_independent_etags() 
     assert kitchen_still_unchanged.status_code == 304
     assert office_after_targeted_generation.headers["etag"] != office_latest.headers["etag"]
     assert incompatible_targeting.status_code == 422
+    assert cropped.status_code == 200
+    assert Image.open(BytesIO(kitchen_cropped.content)).size == (480, 272)
+    assert Image.open(BytesIO(office_cropped.content)).size == (320, 820)
+    assert fitted.status_code == 200
+    fitted_pixel = Image.open(BytesIO(office_fitted.content)).convert("RGB").getpixel((0, 0))
+    assert max(fitted_pixel) < 8
+    assert separate.status_code == 200
+    assert generator.generate_calls - calls_before_separate == 2
+    assert Image.open(BytesIO(kitchen_separate.content)).size == (480, 272)
+    assert Image.open(BytesIO(office_separate.content)).size == (320, 820)
 
 
 def test_saved_image_can_target_registered_displays_and_use_their_rendition_route(tmp_path) -> None:
@@ -981,9 +1024,25 @@ def test_saved_image_can_target_registered_displays_and_use_their_rendition_rout
         saved_for_office = client.get(
             f"/displays/{office['id']}/saved-images/{record['id']}/image?width=320&height=820",
         )
+        mixed_without_policy = client.post(
+            f"/saved-images/{record['id']}/display",
+            json={"display_ids": [kitchen['id'], office['id']]},
+        )
+        mixed_fitted = client.post(
+            f"/saved-images/{record['id']}/display",
+            json={
+                "display_ids": [kitchen['id'], office['id']],
+                "broadcast_aspect_mode": "fit",
+            },
+        )
+        kitchen_fitted = client.get(f"/displays/{kitchen['id']}/latest.jpg")
 
     assert selected.status_code == 202
     assert selected.json()["display_ids"] == [office["id"]]
     assert kitchen_latest.status_code == 204
     assert Image.open(BytesIO(office_latest.content)).size == (320, 820)
     assert Image.open(BytesIO(saved_for_office.content)).size == (320, 820)
+    assert mixed_without_policy.status_code == 422
+    assert mixed_fitted.status_code == 202
+    assert Image.open(BytesIO(kitchen_fitted.content)).size == (480, 272)
+    assert max(Image.open(BytesIO(kitchen_fitted.content)).convert("RGB").getpixel((0, 0))) < 8
