@@ -14,6 +14,7 @@ const imageLibraryViewSettingsKey = 'esp-image-server.image-library-view'
 const imageLibraryWidthSettingsKey = 'esp-image-server.image-library-width'
 const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thumbnail-size'
 const sdCardItemsPerPageSettingsKey = 'esp-image-server.sd-card-items-per-page'
+const activeDisplaySettingsKey = 'esp-image-server.active-display-id'
 const mobileAccessPromptDismissedSettingsKey = 'esp-image-server.mobile-access-prompt-dismissed'
 const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b', 'hunyuanvideo-1.5-480p']
 
@@ -76,8 +77,8 @@ const negativePrompt = ref(savedGenerationSettings.negativePrompt)
 const serverInfo = ref(null)
 const health = ref(null)
 const displays = ref([])
-const selectedDisplayIds = ref([])
-const broadcastAspectMode = ref('')
+const activeDisplayId = ref(window.localStorage.getItem(activeDisplaySettingsKey) || '')
+const displayPickerOpen = ref(false)
 const legacyDisplay = ref(null)
 const displayConnectedSnackbar = ref(false)
 const displayConnectedMessage = ref('')
@@ -221,7 +222,6 @@ let imagePreviewRequestId = 0
 let videoPreviewRequestId = 0
 let loadingImageGenerationJobId = ''
 let loadingVideoGenerationJobId = ''
-let displayTargetsInitialized = false
 const { smAndDown: compact } = useDisplay()
 const creationLibraryTemporary = computed(() => compact.value || !metadataPanePinned.value)
 const mobileAccessUrl = computed(() => {
@@ -229,77 +229,27 @@ const mobileAccessUrl = computed(() => {
   return `http://espimageserver.local:${port}`
 })
 const mobileAccessFallbackUrl = computed(() => serverInfo.value?.local_network_url || '')
-const selectedRegisteredDisplays = computed(() => {
-  const selectedIds = new Set(selectedDisplayIds.value)
-  return displays.value.filter(display => selectedIds.has(display.id))
-})
 const selectedRegisteredDisplay = computed(() => (
-  selectedRegisteredDisplays.value.length === 1 ? selectedRegisteredDisplays.value[0] : null
+  displays.value.find(display => display.id === activeDisplayId.value) || null
 ))
 const display = computed(() => {
   const selected = selectedRegisteredDisplay.value
   if (selected) return { ...selected, connected: true }
-  return selectedDisplayIds.value.length ? null : legacyDisplay.value
+  return activeDisplayId.value ? null : legacyDisplay.value
 })
-const hasDisplayTargets = computed(() => selectedRegisteredDisplays.value.length > 0)
-const selectedTargetDisplayIds = computed(() => selectedRegisteredDisplays.value.map(display => display.id))
-const selectedTargetsHaveCompatibleAspect = computed(() => {
-  const targets = selectedRegisteredDisplays.value
-  if (targets.length < 2) return true
-  const [first] = targets
-  const firstWidth = first.rotation === 90 || first.rotation === 270 ? first.height : first.width
-  const firstHeight = first.rotation === 90 || first.rotation === 270 ? first.width : first.height
-  return targets.slice(1).every(display => {
-    const width = display.rotation === 90 || display.rotation === 270 ? display.height : display.width
-    const height = display.rotation === 90 || display.rotation === 270 ? display.width : display.height
-    return width * firstHeight === height * firstWidth
-  })
-})
-const requiresBroadcastAspectPolicy = computed(() => (
-  hasDisplayTargets.value && !selectedTargetsHaveCompatibleAspect.value
+const hasDisplayTargets = computed(() => Boolean(selectedRegisteredDisplay.value))
+const selectedTargetDisplayIds = computed(() => (
+  selectedRegisteredDisplay.value ? [selectedRegisteredDisplay.value.id] : []
 ))
-const selectedBroadcastAspectMode = computed(() => (
-  requiresBroadcastAspectPolicy.value ? broadcastAspectMode.value : 'crop'
-))
-const canShowSavedImageOnTargets = computed(() => (
-  !requiresBroadcastAspectPolicy.value || (
-    Boolean(broadcastAspectMode.value) && broadcastAspectMode.value !== 'separate'
-  )
-))
-const broadcastAspectOptions = [
-  {
-    title: 'Crop to fill every screen',
-    value: 'crop',
-    subtitle: 'One artwork fills every display. Edges may be trimmed on screens with a different shape.'
-  },
-  {
-    title: 'Fit with black borders',
-    value: 'fit',
-    subtitle: 'One artwork stays fully visible. Black bars fill unused space on different screen shapes.'
-  },
-  {
-    title: 'Generate separate artwork',
-    value: 'separate',
-    subtitle: 'Creates one new composition for each screen shape. This takes one generation per shape.'
-  }
-]
-const displayTargetOptions = computed(() => displays.value.map(display => ({
-  title: `${display.online ? 'Online' : 'Offline'} · ${display.name} · ${display.width} × ${display.height} · v${display.firmware_version}`,
-  value: display.id,
-  props: { subtitle: display.online ? 'Online' : 'Offline' }
-})))
 const displayTargetLabel = computed(() => {
-  if (selectedRegisteredDisplays.value.length > 1) return `${selectedRegisteredDisplays.value.length} displays selected`
   if (display.value?.connected) return `${display.value.name} · ${display.value.width}×${display.value.height} · v${display.value.firmware_version}`
-  return displays.value.length ? 'Choose display targets' : 'Display waiting'
+  return displays.value.length ? 'Choose active display' : 'Display waiting'
 })
 const displayManagementLabel = computed(() => {
   if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height}`
-  if (selectedRegisteredDisplays.value.length > 1) return 'Choose one display to manage these settings'
   return 'No display selected'
 })
 const compactDisplayLabel = computed(() => {
-  if (selectedRegisteredDisplays.value.length > 1) return `${selectedRegisteredDisplays.value.length} displays`
   if (!display.value?.connected) return displays.value.length ? 'Choose display' : 'Display waiting'
   return `${display.value.name} · connected`
 })
@@ -632,7 +582,9 @@ watch(page, (nextPage, previousPage) => {
   updateConsoleRefresh()
 })
 
-watch(selectedDisplayIds, () => {
+watch(activeDisplayId, displayId => {
+  if (displayId) window.localStorage.setItem(activeDisplaySettingsKey, displayId)
+  else window.localStorage.removeItem(activeDisplaySettingsKey)
   displayExperiencePreviewing.value = false
   if (!display.value?.connected) {
     displayRotation.value = 0
@@ -642,15 +594,12 @@ watch(selectedDisplayIds, () => {
   void loadDisplaySettings()
   void loadDisplaySdCard()
   if (page.value === 'display-experience') void loadDisplayExperience()
-}, { deep: true })
+})
 
 const displayMessage = computed(() => {
-  if (selectedRegisteredDisplays.value.length > 1) {
-    return `${selectedRegisteredDisplays.value.length} displays selected for image targeting. Choose one display to manage its rotation, SD card, or offline experience.`
-  }
   if (!display.value?.connected) {
     return displays.value.length
-      ? 'Choose a display to manage its settings, or select several to target an image generation.'
+      ? 'Choose an active display to manage its settings and receive generated images.'
       : 'Waiting for the ESP32 board to report its integrated display...'
   }
   const firmwareVersion = display.value.firmware_version
@@ -671,12 +620,9 @@ function displaySdCardThumbnailUrl(filename) {
   return selectedDisplayEndpoint(`/display-sd-card/thumbnails/${encodeURIComponent(filename)}`)
 }
 
-function selectAllDisplays() {
-  selectedDisplayIds.value = displays.value.map(display => display.id)
-}
-
-function clearDisplaySelection() {
-  selectedDisplayIds.value = []
+function selectActiveDisplay(displayId) {
+  activeDisplayId.value = displayId
+  displayPickerOpen.value = false
 }
 
 async function loadDisplay() {
@@ -693,13 +639,8 @@ async function loadDisplay() {
     displays.value = nextDisplays
     legacyDisplay.value = !nextDisplays.length && legacyResponse.ok ? await legacyResponse.json() : null
     const availableIds = new Set(nextDisplays.map(display => display.id))
-    selectedDisplayIds.value = selectedDisplayIds.value.filter(displayId => availableIds.has(displayId))
-    if (nextDisplays.length) {
-      if (!displayTargetsInitialized && !selectedDisplayIds.value.length) {
-        selectedDisplayIds.value = [nextDisplays[0].id]
-      }
-      displayTargetsInitialized = true
-    }
+    if (activeDisplayId.value && !availableIds.has(activeDisplayId.value)) activeDisplayId.value = ''
+    if (nextDisplays.length && !activeDisplayId.value) activeDisplayId.value = nextDisplays[0].id
     const nextDisplay = display.value
     const nextKey = nextDisplay?.connected
       ? `${nextDisplay.id || 'legacy'}:${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}:${nextDisplay.firmware_version}`
@@ -712,7 +653,7 @@ async function loadDisplay() {
   } catch {
     displays.value = []
     legacyDisplay.value = null
-    selectedDisplayIds.value = []
+    activeDisplayId.value = ''
   }
 }
 
@@ -1833,12 +1774,6 @@ async function useSelectedSavedImageSettings() {
 
 async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
   if (!savedImage || !hasDisplayTargets.value || showingSavedImageOnDisplay.value) return
-  if (!canShowSavedImageOnTargets.value) {
-    error.value = broadcastAspectMode.value === 'separate'
-      ? 'Separate artwork creates new images. Choose Crop or Fit before sending an existing Creation Gallery image.'
-      : 'Choose Crop or Fit for the selected mixed-shape displays before sending this image.'
-    return
-  }
   showingSavedImageOnDisplay.value = true
   error.value = ''
   try {
@@ -1846,15 +1781,14 @@ async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        display_ids: selectedTargetDisplayIds.value,
-        broadcast_aspect_mode: selectedBroadcastAspectMode.value
+        display_ids: selectedTargetDisplayIds.value
       })
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Could not send image to display (${response.status})`)
     }
-    status.value = `Selected image is ready for ${selectedTargetDisplayIds.value.length === 1 ? display.value?.name : `${selectedTargetDisplayIds.value.length} displays`}.`
+    status.value = `Selected image is ready for ${display.value?.name}.`
   } catch (requestError) {
     error.value = `Could not show the saved image on your display: ${requestError.message}`
   } finally {
@@ -2125,9 +2059,6 @@ async function generate() {
   let job
   try {
     if (!models.value.some(model => model.id === activeModelId.value)) throw new Error('Choose an image model before generating.')
-    if (requiresBroadcastAspectPolicy.value && !broadcastAspectMode.value) {
-      throw new Error('Choose how one image should reach the selected mixed-shape displays.')
-    }
     if (!alreadyShowingImageProgress) generationStage.value = 'Adding image to the queue...'
     const response = await fetch('/generation-jobs', {
       method: 'POST',
@@ -2139,10 +2070,7 @@ async function generate() {
         steps: Number(steps.value),
         seed: seed.value === '' ? null : Number(seed.value),
         ...(hasDisplayTargets.value
-          ? {
-              display_ids: selectedTargetDisplayIds.value,
-              broadcast_aspect_mode: selectedBroadcastAspectMode.value
-            }
+          ? { display_ids: selectedTargetDisplayIds.value }
           : {})
       })
     })
@@ -2153,7 +2081,7 @@ async function generate() {
     job = await response.json()
     if (!activeJobId.value) activeJobId.value = job.id
     activeImageJobRunning.value = ['queued', 'running', 'cancelling'].includes(job.status)
-    status.value = `${selectedBroadcastAspectMode.value === 'separate' ? 'Separate artwork job added to the queue' : 'Image job added to the queue'}${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
+    status.value = `Image job added to the queue${job.queue_position ? ` (position ${job.queue_position})` : ''}.`
     showQueueAddedFeedback('Image', job.queue_position)
     await loadGenerationQueue()
     let currentJob = job
@@ -2431,9 +2359,39 @@ onUnmounted(() => {
       <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.label" @click="openActiveGeneration">
         <span>{{ compact ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
-      <v-chip class="app-bar__display-chip" :color="hasDisplayTargets || display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="hasDisplayTargets || display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :link="!hasDisplayTargets && !display?.connected" :aria-label="displayTargetLabel" :title="displayTargetLabel" @click="!hasDisplayTargets && !display?.connected && openDisplayHelp()">
-        <span class="app-bar__display-label">{{ compact ? compactDisplayLabel : displayTargetLabel }}</span>
-      </v-chip>
+      <v-menu v-model="displayPickerOpen" location="bottom start" :close-on-content-click="true">
+        <template #activator="{ props }">
+          <v-chip v-bind="props" class="app-bar__display-chip" :color="hasDisplayTargets || display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="hasDisplayTargets || display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :aria-label="displayTargetLabel" :title="`${displayTargetLabel}. Choose active display.`">
+            <span class="app-bar__display-label">{{ compact ? compactDisplayLabel : displayTargetLabel }}</span>
+          </v-chip>
+        </template>
+        <v-card min-width="300" max-width="420">
+          <v-card-title class="text-subtitle-1">Active display</v-card-title>
+          <v-card-subtitle>Images, videos, and display controls use this screen.</v-card-subtitle>
+          <v-list v-if="displays.length" density="comfortable" class="mt-2">
+            <v-list-item
+              v-for="target in displays"
+              :key="target.id"
+              :active="target.id === activeDisplayId"
+              @click="selectActiveDisplay(target.id)"
+            >
+              <template #prepend><v-icon :color="target.online ? 'success' : 'warning'">{{ target.online ? 'mdi-monitor-check' : 'mdi-monitor-off' }}</v-icon></template>
+              <v-list-item-title>{{ target.name }}</v-list-item-title>
+              <v-list-item-subtitle>{{ target.width }} × {{ target.height }} · v{{ target.firmware_version }} · {{ target.online ? 'Online' : 'Last seen earlier' }}</v-list-item-subtitle>
+              <template #append><v-icon v-if="target.id === activeDisplayId" color="primary">mdi-check</v-icon></template>
+            </v-list-item>
+          </v-list>
+          <v-card-text v-else class="pt-2">
+            <v-alert type="info" variant="tonal" density="compact">
+              Turn on an ESP32 display to choose it here.
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn variant="text" @click="displays.length ? openDisplayExperiencePage() : openDisplayHelp()">Display settings</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-menu>
       <v-spacer />
       <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
     </v-app-bar>
@@ -2659,7 +2617,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="selectedTargetDisplayIds.length > 1 ? 'Show on selected displays' : 'Show on display'" :disabled="!hasDisplayTargets || !canShowSavedImageOnTargets || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
+        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" title="Show on active display" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'mdi-check-circle' : 'mdi-sd'"
@@ -2945,84 +2903,21 @@ onUnmounted(() => {
               >
                 <strong>Image processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
               </v-alert>
-              <v-card variant="outlined" class="mb-4">
-                <v-card-title class="text-subtitle-1 d-flex align-center">
-                  Display targets
-                  <v-spacer />
-                  <v-chip v-if="selectedTargetDisplayIds.length" size="small" color="primary" variant="tonal">
-                    {{ selectedTargetDisplayIds.length === 1 ? '1 display' : `${selectedTargetDisplayIds.length} displays` }}
-                  </v-chip>
-                </v-card-title>
-                <v-card-text class="pt-0">
-                  <v-alert v-if="!displays.length" type="info" variant="tonal" density="compact">
-                    Turn on an ESP32 display to target it. Until then, generation uses the legacy display setting.
-                  </v-alert>
-                  <template v-else>
-                    <v-select
-                      v-model="selectedDisplayIds"
-                      :items="displayTargetOptions"
-                      label="Send this image to"
-                      multiple
-                      chips
-                      closable-chips
-                      variant="outlined"
-                      density="comfortable"
-                      :disabled="generationBusy"
-                      hint="Select one screen, several screens, or all displays."
-                      persistent-hint
-                    />
-                    <div class="d-flex flex-wrap ga-2 mt-3">
-                      <v-btn size="small" variant="tonal" prepend-icon="mdi-select-all" :disabled="generationBusy" @click="selectAllDisplays">All displays</v-btn>
-                      <v-btn size="small" variant="text" :disabled="generationBusy || !selectedDisplayIds.length" @click="clearDisplaySelection">Clear selection</v-btn>
-                    </div>
-                    <v-list density="compact" class="border rounded mt-3">
-                      <v-list-item v-for="target in displays" :key="target.id">
-                        <template #prepend><v-icon :color="target.online ? 'success' : 'warning'">{{ target.online ? 'mdi-monitor-check' : 'mdi-monitor-off' }}</v-icon></template>
-                        <v-list-item-title>{{ target.name }} · {{ target.width }} × {{ target.height }} · v{{ target.firmware_version }}</v-list-item-title>
-                        <v-list-item-subtitle>Last seen {{ formatDateTime(target.last_seen) }}</v-list-item-subtitle>
-                        <template #append><v-chip size="x-small" :color="target.online ? 'success' : 'warning'" variant="tonal">{{ target.online ? 'Online' : 'Offline' }}</v-chip></template>
-                      </v-list-item>
-                    </v-list>
-                    <v-alert v-if="!selectedTargetDisplayIds.length" type="warning" variant="tonal" density="compact" class="mt-3">
-                      Select at least one registered display before generating for multiple screens.
-                    </v-alert>
-                    <template v-else-if="requiresBroadcastAspectPolicy">
-                      <v-alert type="info" variant="tonal" density="compact" class="mt-3">
-                        These screens have different shapes. Choose how this broadcast should reach each one.
-                      </v-alert>
-                      <v-radio-group v-model="broadcastAspectMode" :disabled="generationBusy" class="mt-2" hide-details>
-                        <v-radio
-                          v-for="option in broadcastAspectOptions"
-                          :key="option.value"
-                          :value="option.value"
-                          :label="option.title"
-                          color="primary"
-                        >
-                          <template #label>
-                            <div>
-                              <div>{{ option.title }}</div>
-                              <div class="text-caption text-medium-emphasis">{{ option.subtitle }}</div>
-                            </div>
-                          </template>
-                        </v-radio>
-                      </v-radio-group>
-                      <div v-if="broadcastAspectMode === 'separate'" class="text-caption text-medium-emphasis mt-2">
-                        Separate artwork applies to a new generation. To show an existing Creation Gallery image, choose Crop or Fit.
-                      </div>
-                    </template>
-                    <div v-else class="text-caption text-medium-emphasis mt-3">
-                      {{ selectedTargetDisplayIds.length === 1 ? 'Rotation and SD-card controls below apply to this selected display.' : 'Rotation and SD-card controls require one selected display.' }}
-                    </div>
-                  </template>
-                </v-card-text>
-              </v-card>
+              <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-dashboard">
+                <template v-if="display?.connected">
+                  Images will be sent to <strong>{{ display.name }}</strong> ({{ display.width }} × {{ display.height }}). Choose a different active display from the app bar.
+                </template>
+                <template v-else>
+                  Turn on an ESP32 display, then choose it from the Active display menu in the app bar.
+                </template>
+              </v-alert>
               <v-select
                 :model-value="displayRotation"
                 :items="rotationOptions"
                 :label="display?.connected ? `Image rotation for ${display.name}` : 'Image rotation'"
                 variant="outlined"
                 density="comfortable"
-                :disabled="generationBusy || Boolean(selectedDisplayIds.length && !display?.connected)"
+                :disabled="generationBusy || Boolean(displays.length && !display?.connected)"
                 :hint="display?.connected ? 'Applied by ESPImageServer before the JPEG is sent. Your ESP32 firmware does not need to change.' : 'Choose one display to change its rotation.'"
                 persistent-hint
                 class="mb-4"
@@ -3076,7 +2971,7 @@ onUnmounted(() => {
                 </v-col>
               </v-row>
               <div class="generation-form-actions">
-                <v-btn type="submit" color="primary" :disabled="models.length === 0 || (requiresBroadcastAspectPolicy && !broadcastAspectMode) || Boolean(displays.length && !selectedTargetDisplayIds.length)" prepend-icon="mdi-image-plus">
+                <v-btn type="submit" color="primary" :disabled="models.length === 0 || Boolean(displays.length && !hasDisplayTargets)" prepend-icon="mdi-image-plus">
                   {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
                 </v-btn>
                 <v-btn v-if="generating" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
@@ -3136,8 +3031,8 @@ onUnmounted(() => {
             <v-btn v-if="selectedSavedImage" color="primary" prepend-icon="mdi-restore" @click="useSelectedSavedImageSettings">
               Use saved settings
             </v-btn>
-            <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets || !canShowSavedImageOnTargets" @click="showSavedImageOnDisplay()">
-              {{ selectedTargetDisplayIds.length > 1 ? 'Show on selected displays' : 'Show on display' }}
+            <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets" @click="showSavedImageOnDisplay()">
+              Show on active display
             </v-btn>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG

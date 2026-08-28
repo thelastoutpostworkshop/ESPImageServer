@@ -41,16 +41,17 @@ the shared dimensions, rotation, JPEG, SD-card report, and command queue.
 
 5. **P2 — Add multi-display targeting to the web app.** **Complete:** the
    image generator shows registered screens with connection status, dimensions,
-   firmware, and last-seen time. It supports selecting one, several, or all
-   displays; generation and saved-image actions use those targets. Rotation,
-   SD-card management, and offline-experience settings visibly use one
-   selected display at a time.
+   firmware, and last-seen time. A persistent app-bar selector chooses one
+   active display for generation, saved-image actions, rotation, SD-card
+   management, and offline-experience settings at a time.
 
 6. **P2 — Define the broadcast-aspect policy.** **Complete:** mixed-shape
    target selections require an explicit choice: center-crop one composition,
    fit one composition with black borders, or generate separate compositions
    for each aspect-ratio group. Existing Creation Gallery images support crop
-   and fit; separate artwork is intentionally limited to new generation.
+   and fit; separate artwork is intentionally limited to new generation. The
+   web app deliberately selects one active display at a time, while the API
+   retains this policy for automation and future advanced workflows.
 
 7. **P1 — Update the ESP32 firmware API client.** Automatically register each
    board's stable eFuse MAC address, then use its MAC-identified scoped routes
