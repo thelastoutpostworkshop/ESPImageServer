@@ -75,7 +75,9 @@ const prompt = ref(savedGenerationSettings.prompt)
 const negativePrompt = ref(savedGenerationSettings.negativePrompt)
 const serverInfo = ref(null)
 const health = ref(null)
-const display = ref(null)
+const displays = ref([])
+const selectedDisplayIds = ref([])
+const legacyDisplay = ref(null)
 const displayConnectedSnackbar = ref(false)
 const displayConnectedMessage = ref('')
 const generationQueueSnackbar = ref(false)
@@ -218,6 +220,7 @@ let imagePreviewRequestId = 0
 let videoPreviewRequestId = 0
 let loadingImageGenerationJobId = ''
 let loadingVideoGenerationJobId = ''
+let displayTargetsInitialized = false
 const { smAndDown: compact } = useDisplay()
 const creationLibraryTemporary = computed(() => compact.value || !metadataPanePinned.value)
 const mobileAccessUrl = computed(() => {
@@ -225,8 +228,50 @@ const mobileAccessUrl = computed(() => {
   return `http://espimageserver.local:${port}`
 })
 const mobileAccessFallbackUrl = computed(() => serverInfo.value?.local_network_url || '')
+const selectedRegisteredDisplays = computed(() => {
+  const selectedIds = new Set(selectedDisplayIds.value)
+  return displays.value.filter(display => selectedIds.has(display.id))
+})
+const selectedRegisteredDisplay = computed(() => (
+  selectedRegisteredDisplays.value.length === 1 ? selectedRegisteredDisplays.value[0] : null
+))
+const display = computed(() => {
+  const selected = selectedRegisteredDisplay.value
+  if (selected) return { ...selected, connected: true }
+  return selectedDisplayIds.value.length ? null : legacyDisplay.value
+})
+const hasDisplayTargets = computed(() => selectedRegisteredDisplays.value.length > 0)
+const selectedTargetDisplayIds = computed(() => selectedRegisteredDisplays.value.map(display => display.id))
+const selectedTargetsHaveCompatibleAspect = computed(() => {
+  const targets = selectedRegisteredDisplays.value
+  if (targets.length < 2) return true
+  const [first] = targets
+  const firstWidth = first.rotation === 90 || first.rotation === 270 ? first.height : first.width
+  const firstHeight = first.rotation === 90 || first.rotation === 270 ? first.width : first.height
+  return targets.slice(1).every(display => {
+    const width = display.rotation === 90 || display.rotation === 270 ? display.height : display.width
+    const height = display.rotation === 90 || display.rotation === 270 ? display.width : display.height
+    return width * firstHeight === height * firstWidth
+  })
+})
+const displayTargetOptions = computed(() => displays.value.map(display => ({
+  title: `${display.online ? 'Online' : 'Offline'} · ${display.name} · ${display.width} × ${display.height} · v${display.firmware_version}`,
+  value: display.id,
+  props: { subtitle: display.online ? 'Online' : 'Offline' }
+})))
+const displayTargetLabel = computed(() => {
+  if (selectedRegisteredDisplays.value.length > 1) return `${selectedRegisteredDisplays.value.length} displays selected`
+  if (display.value?.connected) return `${display.value.name} · ${display.value.width}×${display.value.height} · v${display.value.firmware_version}`
+  return displays.value.length ? 'Choose display targets' : 'Display waiting'
+})
+const displayManagementLabel = computed(() => {
+  if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height}`
+  if (selectedRegisteredDisplays.value.length > 1) return 'Choose one display to manage these settings'
+  return 'No display selected'
+})
 const compactDisplayLabel = computed(() => {
-  if (!display.value?.connected) return 'Display waiting'
+  if (selectedRegisteredDisplays.value.length > 1) return `${selectedRegisteredDisplays.value.length} displays`
+  if (!display.value?.connected) return displays.value.length ? 'Choose display' : 'Display waiting'
   return `${display.value.name} · connected`
 })
 const selectedImageModelName = computed(() => models.value.find(model => model.id === activeModelId.value)?.name || 'image model')
@@ -558,31 +603,97 @@ watch(page, (nextPage, previousPage) => {
   updateConsoleRefresh()
 })
 
+watch(selectedDisplayIds, () => {
+  displayExperiencePreviewing.value = false
+  if (!display.value?.connected) {
+    displayRotation.value = 0
+    displaySdCard.value = { available: false, files: [] }
+    return
+  }
+  void loadDisplaySettings()
+  void loadDisplaySdCard()
+  if (page.value === 'display-experience') void loadDisplayExperience()
+}, { deep: true })
+
 const displayMessage = computed(() => {
-  if (!display.value?.connected) return 'Waiting for the ESP32 board to report its integrated display...'
+  if (selectedRegisteredDisplays.value.length > 1) {
+    return `${selectedRegisteredDisplays.value.length} displays selected for image targeting. Choose one display to manage its rotation, SD card, or offline experience.`
+  }
+  if (!display.value?.connected) {
+    return displays.value.length
+      ? 'Choose a display to manage its settings, or select several to target an image generation.'
+      : 'Waiting for the ESP32 board to report its integrated display...'
+  }
   const firmwareVersion = display.value.firmware_version
-  return `${display.value.name} connected — ${display.value.width} × ${display.value.height}. Firmware ${firmwareVersion}. Images will fit this screen.`
+  const availability = display.value.online === false ? 'Last seen earlier' : 'Online'
+  return `${display.value.name} — ${availability}, ${display.value.width} × ${display.value.height}. Firmware ${firmwareVersion}. Images will fit this screen.`
 })
+
+function selectedDisplayEndpoint(suffix) {
+  const selected = selectedRegisteredDisplay.value
+  return selected ? `/displays/${encodeURIComponent(selected.id)}${suffix}` : suffix
+}
+
+function selectedDisplayCommandEndpoint(commandId) {
+  return `${selectedDisplayEndpoint('/display-commands')}/${encodeURIComponent(commandId)}`
+}
+
+function displaySdCardThumbnailUrl(filename) {
+  return selectedDisplayEndpoint(`/display-sd-card/thumbnails/${encodeURIComponent(filename)}`)
+}
+
+function selectAllDisplays() {
+  selectedDisplayIds.value = displays.value.map(display => display.id)
+}
+
+function clearDisplaySelection() {
+  selectedDisplayIds.value = []
+}
 
 async function loadDisplay() {
   try {
-    const nextDisplay = await fetch('/display', { cache: 'no-store' }).then(response => response.json())
-    const previousKey = display.value?.connected ? `${display.value.name}:${display.value.width}x${display.value.height}:${display.value.firmware_version}` : ''
-    const nextKey = nextDisplay?.connected ? `${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}:${nextDisplay.firmware_version}` : ''
-    display.value = nextDisplay
+    const previousKey = display.value?.connected
+      ? `${display.value.id || 'legacy'}:${display.value.name}:${display.value.width}x${display.value.height}:${display.value.firmware_version}`
+      : ''
+    const [registeredResponse, legacyResponse] = await Promise.all([
+      fetch('/displays', { cache: 'no-store' }),
+      fetch('/display', { cache: 'no-store' })
+    ])
+    const registered = registeredResponse.ok ? await registeredResponse.json() : []
+    const nextDisplays = Array.isArray(registered) ? registered : []
+    displays.value = nextDisplays
+    legacyDisplay.value = !nextDisplays.length && legacyResponse.ok ? await legacyResponse.json() : null
+    const availableIds = new Set(nextDisplays.map(display => display.id))
+    selectedDisplayIds.value = selectedDisplayIds.value.filter(displayId => availableIds.has(displayId))
+    if (nextDisplays.length) {
+      if (!displayTargetsInitialized && !selectedDisplayIds.value.length) {
+        selectedDisplayIds.value = [nextDisplays[0].id]
+      }
+      displayTargetsInitialized = true
+    }
+    const nextDisplay = display.value
+    const nextKey = nextDisplay?.connected
+      ? `${nextDisplay.id || 'legacy'}:${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}:${nextDisplay.firmware_version}`
+      : ''
     if (nextKey && nextKey !== previousKey) {
       const firmwareVersion = nextDisplay.firmware_version
       displayConnectedMessage.value = `${nextDisplay.name} connected (${nextDisplay.width} × ${nextDisplay.height}, firmware ${firmwareVersion}).`
       displayConnectedSnackbar.value = true
     }
   } catch {
-    display.value = null
+    displays.value = []
+    legacyDisplay.value = null
+    selectedDisplayIds.value = []
   }
 }
 
 async function loadDisplaySettings() {
+  if (!display.value?.connected) {
+    displayRotation.value = 0
+    return
+  }
   try {
-    const settings = await fetch('/display-settings').then(response => response.json())
+    const settings = await fetch(selectedDisplayEndpoint('/display-settings')).then(response => response.json())
     displayRotation.value = settings.rotation
   } catch {
     displayRotation.value = 0
@@ -590,11 +701,12 @@ async function loadDisplaySettings() {
 }
 
 async function setDisplayRotation(rotation) {
+  if (!display.value?.connected) return
   const previousRotation = displayRotation.value
   displayRotation.value = rotation
   error.value = ''
   try {
-    const response = await fetch('/display-settings', {
+    const response = await fetch(selectedDisplayEndpoint('/display-settings'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rotation })
@@ -605,7 +717,12 @@ async function setDisplayRotation(rotation) {
     }
     const settings = await response.json()
     displayRotation.value = settings.rotation
-    status.value = 'Image rotation saved. It will be used for the next image.'
+    if (selectedRegisteredDisplay.value) {
+      displays.value = displays.value.map(display => (
+        display.id === selectedRegisteredDisplay.value.id ? { ...display, rotation: settings.rotation } : display
+      ))
+    }
+    status.value = `Image rotation saved for ${display.value.name}. It will be used for the next image.`
   } catch (requestError) {
     displayRotation.value = previousRotation
     error.value = `Could not save image rotation: ${requestError.message}`
@@ -1092,7 +1209,10 @@ async function saveVideoToDisplaySdCard(videoId) {
   try {
     status.value = 'Checking the display SD card for this video...'
     await refreshDisplaySdCardInventory()
-    const response = await fetch(`/display-commands/save-saved-video/${encodeURIComponent(videoId)}`, { method: 'POST' })
+    const response = await fetch(
+      `${selectedDisplayEndpoint('/display-commands/save-saved-video')}/${encodeURIComponent(videoId)}`,
+      { method: 'POST' }
+    )
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
@@ -1105,7 +1225,7 @@ async function saveVideoToDisplaySdCard(videoId) {
     status.value = 'Copying video to the display SD card for offline playback. It will be converted to MJPEG first.'
     for (let attempt = 0; attempt < 90; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
-      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
       if (result.status === 'complete') {
@@ -1190,12 +1310,17 @@ async function deleteSavedVideo() {
 }
 
 async function fetchDisplaySdCardReport() {
-  const response = await fetch('/display-sd-card')
+  if (!display.value?.connected) throw new Error('Choose one display first')
+  const response = await fetch(selectedDisplayEndpoint('/display-sd-card'))
   if (!response.ok) throw new Error(`Request failed (${response.status})`)
   return response.json()
 }
 
 async function loadDisplaySdCard() {
+  if (!display.value?.connected) {
+    displaySdCard.value = { available: false, files: [] }
+    return null
+  }
   displaySdCardLoading.value = true
   try {
     displaySdCard.value = await fetchDisplaySdCardReport()
@@ -1209,12 +1334,13 @@ async function loadDisplaySdCard() {
 }
 
 async function refreshDisplaySdCardInventory() {
+  if (!display.value?.connected) throw new Error('Choose one display first')
   displaySdCardLoading.value = true
   try {
     const previousReport = await fetchDisplaySdCardReport()
     displaySdCard.value = previousReport
     const previousVersion = Number(previousReport.report_version) || 0
-    const response = await fetch('/display-sd-card/refresh', { method: 'POST' })
+    const response = await fetch(selectedDisplayEndpoint('/display-sd-card/refresh'), { method: 'POST' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
@@ -1222,7 +1348,7 @@ async function refreshDisplaySdCardInventory() {
     const command = await response.json()
     for (let attempt = 0; attempt < 40; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
-      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not refresh its SD card list')
@@ -1272,10 +1398,14 @@ function openSDCardPage() {
 }
 
 async function loadDisplayExperience() {
+  if (!display.value?.connected) {
+    displayExperience.value = { current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_ms: 15000, slideshow_order: 'newest_first' }
+    return
+  }
   displayExperienceLoading.value = true
   displayExperienceError.value = ''
   try {
-    const response = await fetch('/display-experience')
+    const response = await fetch(selectedDisplayEndpoint('/display-experience'))
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
     displayExperience.value = await response.json()
     displayExperienceIntervalSeconds.value = Number(displayExperience.value.slideshow_interval_ms) / 1000
@@ -1297,11 +1427,12 @@ function navigate(nextPage) {
 }
 
 async function saveDisplayExperience() {
+  if (!display.value?.connected) return
   displayExperienceSaving.value = true
   displayExperienceError.value = ''
   displayExperienceStatus.value = ''
   try {
-    const response = await fetch('/display-experience', {
+    const response = await fetch(selectedDisplayEndpoint('/display-experience'), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         offline_experience: displayExperience.value.offline_experience,
@@ -1317,7 +1448,7 @@ async function saveDisplayExperience() {
     displayExperienceStatus.value = 'Saving to the display…'
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
-      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
       if (result.status === 'complete') {
@@ -1336,10 +1467,10 @@ async function saveDisplayExperience() {
 }
 
 async function previewDisplayExperience() {
-  if (displayExperiencePreviewing.value) return
+  if (!display.value?.connected || displayExperiencePreviewing.value) return
   displayExperienceError.value = ''
   try {
-    const response = await fetch('/display-experience/preview', {
+    const response = await fetch(selectedDisplayEndpoint('/display-experience/preview'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         offline_experience: displayExperience.value.offline_experience,
@@ -1359,16 +1490,22 @@ async function stopDisplayExperiencePreview() {
   if (!displayExperiencePreviewing.value) return
   displayExperiencePreviewing.value = false
   try {
-    await fetch('/display-experience/preview', { method: 'DELETE', keepalive: true })
+    if (display.value?.connected) {
+      await fetch(selectedDisplayEndpoint('/display-experience/preview'), { method: 'DELETE', keepalive: true })
+    }
   } catch {
     // The firmware will return to server control on its next successful command poll.
   }
 }
 
 async function sendDisplaySdCardCommand(endpoint, method = 'POST', notify = true) {
+  if (!display.value?.connected) {
+    error.value = 'Choose one display before managing its SD card.'
+    return false
+  }
   error.value = ''
   try {
-    const response = await fetch(endpoint, { method })
+    const response = await fetch(selectedDisplayEndpoint(endpoint), { method })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
@@ -1420,7 +1557,11 @@ async function showSDCardFileOnDisplay(filename) {
   error.value = ''
   status.value = ''
   try {
-    const response = await fetch(`/display-sd-card/files/${encodeURIComponent(filename)}/display`, { method: 'POST' })
+    if (!display.value?.connected) throw new Error('Choose one display first')
+    const response = await fetch(
+      selectedDisplayEndpoint(`/display-sd-card/files/${encodeURIComponent(filename)}/display`),
+      { method: 'POST' }
+    )
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Request failed (${response.status})`)
@@ -1428,7 +1569,7 @@ async function showSDCardFileOnDisplay(filename) {
     const command = await response.json()
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
-      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
       if (!commandResponse.ok) throw new Error(`Could not check display status (${commandResponse.status})`)
       const result = await commandResponse.json()
       if (result.status === 'complete') {
@@ -1662,16 +1803,20 @@ async function useSelectedSavedImageSettings() {
 }
 
 async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
-  if (!savedImage || !display.value?.connected || showingSavedImageOnDisplay.value) return
+  if (!savedImage || !hasDisplayTargets.value || showingSavedImageOnDisplay.value) return
   showingSavedImageOnDisplay.value = true
   error.value = ''
   try {
-    const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, { method: 'POST' })
+    const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_ids: selectedTargetDisplayIds.value })
+    })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Could not send image to display (${response.status})`)
     }
-    status.value = 'Selected image is ready for your ESP32 display.'
+    status.value = `Selected image is ready for ${selectedTargetDisplayIds.value.length === 1 ? display.value?.name : `${selectedTargetDisplayIds.value.length} displays`}.`
   } catch (requestError) {
     error.value = `Could not show the saved image on your display: ${requestError.message}`
   } finally {
@@ -1832,7 +1977,7 @@ async function saveCurrentImageToCreationLibrary() {
 }
 
 async function saveImageToDisplaySdCard(savedImage = null) {
-  if (savingToDisplaySdCard.value) return
+  if (!display.value?.connected || savingToDisplaySdCard.value) return
   savingToDisplaySdCard.value = true
   error.value = ''
   status.value = ''
@@ -1840,8 +1985,8 @@ async function saveImageToDisplaySdCard(savedImage = null) {
     status.value = 'Checking the display SD card for this image...'
     await refreshDisplaySdCardInventory()
     const endpoint = savedImage
-      ? `/display-commands/save-saved-image/${encodeURIComponent(savedImage.id)}`
-      : '/display-commands/save-latest'
+      ? `${selectedDisplayEndpoint('/display-commands/save-saved-image')}/${encodeURIComponent(savedImage.id)}`
+      : selectedDisplayEndpoint('/display-commands/save-latest')
     const response = await fetch(endpoint, { method: 'POST' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -1856,7 +2001,7 @@ async function saveImageToDisplaySdCard(savedImage = null) {
     status.value = 'Save request sent to the display. Waiting for its SD card...'
     for (let attempt = 0; attempt < 15; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
-      const commandResponse = await fetch(`/display-commands/${encodeURIComponent(command.id)}`)
+      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
       if (!commandResponse.ok) continue
       const currentCommand = await commandResponse.json()
       if (currentCommand.status === 'complete') {
@@ -1951,7 +2096,8 @@ async function generate() {
         model_id: activeModelId.value,
         negative_prompt: negativePrompt.value || null,
         steps: Number(steps.value),
-        seed: seed.value === '' ? null : Number(seed.value)
+        seed: seed.value === '' ? null : Number(seed.value),
+        ...(hasDisplayTargets.value ? { display_ids: selectedTargetDisplayIds.value } : {})
       })
     })
     if (!response.ok) {
@@ -2239,8 +2385,8 @@ onUnmounted(() => {
       <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.label" @click="openActiveGeneration">
         <span>{{ compact ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
-      <v-chip class="app-bar__display-chip" :color="display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :link="!display?.connected" :aria-label="display?.connected ? `${display.name} display connected` : 'Display waiting — open connection help'" :title="display?.connected ? `${display.name}: ${display.width}×${display.height} · Firmware ${display.firmware_version}` : 'Open display connection help'" @click="!display?.connected && openDisplayHelp()">
-        <span class="app-bar__display-label">{{ compact ? compactDisplayLabel : display?.connected ? `${display.name} · ${display.width}×${display.height} · v${display.firmware_version}` : 'Display waiting' }}</span>
+      <v-chip class="app-bar__display-chip" :color="hasDisplayTargets || display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="hasDisplayTargets || display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :link="!hasDisplayTargets && !display?.connected" :aria-label="displayTargetLabel" :title="displayTargetLabel" @click="!hasDisplayTargets && !display?.connected && openDisplayHelp()">
+        <span class="app-bar__display-label">{{ compact ? compactDisplayLabel : displayTargetLabel }}</span>
       </v-chip>
       <v-spacer />
       <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
@@ -2467,7 +2613,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" title="Show on display" :disabled="!display?.connected || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
+        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="selectedTargetDisplayIds.length > 1 ? 'Show on selected displays' : 'Show on display'" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'mdi-check-circle' : 'mdi-sd'"
@@ -2753,14 +2899,64 @@ onUnmounted(() => {
               >
                 <strong>Image processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
               </v-alert>
+              <v-card variant="outlined" class="mb-4">
+                <v-card-title class="text-subtitle-1 d-flex align-center">
+                  Display targets
+                  <v-spacer />
+                  <v-chip v-if="selectedTargetDisplayIds.length" size="small" color="primary" variant="tonal">
+                    {{ selectedTargetDisplayIds.length === 1 ? '1 display' : `${selectedTargetDisplayIds.length} displays` }}
+                  </v-chip>
+                </v-card-title>
+                <v-card-text class="pt-0">
+                  <v-alert v-if="!displays.length" type="info" variant="tonal" density="compact">
+                    Turn on an ESP32 display to target it. Until then, generation uses the legacy display setting.
+                  </v-alert>
+                  <template v-else>
+                    <v-select
+                      v-model="selectedDisplayIds"
+                      :items="displayTargetOptions"
+                      label="Send this image to"
+                      multiple
+                      chips
+                      closable-chips
+                      variant="outlined"
+                      density="comfortable"
+                      :disabled="generationBusy"
+                      hint="Select one screen, several matching screens, or all displays."
+                      persistent-hint
+                    />
+                    <div class="d-flex flex-wrap ga-2 mt-3">
+                      <v-btn size="small" variant="tonal" prepend-icon="mdi-select-all" :disabled="generationBusy" @click="selectAllDisplays">All displays</v-btn>
+                      <v-btn size="small" variant="text" :disabled="generationBusy || !selectedDisplayIds.length" @click="clearDisplaySelection">Clear selection</v-btn>
+                    </div>
+                    <v-list density="compact" class="border rounded mt-3">
+                      <v-list-item v-for="target in displays" :key="target.id">
+                        <template #prepend><v-icon :color="target.online ? 'success' : 'warning'">{{ target.online ? 'mdi-monitor-check' : 'mdi-monitor-off' }}</v-icon></template>
+                        <v-list-item-title>{{ target.name }} · {{ target.width }} × {{ target.height }} · v{{ target.firmware_version }}</v-list-item-title>
+                        <v-list-item-subtitle>Last seen {{ formatDateTime(target.last_seen) }}</v-list-item-subtitle>
+                        <template #append><v-chip size="x-small" :color="target.online ? 'success' : 'warning'" variant="tonal">{{ target.online ? 'Online' : 'Offline' }}</v-chip></template>
+                      </v-list-item>
+                    </v-list>
+                    <v-alert v-if="!selectedTargetDisplayIds.length" type="warning" variant="tonal" density="compact" class="mt-3">
+                      Select at least one registered display before generating for multiple screens.
+                    </v-alert>
+                    <v-alert v-else-if="!selectedTargetsHaveCompatibleAspect" type="warning" variant="tonal" density="compact" class="mt-3">
+                      The selected screens have different aspect ratios. Choose matching screens; crop and fit choices will be added next.
+                    </v-alert>
+                    <div v-else class="text-caption text-medium-emphasis mt-3">
+                      {{ selectedTargetDisplayIds.length === 1 ? 'Rotation and SD-card controls below apply to this selected display.' : 'Rotation and SD-card controls require one selected display.' }}
+                    </div>
+                  </template>
+                </v-card-text>
+              </v-card>
               <v-select
                 :model-value="displayRotation"
                 :items="rotationOptions"
-                label="Image rotation"
+                :label="display?.connected ? `Image rotation for ${display.name}` : 'Image rotation'"
                 variant="outlined"
                 density="comfortable"
-                :disabled="generationBusy"
-                hint="Applied by ESPImageServer before the JPEG is sent. Your ESP32 firmware does not need to change."
+                :disabled="generationBusy || Boolean(selectedDisplayIds.length && !display?.connected)"
+                :hint="display?.connected ? 'Applied by ESPImageServer before the JPEG is sent. Your ESP32 firmware does not need to change.' : 'Choose one display to change its rotation.'"
                 persistent-hint
                 class="mb-4"
                 @update:model-value="setDisplayRotation"
@@ -2813,7 +3009,7 @@ onUnmounted(() => {
                 </v-col>
               </v-row>
               <div class="generation-form-actions">
-                <v-btn type="submit" color="primary" :disabled="models.length === 0" prepend-icon="mdi-image-plus">
+                <v-btn type="submit" color="primary" :disabled="models.length === 0 || !selectedTargetsHaveCompatibleAspect || Boolean(displays.length && !selectedTargetDisplayIds.length)" prepend-icon="mdi-image-plus">
                   {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
                 </v-btn>
                 <v-btn v-if="generating" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
@@ -2873,8 +3069,8 @@ onUnmounted(() => {
             <v-btn v-if="selectedSavedImage" color="primary" prepend-icon="mdi-restore" @click="useSelectedSavedImageSettings">
               Use saved settings
             </v-btn>
-            <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!display?.connected" @click="showSavedImageOnDisplay()">
-              Show on display
+            <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets" @click="showSavedImageOnDisplay()">
+              {{ selectedTargetDisplayIds.length > 1 ? 'Show on selected displays' : 'Show on display' }}
             </v-btn>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
@@ -3146,6 +3342,9 @@ onUnmounted(() => {
         <v-card v-if="page === 'display-experience'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
           <v-card-text>
+            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-dashboard">
+              Managing: {{ displayManagementLabel }}
+            </v-alert>
             <v-progress-linear v-if="displayExperienceLoading" indeterminate color="primary" class="mb-4" />
             <v-chip :color="displayExperience.current_mode.startsWith('offline_') ? 'warning' : 'success'" variant="tonal" class="mb-5" :prepend-icon="displayExperience.current_mode.startsWith('offline_') ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
               {{ displayExperience.current_mode === 'offline_video_loop' ? 'Offline video loop active' : displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow active' : 'Server controlled' }}
@@ -3198,6 +3397,9 @@ onUnmounted(() => {
             </v-chip>
           </v-card-title>
           <v-card-text>
+            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-dashboard">
+              Managing: {{ displayManagementLabel }}
+            </v-alert>
             <v-alert v-if="!displaySdCard.available" type="warning" variant="tonal" density="compact" class="mb-4">
               Waiting for the display to report its SD card.
             </v-alert>
@@ -3213,7 +3415,7 @@ onUnmounted(() => {
               <v-list-item v-for="item in displaySdCard.files || []" :key="item.name">
                 <template #prepend>
                   <v-avatar v-if="item.thumbnail_available" rounded="sm" size="56">
-                    <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(item.name)}`" cover />
+                    <v-img :src="displaySdCardThumbnailUrl(item.name)" cover />
                   </v-avatar>
                   <v-avatar v-else color="surface-variant" rounded="sm" size="56">
                     <v-icon>{{ item.type === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline' }}</v-icon>
@@ -3243,7 +3445,7 @@ onUnmounted(() => {
             >
               <template #item.thumbnail="{ item }">
                 <v-avatar v-if="item.thumbnail_available" rounded="sm" size="56">
-                  <v-img :src="`/display-sd-card/thumbnails/${encodeURIComponent(item.name)}`" cover />
+                  <v-img :src="displaySdCardThumbnailUrl(item.name)" cover />
                 </v-avatar>
                 <v-avatar v-else color="surface-variant" rounded="sm" size="56">
                   <v-icon>{{ item.type === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline' }}</v-icon>

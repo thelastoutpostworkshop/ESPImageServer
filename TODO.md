@@ -39,11 +39,12 @@ the shared dimensions, rotation, JPEG, SD-card report, and command queue.
    deduplication, and thumbnail paths are now display-ID scoped. A command
    retrieved or acknowledged by one board cannot affect another board.
 
-5. **P2 — Add multi-display targeting to the web app.** Show a display list
-   with connection status, dimensions, firmware, and last-seen time; add a
-   selected-display, multi-select, and all-displays target control. Make
-   rotation, SD-card management, and offline-experience settings visibly
-   scoped to the selected display.
+5. **P2 — Add multi-display targeting to the web app.** **Complete:** the
+   image generator shows registered screens with connection status, dimensions,
+   firmware, and last-seen time. It supports selecting one, several, or all
+   displays; generation and saved-image actions use those targets. Rotation,
+   SD-card management, and offline-experience settings visibly use one
+   selected display at a time.
 
 6. **P2 — Define the broadcast-aspect policy.** Broadcasting one generated
    composition to portrait and landscape screens requires crop/fit behavior or
