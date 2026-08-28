@@ -92,6 +92,7 @@ class GenerationQueue:
             return job if job is not None and (kind is None or job.kind == kind) else None
 
     def list(self) -> list[dict[str, object]]:
+        """Return the newest jobs first while retaining FIFO queue positions."""
         with self._lock:
             position = 0
             items: list[dict[str, object]] = []
@@ -102,7 +103,7 @@ class GenerationQueue:
                     position += 1
                     queue_position = position
                 items.append(job.as_dict(queue_position))
-            return items
+            return list(reversed(items))
 
     def has_active_job(self) -> bool:
         with self._lock:

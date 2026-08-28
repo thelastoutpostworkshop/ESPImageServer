@@ -27,6 +27,7 @@ def test_shared_queue_orders_mixed_work_and_cancels_waiting_job() -> None:
         second = queue.create("video", lambda progress, cancelled: Path("video.mp4"))
 
         queued = queue.list()
+        assert [item["id"] for item in queued] == [second.job_id, first.job_id]
         assert next(item for item in queued if item["id"] == first.job_id)["queue_position"] == 1
         assert next(item for item in queued if item["id"] == second.job_id)["queue_position"] == 2
         assert queue.cancel(second.job_id) is not None

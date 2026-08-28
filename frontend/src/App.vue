@@ -812,7 +812,7 @@ async function loadGenerationQueue() {
 }
 
 function latestCompletedGenerationJob(jobs, kind) {
-  return [...jobs].reverse().find(job => job.kind === kind && job.status === 'complete') || null
+  return jobs.find(job => job.kind === kind && job.status === 'complete') || null
 }
 
 function resultPanelQueueStatus(job) {
