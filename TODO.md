@@ -9,7 +9,6 @@
 
 ## Changes in the UI
 
-4. In Display SD card, the user should be able to select multiple files for deletion
 5. When saving to an sd card, does the image is saved on the currently selected display ?
 6. the job queue list should be from the most recent to the oldest
 

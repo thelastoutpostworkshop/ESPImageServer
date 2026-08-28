@@ -149,6 +149,11 @@ const deleteSdCardFileDialog = ref(false)
 const deletingSdCardFile = ref(false)
 const deleteSdCardFileDontAskAgain = ref(false)
 const sdCardFileToDelete = ref(null)
+const deleteSdCardFilesDialog = ref(false)
+const deletingSdCardFiles = ref(false)
+const deleteSdCardFilesDontAskAgain = ref(false)
+const selectedSdCardFileNames = ref([])
+const sdCardFilesToDelete = ref([])
 const savingToDisplaySdCard = ref(false)
 const showingSavedImageOnDisplay = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
@@ -398,6 +403,18 @@ function displaySdCardFiles() {
   return Array.isArray(displaySdCard.value?.files) ? displaySdCard.value.files : []
 }
 
+const selectedSdCardFiles = computed(() => {
+  const selectedNames = new Set(selectedSdCardFileNames.value)
+  return displaySdCardFiles().filter(file => selectedNames.has(file.name))
+})
+
+function setSdCardFileSelected(filename, selected) {
+  const selectedNames = new Set(selectedSdCardFileNames.value)
+  if (selected) selectedNames.add(filename)
+  else selectedNames.delete(filename)
+  selectedSdCardFileNames.value = [...selectedNames]
+}
+
 function savedVideoFps(savedVideo) {
   const fps = Number(savedVideo.metadata?.fps)
   return Number.isFinite(fps) ? Math.max(1, Math.min(24, Math.round(fps))) : 15
@@ -585,6 +602,7 @@ watch(activeDisplayId, displayId => {
   if (displayId) window.localStorage.setItem(activeDisplaySettingsKey, displayId)
   else window.localStorage.removeItem(activeDisplaySettingsKey)
   displayExperiencePreviewing.value = false
+  selectedSdCardFileNames.value = []
   if (!display.value?.connected) {
     displayRotation.value = 0
     displaySdCard.value = { available: false, files: [] }
@@ -1508,6 +1526,72 @@ async function deleteDisplaySdCardFile() {
     error.value = `Could not remove the display SD card ${displaySdCardMediaType(file)}: ${requestError.message}`
   } finally {
     deletingSdCardFile.value = false
+  }
+}
+
+function confirmDeleteSelectedSdCardFiles() {
+  const files = selectedSdCardFiles.value
+  if (!files.length || deletingSdCardFile.value || deletingSdCardFiles.value) return
+  sdCardFilesToDelete.value = [...files]
+  if (!confirmDeletion.value) {
+    void deleteSelectedDisplaySdCardFiles()
+    return
+  }
+  deleteSdCardFilesDontAskAgain.value = false
+  deleteSdCardFilesDialog.value = true
+}
+
+async function deleteSdCardFileAndWait(file) {
+  const response = await fetch(
+    selectedDisplayEndpoint(`/display-sd-card/files/${encodeURIComponent(file.name)}`),
+    { method: 'DELETE' }
+  )
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail || `Request failed (${response.status})`)
+  }
+  const command = await response.json()
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await new Promise(resolve => window.setTimeout(resolve, 500))
+    const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
+    if (!commandResponse.ok) throw new Error(`Could not check display status (${commandResponse.status})`)
+    const result = await commandResponse.json()
+    if (result.status === 'complete') return
+    if (result.status === 'failed') throw new Error(result.detail || `The display could not delete ${file.name}`)
+  }
+  throw new Error(`The display has not confirmed deleting ${file.name}`)
+}
+
+function removeSdCardFilesFromInventory(files) {
+  const deletedNames = new Set(files.map(file => file.name))
+  displaySdCard.value = {
+    ...displaySdCard.value,
+    files: displaySdCardFiles().filter(file => !deletedNames.has(file.name))
+  }
+  selectedSdCardFileNames.value = selectedSdCardFileNames.value.filter(name => !deletedNames.has(name))
+}
+
+async function deleteSelectedDisplaySdCardFiles() {
+  const files = sdCardFilesToDelete.value
+  if (!files.length || deletingSdCardFiles.value) return
+  deletingSdCardFiles.value = true
+  error.value = ''
+  const deletedFiles = []
+  try {
+    if (deleteSdCardFilesDontAskAgain.value) await setDeleteConfirmation(false)
+    for (const file of files) {
+      await deleteSdCardFileAndWait(file)
+      deletedFiles.push(file)
+    }
+    removeSdCardFilesFromInventory(deletedFiles)
+    deleteSdCardFilesDialog.value = false
+    showSDCardSnackbar(`${deletedFiles.length} ${deletedFiles.length === 1 ? 'file' : 'files'} removed from the display SD card.`)
+    window.setTimeout(loadDisplaySdCard, 750)
+  } catch (requestError) {
+    if (deletedFiles.length) removeSdCardFilesFromInventory(deletedFiles)
+    error.value = `Could not remove all selected SD card files: ${requestError.message}`
+  } finally {
+    deletingSdCardFiles.value = false
   }
 }
 
@@ -2693,6 +2777,24 @@ onUnmounted(() => {
       </v-card>
     </v-dialog>
 
+    <v-dialog v-model="deleteSdCardFilesDialog" max-width="480" width="calc(100% - 32px)">
+      <v-card :title="`Delete ${sdCardFilesToDelete.length} SD card ${sdCardFilesToDelete.length === 1 ? 'file' : 'files'}`">
+        <v-card-text>
+          Remove these {{ sdCardFilesToDelete.length }} files from the display SD card? This cannot be undone.
+          <v-list density="compact" class="mt-3 border rounded">
+            <v-list-item v-for="file in sdCardFilesToDelete.slice(0, 5)" :key="file.name" :title="file.name" />
+            <v-list-item v-if="sdCardFilesToDelete.length > 5" :title="`…and ${sdCardFilesToDelete.length - 5} more`" />
+          </v-list>
+          <v-checkbox v-model="deleteSdCardFilesDontAskAgain" label="Don't ask again" density="compact" hide-details class="mt-3" />
+        </v-card-text>
+        <v-card-actions class="px-6 pb-5">
+          <v-spacer />
+          <v-btn variant="text" :disabled="deletingSdCardFiles" @click="deleteSdCardFilesDialog = false">Keep files</v-btn>
+          <v-btn color="error" variant="flat" :loading="deletingSdCardFiles" @click="deleteSelectedDisplaySdCardFiles">Delete {{ sdCardFilesToDelete.length }} {{ sdCardFilesToDelete.length === 1 ? 'file' : 'files' }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-dialog v-model="removeVideoModelDialog" max-width="480" width="calc(100% - 32px)">
       <v-card title="Remove video model">
         <v-card-text>
@@ -3360,7 +3462,26 @@ onUnmounted(() => {
             </v-alert>
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
             <div class="d-flex flex-wrap ga-2 mb-4">
-              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="refreshDisplaySdCard">Refresh from display</v-btn>
+              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="deletingSdCardFile || deletingSdCardFiles" @click="refreshDisplaySdCard">Refresh from display</v-btn>
+              <v-btn
+                v-if="selectedSdCardFiles.length"
+                color="error"
+                variant="tonal"
+                prepend-icon="mdi-delete-sweep-outline"
+                :loading="deletingSdCardFiles"
+                :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile"
+                @click="confirmDeleteSelectedSdCardFiles"
+              >
+                Delete selected ({{ selectedSdCardFiles.length }})
+              </v-btn>
+              <v-btn
+                v-if="selectedSdCardFiles.length"
+                variant="text"
+                :disabled="deletingSdCardFiles"
+                @click="selectedSdCardFileNames = []"
+              >
+                Clear selection
+              </v-btn>
             </div>
             <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-4">
               Last confirmed by the display: {{ formatDateTime(displaySdCard.reported_at) }}
@@ -3369,20 +3490,28 @@ onUnmounted(() => {
             <v-list v-if="compact" class="sd-card-mobile-list border rounded" lines="three">
               <v-list-item v-for="item in displaySdCard.files || []" :key="item.name">
                 <template #prepend>
-                  <v-avatar v-if="item.thumbnail_available" rounded="sm" size="56">
-                    <v-img :src="displaySdCardThumbnailUrl(item.name)" cover />
-                  </v-avatar>
-                  <v-avatar v-else color="surface-variant" rounded="sm" size="56">
-                    <v-icon>{{ item.type === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline' }}</v-icon>
-                  </v-avatar>
+                  <div class="d-flex align-center ga-1">
+                    <v-checkbox-btn
+                      :model-value="selectedSdCardFileNames.includes(item.name)"
+                      :disabled="deletingSdCardFile || deletingSdCardFiles"
+                      :aria-label="`Select ${item.name} for deletion`"
+                      @update:model-value="setSdCardFileSelected(item.name, $event)"
+                    />
+                    <v-avatar v-if="item.thumbnail_available" rounded="sm" size="56">
+                      <v-img :src="displaySdCardThumbnailUrl(item.name)" cover />
+                    </v-avatar>
+                    <v-avatar v-else color="surface-variant" rounded="sm" size="56">
+                      <v-icon>{{ item.type === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline' }}</v-icon>
+                    </v-avatar>
+                  </div>
                 </template>
                 <v-list-item-title class="text-break">{{ item.name }}</v-list-item-title>
                 <v-list-item-subtitle>{{ item.type === 'video' ? 'Video' : 'Image' }} · {{ formatDateTime(item.created_at) }}</v-list-item-subtitle>
                 <v-list-item-subtitle>{{ formatFileSize(item.size) }} · Saved on your display SD card</v-list-item-subtitle>
                 <template #append>
                   <div class="d-flex flex-column">
-                    <v-btn icon="mdi-play" size="small" color="primary" variant="text" :loading="displayingSdCardFile === item.name" :disabled="Boolean(displayingSdCardFile)" :aria-label="`Show ${item.name} on display`" @click="showSDCardFileOnDisplay(item.name)" />
-                    <v-btn icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile" :aria-label="`Delete ${item.name} from SD card`" @click="confirmDeleteDisplaySdCardFile(item)" />
+                    <v-btn icon="mdi-play" size="small" color="primary" variant="text" :loading="displayingSdCardFile === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Show ${item.name} on display`" @click="showSDCardFileOnDisplay(item.name)" />
+                    <v-btn icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Delete ${item.name} from SD card`" @click="confirmDeleteDisplaySdCardFile(item)" />
                   </div>
                 </template>
               </v-list-item>
@@ -3394,6 +3523,10 @@ onUnmounted(() => {
               :items="displaySdCard.files || []"
               :loading="displaySdCardLoading"
               v-model:items-per-page="sdCardItemsPerPage"
+              v-model="selectedSdCardFileNames"
+              item-value="name"
+              show-select
+              select-strategy="all"
               hover
               density="comfortable"
               class="sd-card-table border rounded"
@@ -3423,14 +3556,14 @@ onUnmounted(() => {
                         color="primary"
                         variant="text"
                         :loading="displayingSdCardFile === item.name"
-                        :disabled="Boolean(displayingSdCardFile)"
+                        :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles"
                         @click="showSDCardFileOnDisplay(item.name)"
                       />
                     </template>
                   </v-tooltip>
                   <v-tooltip text="Delete from SD card">
                     <template #activator="{ props }">
-                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile" @click="confirmDeleteDisplaySdCardFile(item)" />
+                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" @click="confirmDeleteDisplaySdCardFile(item)" />
                     </template>
                   </v-tooltip>
                 </div>
