@@ -1,5 +1,6 @@
 # Tested release constraints for ESPImageServer on CPython 3.12.
-# The CUDA PyTorch wheel is selected by bootstrap.ps1 from the CUDA wheel index.
+# These versions are published on PyTorch's CUDA 12.8 wheel index. Keep the
+# +cu128 suffix: without it, pip can fall back to the CPU-only PyPI wheel.
 accelerate==1.14.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -39,12 +40,13 @@ regex==2026.7.19
 requests==2.34.2
 safetensors==0.8.0
 sentencepiece==0.2.2
-setuptools==84.0.0
+# torch 2.11.0+cu128 requires setuptools < 82.
+setuptools==81.0.0
 starlette==1.6.0
 sympy==1.14.0
 tokenizers==0.22.2
-torch==2.13.0
-torchvision==0.28.0
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
 tqdm==4.70.0
 transformers==4.57.6
 typing-extensions==4.16.0

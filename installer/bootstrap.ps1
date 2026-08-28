@@ -145,9 +145,24 @@ try {
     if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--upgrade', '--force-reinstall', '--constraint', $constraintsFile, '--index-url', $torchIndexUrl, '--extra-index-url', 'https://pypi.org/simple', 'torch', 'torchvision')) -ne 0) {
         throw 'Unable to install the pinned PyTorch and torchvision packages.'
     }
+    if ($UseCuda) {
+        # Do not finish a CUDA-selected install with a CPU-only fallback wheel.
+        # This also gives a clear failure when the selected PC's NVIDIA driver
+        # cannot make CUDA available to PyTorch.
+        if ((Invoke-LoggedExternal $venvPython @('-c', 'import torch; assert torch.version.cuda, "CPU-only PyTorch was installed"; assert torch.cuda.is_available(), "PyTorch cannot access a compatible NVIDIA GPU"; print(f"CUDA PyTorch {torch.__version__} is ready on {torch.cuda.get_device_name(0)}")')) -ne 0) {
+            throw 'CUDA was selected, but PyTorch could not use a compatible NVIDIA GPU. Update the NVIDIA driver or choose CPU compatibility mode.'
+        }
+    }
 
     Set-InstallStatus 3 'Installing pinned ESPImageServer packages...'
-    if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile, '--editable', $projectRoot)) -ne 0) {
+    $applicationInstallArguments = @('-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile)
+    if ($UseCuda) {
+        # The editable install resolves torch again through the project's
+        # dependencies, so make the CUDA wheel index available here as well.
+        $applicationInstallArguments += @('--extra-index-url', $torchIndexUrl)
+    }
+    $applicationInstallArguments += @('--editable', $projectRoot)
+    if ((Invoke-LoggedExternal $venvPython $applicationInstallArguments) -ne 0) {
         throw 'Unable to install the pinned ESPImageServer dependencies.'
     }
     # Video thumbnails use the FFmpeg binary bundled by imageio-ffmpeg. Verify
