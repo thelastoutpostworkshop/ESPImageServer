@@ -28,7 +28,9 @@
 
 4. **P1 — Make offline-display behavior explicit.** A last-seen display may
    stay selected, but the UI must clearly say whether generated work and
-   display commands will wait for it to reconnect or cannot be sent yet.
+   display commands will wait for it to reconnect or cannot be sent yet. Do
+   not describe a last-seen display as "connected" or say work "will be
+   sent" without explaining what happens while it is offline.
 
 5. **P2 — Add a dedicated Displays page.** Show one card per registered
    display with friendly name, online state, native size, rotation, SD-card
@@ -46,6 +48,16 @@
 8. **P2 — Bring the video page up to the image page's destination clarity.**
    Name the active display, its output size, and provide the same quick path
    to change it.
+
+9. **P1 — Separate connectivity from display-experience mode.** A green
+   "Server controlled" state describes the experience configuration, not
+   whether the board is reachable. Present it alongside a distinct online,
+   offline, or last-seen status so the two cannot be confused.
+
+10. **P2 — Keep the active-display switcher recognizable in narrow layouts.**
+    Long display names must not hide the chooser affordance or leave only an
+    ambiguous truncated label. Retain a clear display icon/name and visible
+    change indicator at small desktop widths and on mobile.
 
 ## Backend and installer hardening
 
