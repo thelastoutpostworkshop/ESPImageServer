@@ -8,8 +8,7 @@
    and the Queue, Diagnostics, and result-action layouts.
 
 ## Changes in the UI
-2. When an error occur, the ui should not change to the diagnostics page automatically
-3. Saving to an sd card and looking at the sd card, created date is "Unknown"
+
 4. In Display SD card, the user should be able to select multiple files for deletion
 5. When saving to an sd card, does the image is saved on the currently selected display ?
 6. the job queue list should be from the most recent to the oldest

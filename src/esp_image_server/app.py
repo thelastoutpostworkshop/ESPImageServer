@@ -764,7 +764,11 @@ def create_app(
                 "content_key": content_key,
                 "detail": "This video is already on the display SD card for its current size and frame rate",
             }
-        filename = f"esp-video-{content_key}.mjpeg"
+        # The ESP32's SD filesystem does not expose a portable creation time.
+        # Keep the stable content key for deduplication, but prefix it with the
+        # UTC save time so the board can report a real Created value later.
+        saved_at = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        filename = f"esp-video-{saved_at}-{content_key}.mjpeg"
         thumbnail_path = video_library.find_thumbnail_path(video_id)
         if thumbnail_path is not None:
             write_sd_thumbnail(filename, thumbnail_path.read_bytes(), display_id=display_id)
@@ -787,7 +791,10 @@ def create_app(
                 "content_key": content_key,
                 "detail": "This image is already on the display SD card",
             }
-        filename = f"esp-image-{content_key}.jpg"
+        # See the equivalent video name above.  The ESP32 extracts this UTC
+        # timestamp when it reports the SD-card inventory.
+        saved_at = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        filename = f"esp-image-{saved_at}-{content_key}.jpg"
         command = display_command_store.queue_save(
             filename,
             image_id,
