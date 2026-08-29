@@ -586,10 +586,15 @@ watch(activeDisplayOnline, online => {
   if (!online) selectedSdCardFileNames.value = []
 })
 
-watch(compact, isCompact => {
+watch(compact, async isCompact => {
   if (isCompact) {
     drawer.value = false
     metadataPanePinned.value = false
+    // The drawer changes from permanent to temporary with this breakpoint.
+    // Let that prop change settle before closing it; otherwise the old
+    // permanent drawer can emit its open state back into v-model.
+    await nextTick()
+    metadataPane.value = false
   }
 }, { immediate: true })
 
@@ -2526,7 +2531,7 @@ onUnmounted(() => {
       </template>
     </v-navigation-drawer>
 
-    <v-navigation-drawer v-model="metadataPane" class="creation-library-drawer" location="right" :width="compact ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !compact" :temporary="creationLibraryTemporary" :scrim="creationLibraryTemporary" border>
+    <v-navigation-drawer v-if="metadataPane" v-model="metadataPane" class="creation-library-drawer" location="right" :width="compact ? '100%' : imageLibraryWidth" :permanent="metadataPanePinned && !compact" :temporary="creationLibraryTemporary" :scrim="creationLibraryTemporary" border>
       <div
         v-if="!compact"
         class="image-library-resize-handle"
