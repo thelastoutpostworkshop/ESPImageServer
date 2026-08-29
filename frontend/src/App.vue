@@ -662,6 +662,11 @@ function displaySdCardThumbnailUrl(filename) {
 function selectActiveDisplay(displayId) {
   activeDisplayId.value = displayId
   displayPickerOpen.value = false
+  const selected = displays.value.find(target => target.id === displayId)
+  if (selected) {
+    displayConnectedMessage.value = `Working with ${selected.name}. New display and SD-card actions apply to this display.`
+    displayConnectedSnackbar.value = true
+  }
 }
 
 async function loadDisplay() {
@@ -2561,6 +2566,10 @@ onUnmounted(() => {
       </div>
       <v-divider />
       <div class="creation-library-drawer__body pa-4">
+        <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+          <strong>Working with:</strong> {{ displayManagementLabel }}
+          <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
+        </v-alert>
         <v-slider
           v-if="imageLibraryView === 'thumbnails'"
           v-model="imageLibraryThumbnailSize"
@@ -3128,6 +3137,10 @@ onUnmounted(() => {
               {{ resultPanelQueueStatus(activeImageQueueJob) }}
             </v-chip>
           </v-card-title>
+          <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mx-4 mb-3" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+            <strong>Working with:</strong> {{ displayManagementLabel }}
+            <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
+          </v-alert>
           <v-card-subtitle v-if="activeImageQueueJob && imageUrl" class="pb-3">The previous image remains available until this job is complete.</v-card-subtitle>
           <v-card-subtitle v-else-if="selectedSavedImage" class="pb-3">Previewing a saved image. Use its settings or show it on the display when you are ready.</v-card-subtitle>
           <v-progress-linear
@@ -3279,6 +3292,10 @@ onUnmounted(() => {
                       {{ resultPanelQueueStatus(activeVideoQueueJob) }}
                     </v-chip>
                   </v-card-title>
+                  <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mx-4 mb-3" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+                    <strong>Working with:</strong> {{ displayManagementLabel }}
+                    <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
+                  </v-alert>
                   <v-card-subtitle v-if="activeVideoQueueJob && videoUrl" class="pb-3">The previous video remains available until this job is complete.</v-card-subtitle>
                   <v-progress-linear
                     v-if="activeVideoQueueJob"
@@ -3435,8 +3452,9 @@ onUnmounted(() => {
         <v-card v-if="page === 'display-experience'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
           <v-card-text>
-            <v-alert :type="activeDisplayOnline ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
-              Managing: {{ displayManagementLabel }}
+            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+              <strong>Working with:</strong> {{ displayManagementLabel }}
+              <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
             </v-alert>
             <v-alert v-if="display?.connected && !activeDisplayOnline" type="warning" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-off">
               {{ display.name }} is offline. The experience shown below was last reported by the display. Reconnect it to save or preview changes.
@@ -3501,8 +3519,9 @@ onUnmounted(() => {
             </v-chip>
           </v-card-title>
           <v-card-text>
-            <v-alert :type="activeDisplayOnline ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
-              Managing: {{ displayManagementLabel }}
+            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+              <strong>Working with:</strong> {{ displayManagementLabel }}
+              <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
             </v-alert>
             <v-alert v-if="display?.connected && !activeDisplayOnline" type="warning" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-off">
               {{ display.name }} is offline. This is its last reported SD-card list; reconnect it to refresh, play, save, or delete files.

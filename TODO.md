@@ -9,41 +9,35 @@
 
 ## Multi-display UX follow-ups
 
-1. **P1 — Keep the active display unmistakable in every display-scoped flow.**
-   Add a persistent “Working with: <display name>” context bar on the Display
-   SD Card, Display Experience, Creation Library, and result views. After a
-   selection change, confirm that new actions apply to the newly active
-   display.
-
-2. **P1 — Name the destination in every display action.** Replace generic
+1. **P1 — Name the destination in every display action.** Replace generic
    labels such as “Show on active display” and “Save to SD card” with
    “Show on <display name>” and “Save to <display name>'s SD card.” Keep the
    single global active-display selector; do not reintroduce per-page target
    selection.
 
-3. **P1 — Show each queued job's captured display target.** Add the target
+2. **P1 — Show each queued job's captured display target.** Add the target
    display name and native size to queue rows. Image jobs already retain the
    selected display ID; extend video-job metadata to retain a stable display
    ID as well, so a renamed or similarly sized display remains unambiguous.
 
-4. **P2 — Add a dedicated Displays page.** Show one card per registered
+3. **P2 — Add a dedicated Displays page.** Show one card per registered
    display with friendly name, online state, native size, rotation, SD-card
    state, and a Make active action. Keep the app-bar selector as the quick
    switcher.
 
-5. **P2 — Scope SD-card and gallery status to the active display.** For
+4. **P2 — Scope SD-card and gallery status to the active display.** For
    example, show “Kitchen's SD card” and “On Kitchen's SD card,” rather than
    generic status that changes silently after the global display is switched.
 
-6. **P2 — Improve physical display identification.** Support friendly room
+5. **P2 — Improve physical display identification.** Support friendly room
    names and expose a short hardware/MAC suffix in the chooser for displays
    with similar names.
 
-7. **P2 — Bring the video page up to the image page's destination clarity.**
+6. **P2 — Bring the video page up to the image page's destination clarity.**
    Name the active display, its output size, and provide the same quick path
    to change it.
 
-8. **P2 — Keep the active-display switcher recognizable in narrow layouts.**
+7. **P2 — Keep the active-display switcher recognizable in narrow layouts.**
    Long display names must not hide the chooser affordance or leave only an
    ambiguous truncated label. Retain a clear display icon/name and visible
    change indicator at small desktop widths and on mobile.
