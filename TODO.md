@@ -13,11 +13,6 @@
    names and expose a short hardware/MAC suffix in the chooser for displays
    with similar names.
 
-7. **P2 — Keep the active-display switcher recognizable in narrow layouts.**
-   Long display names must not hide the chooser affordance or leave only an
-   ambiguous truncated label. Retain a clear display icon/name and visible
-   change indicator at small desktop widths and on mobile.
-
 ## Backend and installer hardening
 
 1. **P1 — Bound completed-job, command, and conversion-cache retention.**

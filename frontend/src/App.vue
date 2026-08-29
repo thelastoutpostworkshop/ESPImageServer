@@ -304,7 +304,7 @@ const videoDisplayPreviewSizeLabel = computed(() => buildDisplayPreviewSizeLabel
 const videoDisplayPreviewRotationLabel = computed(() => buildDisplayPreviewRotationLabel(videoRotation.value))
 const compactDisplayLabel = computed(() => {
   if (!display.value?.connected) return displays.value.length ? 'Choose display' : 'Display waiting'
-  return `Active: ${display.value.name}`
+  return display.value.name
 })
 const selectedImageModelName = computed(() => models.value.find(model => model.id === activeModelId.value)?.name || 'image model')
 const imageGenerationActive = computed(() => generating.value || Boolean(generationStage.value) || health.value?.image_generating === true)
