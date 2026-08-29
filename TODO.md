@@ -9,11 +9,6 @@
 
 ## Multi-display UX follow-ups
 
-2. **P1 — Show each queued job's captured display target.** Add the target
-   display name and native size to queue rows. Image jobs already retain the
-   selected display ID; extend video-job metadata to retain a stable display
-   ID as well, so a renamed or similarly sized display remains unambiguous.
-
 3. **P2 — Add a dedicated Displays page.** Show one card per registered
    display with friendly name, online state, native size, rotation, SD-card
    state, and a Make active action. Keep the app-bar selector as the quick

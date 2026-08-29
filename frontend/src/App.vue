@@ -924,6 +924,20 @@ function resultPanelQueueStatus(job) {
   return Number.isFinite(job.progress) && job.progress > 0 ? `Generating · ${job.progress}%` : 'Starting'
 }
 
+function queueJobDisplayTarget(job) {
+  const metadata = job?.metadata || {}
+  const displayId = metadata.display_id || metadata.display_ids?.[0]
+  const currentDisplay = displayId ? displays.value.find(candidate => candidate.id === displayId) : null
+  if (currentDisplay) return currentDisplay
+  const capturedDisplay = metadata.display
+  return capturedDisplay?.name && capturedDisplay?.width && capturedDisplay?.height ? capturedDisplay : null
+}
+
+function queueJobDisplayLabel(job) {
+  const target = queueJobDisplayTarget(job)
+  return target ? `Display: ${target.name} · ${target.width} × ${target.height}` : 'No display target'
+}
+
 async function updateImagePreview(imageBlob, {
   requestId = ++imagePreviewRequestId,
   jobId = '',
@@ -2995,7 +3009,7 @@ onUnmounted(() => {
               <v-btn v-if="finishedGenerationQueue.length" size="small" variant="text" color="error" prepend-icon="mdi-delete-sweep-outline" @click="clearFinishedGenerationQueue">Clear finished</v-btn>
             </div>
           </v-card-title>
-          <v-list v-if="activeGenerationQueue.length" density="comfortable" lines="two">
+          <v-list v-if="activeGenerationQueue.length" density="comfortable" lines="three">
             <v-list-item v-for="job in activeGenerationQueue" :key="job.id">
               <template #prepend>
                 <v-avatar rounded="sm" size="56" class="queue-job-thumbnail">
@@ -3004,6 +3018,7 @@ onUnmounted(() => {
               </template>
               <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
               <v-list-item-subtitle>{{ job.status === 'queued' ? `Waiting · position ${job.queue_position}` : job.stage }}<span v-if="job.status !== 'queued' && job.progress"> · {{ job.progress }}%</span></v-list-item-subtitle>
+              <v-list-item-subtitle>{{ queueJobDisplayLabel(job) }}</v-list-item-subtitle>
               <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" :title="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
               <v-progress-linear v-if="job.status !== 'queued'" class="mt-2" :model-value="job.progress" color="primary" height="6" rounded />
             </v-list-item>
@@ -3012,7 +3027,7 @@ onUnmounted(() => {
           <template v-if="finishedGenerationQueue.length">
             <v-divider />
             <div class="px-4 pt-4 text-overline text-medium-emphasis">Recent jobs</div>
-            <v-list density="comfortable" lines="two">
+            <v-list density="comfortable" lines="three">
               <v-list-item v-for="job in finishedGenerationQueue" :key="job.id">
                 <template #prepend>
                   <v-avatar v-if="job.status === 'complete'" rounded="sm" size="56" class="queue-job-thumbnail">
@@ -3023,6 +3038,7 @@ onUnmounted(() => {
                 </template>
                 <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
                 <v-list-item-subtitle>{{ job.status === 'complete' ? `${job.kind === 'video' ? 'Video' : 'Image'} generation complete${formatGenerationTime(job.generation_time_seconds) ? ` · Generated in ${formatGenerationTime(job.generation_time_seconds)}` : ''}` : job.error || job.stage }}</v-list-item-subtitle>
+                <v-list-item-subtitle>{{ queueJobDisplayLabel(job) }}</v-list-item-subtitle>
                 <template #append>
                   <v-btn v-if="job.status === 'complete'" icon="mdi-open-in-new" size="small" variant="text" :aria-label="`Open completed ${job.kind}`" :title="`Open completed ${job.kind}`" @click="openQueuedGeneration(job)" />
                   <v-chip :color="job.status === 'complete' ? 'success' : job.status === 'failed' ? 'error' : 'warning'" size="small" variant="tonal">{{ job.status === 'complete' ? 'Complete' : job.status === 'failed' ? 'Failed' : 'Cancelled' }}</v-chip>

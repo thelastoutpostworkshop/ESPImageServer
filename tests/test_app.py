@@ -640,6 +640,37 @@ def test_video_generation_metadata_records_the_active_display() -> None:
     }
 
 
+def test_queued_jobs_record_the_registered_display_id() -> None:
+    generator = FakeGenerator()
+    generator.device = "cuda"
+    app = create_app(Settings(), generator, video_generator=FakeVideoGenerator(), enable_mdns=False)
+
+    with TestClient(app) as client:
+        display = client.post("/displays/register", json={
+            "hardware_id": "aa:bb:cc:dd:ee:20",
+            "name": "Kitchen",
+            "width": 480,
+            "height": 272,
+            "firmware_version": "1.0.0",
+        }).json()
+        image = client.post("/generation-jobs", json={
+            "prompt": "a tiny robot", "display_ids": [display["id"]],
+        })
+        image_job_id = image.json()["id"]
+        for _ in range(20):
+            if client.get(f"/generation-jobs/{image_job_id}").json()["status"] == "complete":
+                break
+            time.sleep(0.01)
+        video = client.post("/video-generation-jobs", json={
+            "prompt": "a tiny robot", "display_ids": [display["id"]],
+        })
+
+    assert image.status_code == 202
+    assert image.json()["metadata"]["display_id"] == display["id"]
+    assert video.status_code == 202
+    assert video.json()["metadata"]["display_id"] == display["id"]
+
+
 def test_selecting_a_saved_image_makes_it_available_to_the_esp32(tmp_path) -> None:
     library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
     source = BytesIO()

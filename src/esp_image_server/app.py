@@ -1702,6 +1702,7 @@ def create_app(
         image_metadata: dict[str, object] = {
             "label": request.prompt[:80],
             "model_id": job_model_id,
+            "display_id": target_display_ids[0] if target_display_ids else None,
             "display_ids": target_display_ids,
             "broadcast_aspect_mode": broadcast_aspect_mode,
         }
@@ -1833,6 +1834,7 @@ def create_app(
             "prompt": request.prompt, "steps": request.steps, "seed": request.seed,
             "frames": request.num_frames, "fps": request.fps, "source_image_id": request.source_image_id,
             "rotation": rotation,
+            "display_id": profile.id if isinstance(profile, DisplayDevice) else None,
             "display_ids": [display.id for display in target_displays],
             "display": (
                 {"name": profile.name, "width": profile.width, "height": profile.height}
