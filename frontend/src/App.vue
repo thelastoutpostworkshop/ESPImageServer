@@ -79,6 +79,8 @@ const health = ref(null)
 const displays = ref([])
 const activeDisplayId = ref(window.localStorage.getItem(activeDisplaySettingsKey) || '')
 const displayPickerOpen = ref(false)
+const displayCardSdStates = ref({})
+const displayCardsLoading = ref(false)
 const legacyDisplay = ref(null)
 const displayConnectedSnackbar = ref(false)
 const displayConnectedMessage = ref('')
@@ -709,6 +711,35 @@ function selectActiveDisplay(displayId) {
   }
 }
 
+function displayCardSdLabel(target) {
+  const state = displayCardSdStates.value[target.id]
+  if (!state) return 'SD card status not reported'
+  if (!state.available) return 'No SD card reported'
+  const fileCount = Array.isArray(state.files) ? state.files.length : 0
+  return `SD card ready · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`
+}
+
+async function loadDisplayCardSdStates() {
+  if (!displays.value.length) {
+    displayCardSdStates.value = {}
+    return
+  }
+  displayCardsLoading.value = true
+  try {
+    const reports = await Promise.all(displays.value.map(async target => {
+      try {
+        const response = await fetch(`/displays/${encodeURIComponent(target.id)}/display-sd-card`, { cache: 'no-store' })
+        return [target.id, response.ok ? await response.json() : null]
+      } catch {
+        return [target.id, null]
+      }
+    }))
+    displayCardSdStates.value = Object.fromEntries(reports.filter(([, report]) => report))
+  } finally {
+    displayCardsLoading.value = false
+  }
+}
+
 async function loadDisplay() {
   try {
     const previousKey = display.value?.connected && display.value.online !== false
@@ -734,6 +765,7 @@ async function loadDisplay() {
       displayConnectedMessage.value = `${nextDisplay.name} connected (${nextDisplay.width} × ${nextDisplay.height}, firmware ${firmwareVersion}).`
       displayConnectedSnackbar.value = true
     }
+    if (page.value === 'displays') void loadDisplayCardSdStates()
   } catch {
     displays.value = []
     legacyDisplay.value = null
@@ -1515,6 +1547,11 @@ async function loadDisplayExperience() {
 function openDisplayExperiencePage() {
   navigate('display-experience')
   loadDisplayExperience()
+}
+
+function openDisplaysPage() {
+  navigate('displays')
+  void loadDisplayCardSdStates()
 }
 
 function navigate(nextPage) {
@@ -2612,6 +2649,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="navigate('video')" />
         <v-list-item prepend-icon="mdi-image-text" title="Creation Library" :active="metadataPane" @click="openMetadataPane" />
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="navigate('models')" />
+        <v-list-item prepend-icon="mdi-monitor-multiple" title="Displays" :active="page === 'displays'" @click="openDisplaysPage" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
         <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="navigate('settings')" />
@@ -3542,6 +3580,39 @@ onUnmounted(() => {
               <template #append><v-btn v-if="model.installed" color="error" icon="mdi-delete-outline" variant="text" size="small" :loading="removingVideoModelId === model.id" :disabled="videoGenerationActive" :aria-label="`Remove ${model.name}`" :title="`Remove ${model.name}`" @click="confirmRemoveVideoModel(model)" /></template>
             </v-list-item>
           </v-list>
+        </v-card>
+
+        <v-card v-if="page === 'displays'" class="mx-auto" max-width="1200">
+          <v-card-title class="text-h5 pt-5">Displays</v-card-title>
+          <v-card-subtitle>Choose the screen used by generation, display controls, and SD-card actions.</v-card-subtitle>
+          <v-card-text>
+            <v-progress-linear v-if="displayCardsLoading" indeterminate color="primary" class="mb-4" />
+            <v-row v-if="displays.length">
+              <v-col v-for="target in displays" :key="target.id" cols="12" md="6">
+                <v-card variant="outlined" :class="{ 'border-primary': target.id === activeDisplayId }">
+                  <v-card-title class="d-flex align-center ga-2 text-h6">
+                    <v-icon :color="target.online ? 'success' : 'warning'">{{ target.online ? 'mdi-monitor-check' : 'mdi-monitor-off' }}</v-icon>
+                    <span class="text-truncate">{{ target.name }}</span>
+                    <v-spacer />
+                    <v-chip v-if="target.id === activeDisplayId" color="primary" size="small" variant="tonal">Active</v-chip>
+                    <v-chip :color="target.online ? 'success' : 'warning'" size="small" variant="tonal">{{ target.online ? 'Online' : 'Offline' }}</v-chip>
+                  </v-card-title>
+                  <v-card-text class="pt-0">
+                    <div class="text-body-2"><strong>Native size:</strong> {{ target.width }} × {{ target.height }}</div>
+                    <div class="text-body-2 mt-1"><strong>Image rotation:</strong> {{ target.rotation || 0 }}° · <strong>Video rotation:</strong> {{ target.video_rotation || 0 }}°</div>
+                    <div class="text-body-2 mt-1"><strong>SD card:</strong> {{ displayCardSdLabel(target) }}</div>
+                    <div class="text-caption text-medium-emphasis mt-2">Firmware {{ target.firmware_version }} · Last seen {{ target.online ? 'now' : 'earlier' }}</div>
+                  </v-card-text>
+                  <v-card-actions>
+                    <v-btn color="primary" :variant="target.id === activeDisplayId ? 'tonal' : 'flat'" :disabled="target.id === activeDisplayId" @click="selectActiveDisplay(target.id)">
+                      {{ target.id === activeDisplayId ? 'Active display' : 'Make active' }}
+                    </v-btn>
+                  </v-card-actions>
+                </v-card>
+              </v-col>
+            </v-row>
+            <v-alert v-else type="info" variant="tonal">Turn on an ESP32 display to add it here.</v-alert>
+          </v-card-text>
         </v-card>
 
         <v-card v-if="page === 'about'">

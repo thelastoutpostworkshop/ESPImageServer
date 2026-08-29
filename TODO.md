@@ -9,11 +9,6 @@
 
 ## Multi-display UX follow-ups
 
-3. **P2 — Add a dedicated Displays page.** Show one card per registered
-   display with friendly name, online state, native size, rotation, SD-card
-   state, and a Make active action. Keep the app-bar selector as the quick
-   switcher.
-
 4. **P2 — Scope SD-card and gallery status to the active display.** For
    example, show “Kitchen's SD card” and “On Kitchen's SD card,” rather than
    generic status that changes silently after the global display is switched.
