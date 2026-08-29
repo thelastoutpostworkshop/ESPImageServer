@@ -9,10 +9,6 @@
 
 ## Multi-display UX follow-ups
 
-4. **P2 — Scope SD-card and gallery status to the active display.** For
-   example, show “Kitchen's SD card” and “On Kitchen's SD card,” rather than
-   generic status that changes silently after the global display is switched.
-
 5. **P2 — Improve physical display identification.** Support friendly room
    names and expose a short hardware/MAC suffix in the chooser for displays
    with similar names.

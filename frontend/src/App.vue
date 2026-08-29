@@ -273,6 +273,9 @@ const alreadySavedToDisplaySdCardLabel = computed(() => (
 const displaySdCardLabel = computed(() => (
   display.value?.connected ? `${display.value.name}'s SD card` : 'display SD card'
 ))
+const onDisplaySdCardLabel = computed(() => (
+  display.value?.connected ? `On ${display.value.name}'s SD card` : 'On display SD card'
+))
 function buildDisplayPreviewStyle(rotation) {
   const width = Number(display.value?.width) || 4
   const height = Number(display.value?.height) || 3
@@ -440,10 +443,10 @@ function creationDisplayName(creation) {
 }
 
 const creationSdCardInventoryConfirmed = computed(() => Number(displaySdCard.value?.report_version) > 0)
-const creationSdCardFilterOptions = [
-  { title: 'On display SD card', value: 'on_sd_card' },
-  { title: 'Not on display SD card', value: 'not_on_sd_card' }
-]
+const creationSdCardFilterOptions = computed(() => [
+  { title: onDisplaySdCardLabel.value, value: 'on_sd_card' },
+  { title: display.value?.connected ? `Not on ${display.value.name}'s SD card` : 'Not on display SD card', value: 'not_on_sd_card' }
+])
 
 function displaySdCardFiles() {
   return Array.isArray(displaySdCard.value?.files) ? displaySdCard.value.files : []
@@ -503,10 +506,10 @@ function creationSdCardStatus(creation, mediaType) {
 function creationSdCardLabel(creation, mediaType) {
   const sdCardStatus = creationSdCardStatus(creation, mediaType)
   if (!sdCardStatus.present) return ''
-  if (mediaType === 'video' && display.value?.connected && !sdCardStatus.activeFormat) return 'On SD card · another format'
-  if (mediaType === 'video' && !display.value?.connected) return 'On display SD card'
-  if (mediaType === 'video') return `On SD card · ${display?.value?.width}×${display?.value?.height} · ${savedVideoFps(creation)} fps`
-  return 'On display SD card'
+  if (mediaType === 'video' && display.value?.connected && !sdCardStatus.activeFormat) return `${onDisplaySdCardLabel.value} · another format`
+  if (mediaType === 'video' && !display.value?.connected) return onDisplaySdCardLabel.value
+  if (mediaType === 'video') return `${onDisplaySdCardLabel.value} · ${display?.value?.width}×${display?.value?.height} · ${savedVideoFps(creation)} fps`
+  return onDisplaySdCardLabel.value
 }
 
 function creationIsOnDisplaySdCard(creation, mediaType) {
@@ -2717,20 +2720,20 @@ onUnmounted(() => {
         <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
         <div class="d-flex align-center flex-wrap ga-2 mb-3">
           <v-chip v-if="creationSdCardInventoryConfirmed && displaySdCard.available" size="small" color="success" variant="tonal" prepend-icon="mdi-sd">
-            SD card status reported
+            {{ displaySdCardLabel }} status reported
           </v-chip>
           <v-chip v-else-if="creationSdCardInventoryConfirmed" size="small" color="warning" variant="tonal" prepend-icon="mdi-sd-off">
-            No SD card reported
+            No SD card reported by {{ display?.name || 'this display' }}
           </v-chip>
           <v-chip v-else size="small" variant="tonal" prepend-icon="mdi-help-circle-outline">
-            SD card status not checked
+            {{ displaySdCardLabel }} status not checked
           </v-chip>
           <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="refreshCreationLibrarySdCardStatus">
-            Refresh SD status
+            Refresh {{ displaySdCardLabel }} status
           </v-btn>
         </div>
         <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-3">
-          Last reported by the display: {{ formatDateTime(displaySdCard.reported_at) }}
+          Last reported by {{ display?.name || 'the display' }}: {{ formatDateTime(displaySdCard.reported_at) }}
         </div>
         <v-row dense class="mb-3">
           <v-col cols="12" md="4">
@@ -2761,7 +2764,7 @@ onUnmounted(() => {
             <v-select
               v-model="creationSdCardFilter"
               :items="creationSdCardFilterOptions"
-              label="Filter by SD card"
+              :label="`Filter by ${displaySdCardLabel}`"
               prepend-inner-icon="mdi-sd"
               clearable
               :disabled="!creationSdCardInventoryConfirmed"
@@ -2780,7 +2783,7 @@ onUnmounted(() => {
                 <template #activator="{ props }">
                   <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
                     <v-img :src="`/saved-images/${encodeURIComponent(savedImage.id)}/thumbnail`" aspect-ratio="1.33" cover />
-                    <v-chip v-if="creationIsOnDisplaySdCard(savedImage, 'image')" class="saved-image-thumbnail__sd-status" size="x-small" color="success" variant="flat" prepend-icon="mdi-sd" @click.stop>On SD card</v-chip>
+                    <v-chip v-if="creationIsOnDisplaySdCard(savedImage, 'image')" class="saved-image-thumbnail__sd-status" size="x-small" color="success" variant="flat" prepend-icon="mdi-sd" @click.stop>{{ onDisplaySdCardLabel }}</v-chip>
                     <v-btn class="saved-image-thumbnail__more" icon="mdi-dots-vertical" size="small" color="surface" variant="flat" elevation="3" aria-label="More actions for saved image" title="More actions" @pointerdown.stop @click.stop="openSavedImageActions($event, savedImage)" />
                     <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
                   </v-card>
@@ -2799,7 +2802,7 @@ onUnmounted(() => {
           <v-list-item v-for="savedImage in filteredSavedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
             <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
             <template #append>
-              <v-chip v-if="creationIsOnDisplaySdCard(savedImage, 'image')" size="x-small" color="success" variant="tonal" prepend-icon="mdi-sd" class="mr-1">On SD card</v-chip>
+              <v-chip v-if="creationIsOnDisplaySdCard(savedImage, 'image')" size="x-small" color="success" variant="tonal" prepend-icon="mdi-sd" class="mr-1">{{ onDisplaySdCardLabel }}</v-chip>
               <v-btn icon="mdi-dots-vertical" size="small" variant="text" aria-label="More actions for saved image" title="More actions" @pointerdown.stop @click.stop="openSavedImageActions($event, savedImage)" />
             </template>
             <v-list-item-subtitle>{{ savedImage.metadata?.model?.name || 'ESPImageServer' }} · {{ new Date(savedImage.created_at).toLocaleString() }}</v-list-item-subtitle>
@@ -2816,7 +2819,7 @@ onUnmounted(() => {
                 <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
                   <v-img v-if="savedVideo.thumbnail_filename" :src="`/saved-videos/${encodeURIComponent(savedVideo.id)}/thumbnail`" aspect-ratio="1.33" cover />
                   <v-sheet v-else class="d-flex align-center justify-center" height="120"><v-icon size="40">mdi-movie-open-outline</v-icon></v-sheet>
-                  <v-chip v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" class="saved-image-thumbnail__sd-status" size="x-small" color="success" variant="flat" prepend-icon="mdi-sd" @click.stop>On SD card</v-chip>
+                  <v-chip v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" class="saved-image-thumbnail__sd-status" size="x-small" color="success" variant="flat" prepend-icon="mdi-sd" @click.stop>{{ onDisplaySdCardLabel }}</v-chip>
                   <v-btn class="saved-image-thumbnail__more" icon="mdi-dots-vertical" size="small" color="surface" variant="flat" elevation="3" aria-label="More actions for saved video" title="More actions" @pointerdown.stop @click.stop="openSavedVideoActions($event, savedVideo)" />
                   <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
                 </v-card>
@@ -2835,7 +2838,7 @@ onUnmounted(() => {
           <v-list-item v-for="savedVideo in filteredSavedVideos" :key="savedVideo.id" prepend-icon="mdi-movie-open-outline" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
             <v-list-item-title>{{ savedVideo.metadata?.prompt || 'Generated video' }}</v-list-item-title>
             <template #append>
-              <v-chip v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" size="x-small" color="success" variant="tonal" prepend-icon="mdi-sd" class="mr-1">On SD card</v-chip>
+              <v-chip v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" size="x-small" color="success" variant="tonal" prepend-icon="mdi-sd" class="mr-1">{{ onDisplaySdCardLabel }}</v-chip>
               <v-btn icon="mdi-dots-vertical" size="small" variant="text" aria-label="More actions for saved video" title="More actions" @pointerdown.stop @click.stop="openSavedVideoActions($event, savedVideo)" />
             </template>
             <v-list-item-subtitle>{{ savedVideo.metadata?.model?.name || 'LTX-Video' }} · {{ new Date(savedVideo.created_at).toLocaleString() }}</v-list-item-subtitle>
@@ -3701,7 +3704,7 @@ onUnmounted(() => {
 
         <v-card v-if="page === 'sd-card'">
           <v-card-title class="d-flex align-center text-h5 pt-5">
-            Display SD Card
+            {{ display?.connected ? `${display.name}'s SD Card` : 'Display SD Card' }}
             <v-spacer />
             <v-chip v-if="displaySdCard.available" :color="activeDisplayOnline ? 'success' : 'warning'" size="small" variant="tonal" prepend-icon="mdi-sd">
               {{ activeDisplayOnline ? 'Card ready' : 'Last reported card' }} · {{ displaySdCard.files?.length || 0 }} files
@@ -3716,7 +3719,7 @@ onUnmounted(() => {
               {{ display.name }} is offline. This is its last reported SD-card list; reconnect it to refresh, play, save, or delete files.
             </v-alert>
             <v-alert v-if="!displaySdCard.available" type="warning" variant="tonal" density="compact" class="mb-4">
-              Waiting for the display to report its SD card.
+              Waiting for {{ display?.name || 'the display' }} to report its SD card.
             </v-alert>
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
             <div class="d-flex flex-wrap ga-2 mb-4">
@@ -3742,7 +3745,7 @@ onUnmounted(() => {
               </v-btn>
             </div>
             <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-4">
-              Last confirmed by the display: {{ formatDateTime(displaySdCard.reported_at) }}
+              Last confirmed by {{ display?.name || 'the display' }}: {{ formatDateTime(displaySdCard.reported_at) }}
             </div>
             <v-progress-linear v-if="compact && displaySdCardLoading" indeterminate color="primary" class="mb-3" />
             <v-list v-if="compact" class="sd-card-mobile-list border rounded" lines="three">
@@ -3765,7 +3768,7 @@ onUnmounted(() => {
                 </template>
                 <v-list-item-title class="text-break">{{ item.name }}</v-list-item-title>
                 <v-list-item-subtitle>{{ item.type === 'video' ? 'Video' : 'Image' }} · {{ formatDateTime(item.created_at) }}</v-list-item-subtitle>
-                <v-list-item-subtitle>{{ formatFileSize(item.size) }} · Saved on your display SD card</v-list-item-subtitle>
+                <v-list-item-subtitle>{{ formatFileSize(item.size) }} · Saved on {{ displaySdCardLabel }}</v-list-item-subtitle>
                 <template #append>
                   <div class="d-flex flex-column">
                     <v-btn icon="mdi-play" size="small" color="primary" variant="text" :loading="displayingSdCardFile === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Show ${item.name} on ${display?.name || 'display'}`" @click="showSDCardFileOnDisplay(item.name)" />
@@ -3799,7 +3802,7 @@ onUnmounted(() => {
               </template>
               <template #item.name="{ item }">
                 <div class="font-weight-medium">{{ item.name }}</div>
-                <div class="text-caption text-medium-emphasis">Saved on your display SD card</div>
+                <div class="text-caption text-medium-emphasis">Saved on {{ displaySdCardLabel }}</div>
               </template>
               <template #item.size="{ item }">{{ formatFileSize(item.size) }}</template>
               <template #item.created_at="{ item }">{{ formatDateTime(item.created_at) }}</template>
