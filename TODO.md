@@ -9,12 +9,6 @@
 
 ## Multi-display UX follow-ups
 
-1. **P1 — Name the destination in every display action.** Replace generic
-   labels such as “Show on active display” and “Save to SD card” with
-   “Show on <display name>” and “Save to <display name>'s SD card.” Keep the
-   single global active-display selector; do not reintroduce per-page target
-   selection.
-
 2. **P1 — Show each queued job's captured display target.** Add the target
    display name and native size to queue rows. Image jobs already retain the
    selected display ID; extend video-job metadata to retain a stable display

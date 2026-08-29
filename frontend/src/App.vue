@@ -259,6 +259,18 @@ const displayManagementLabel = computed(() => {
   if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height} · ${activeDisplayConnectionLabel.value}`
   return 'No display selected'
 })
+const showOnDisplayLabel = computed(() => (
+  display.value?.connected ? `Show on ${display.value.name}` : 'Show on display'
+))
+const saveToDisplaySdCardLabel = computed(() => (
+  display.value?.connected ? `Save to ${display.value.name}'s SD card` : 'Save to SD card'
+))
+const alreadySavedToDisplaySdCardLabel = computed(() => (
+  display.value?.connected ? `Already saved on ${display.value.name}'s SD card` : 'Already saved on display SD card'
+))
+const displaySdCardLabel = computed(() => (
+  display.value?.connected ? `${display.value.name}'s SD card` : 'display SD card'
+))
 function buildDisplayPreviewStyle(rotation) {
   const width = Number(display.value?.width) || 4
   const height = Number(display.value?.height) || 3
@@ -2796,11 +2808,11 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" title="Show on active display" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
+        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="showOnDisplayLabel" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'mdi-check-circle' : 'mdi-sd'"
-          :title="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'Already saved on display SD card' : 'Save for offline playback'"
+          :title="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? alreadySavedToDisplaySdCardLabel : saveToDisplaySdCardLabel"
           :disabled="!activeDisplayOnline || savingToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image')"
           @click="saveContextMenuImageToDisplaySdCard"
         />
@@ -2821,11 +2833,11 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" title="Show on display" :disabled="!activeDisplayOnline || showingVideoOnDisplay" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
+        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" :title="showOnDisplayLabel" :disabled="!activeDisplayOnline || showingVideoOnDisplay" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? 'mdi-check-circle' : 'mdi-sd'"
-          :title="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? 'Already saved on display SD card' : 'Save for offline playback'"
+          :title="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? alreadySavedToDisplaySdCardLabel : saveToDisplaySdCardLabel"
           :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video')"
           @click="saveSavedVideoToDisplaySdCard"
         />
@@ -3241,13 +3253,13 @@ onUnmounted(() => {
               Use saved settings
             </v-btn>
             <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets" @click="showSavedImageOnDisplay()">
-              Show on active display
+              {{ showOnDisplayLabel }}
             </v-btn>
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
             </v-btn>
             <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!activeDisplayOnline" @click="saveImageToDisplaySdCard(selectedSavedImage)">
-              Save to SD card for offline playback
+              {{ saveToDisplaySdCardLabel }}
             </v-btn>
             <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
           </v-card-actions>
@@ -3412,10 +3424,10 @@ onUnmounted(() => {
               {{ videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery' }}
             </v-btn>
             <v-btn color="primary" prepend-icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" @click="showSavedVideoOnDisplay">
-              Show on display
+              {{ showOnDisplayLabel }}
             </v-btn>
             <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" @click="saveCompletedVideoToDisplaySdCard">
-              Save to SD card for offline playback
+              {{ saveToDisplaySdCardLabel }}
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -3591,8 +3603,8 @@ onUnmounted(() => {
                 variant="outlined"
                 class="mb-3"
               />
-              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline" prepend-icon="mdi-content-save">Save display experience</v-btn>
-              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperiencePreviewing" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }}</v-btn>
+              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline" prepend-icon="mdi-content-save">Save {{ display?.name || 'display' }} experience</v-btn>
+              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperiencePreviewing" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }} on {{ display?.name || 'display' }}</v-btn>
               <div v-if="!activeDisplayOnline" class="text-caption text-medium-emphasis mt-3">Reconnect the display to save or preview these settings.</div>
               <v-alert v-if="displayExperienceStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ displayExperienceStatus }}</v-alert>
               <v-alert v-if="displayExperienceError" type="error" variant="tonal" density="compact" class="mt-4">{{ displayExperienceError }}</v-alert>
@@ -3621,7 +3633,7 @@ onUnmounted(() => {
             </v-alert>
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
             <div class="d-flex flex-wrap ga-2 mb-4">
-              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="!activeDisplayOnline || deletingSdCardFile || deletingSdCardFiles" @click="refreshDisplaySdCard">Refresh from display</v-btn>
+              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="!activeDisplayOnline || deletingSdCardFile || deletingSdCardFiles" @click="refreshDisplaySdCard">Refresh {{ displaySdCardLabel }}</v-btn>
               <v-btn
                 v-if="selectedSdCardFiles.length"
                 color="error"
@@ -3669,8 +3681,8 @@ onUnmounted(() => {
                 <v-list-item-subtitle>{{ formatFileSize(item.size) }} · Saved on your display SD card</v-list-item-subtitle>
                 <template #append>
                   <div class="d-flex flex-column">
-                    <v-btn icon="mdi-play" size="small" color="primary" variant="text" :loading="displayingSdCardFile === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Show ${item.name} on display`" @click="showSDCardFileOnDisplay(item.name)" />
-                    <v-btn icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Delete ${item.name} from SD card`" @click="confirmDeleteDisplaySdCardFile(item)" />
+                    <v-btn icon="mdi-play" size="small" color="primary" variant="text" :loading="displayingSdCardFile === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Show ${item.name} on ${display?.name || 'display'}`" @click="showSDCardFileOnDisplay(item.name)" />
+                    <v-btn icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Delete ${item.name} from ${displaySdCardLabel}`" @click="confirmDeleteDisplaySdCardFile(item)" />
                   </div>
                 </template>
               </v-list-item>
@@ -3706,7 +3718,7 @@ onUnmounted(() => {
               <template #item.created_at="{ item }">{{ formatDateTime(item.created_at) }}</template>
               <template #item.actions="{ item }">
                 <div class="d-flex justify-end ga-1">
-                  <v-tooltip text="Show on display">
+                  <v-tooltip :text="showOnDisplayLabel">
                     <template #activator="{ props }">
                       <v-btn
                         v-bind="props"
@@ -3720,7 +3732,7 @@ onUnmounted(() => {
                       />
                     </template>
                   </v-tooltip>
-                  <v-tooltip text="Delete from SD card">
+                  <v-tooltip :text="`Delete from ${displaySdCardLabel}`">
                     <template #activator="{ props }">
                       <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" @click="confirmDeleteDisplaySdCardFile(item)" />
                     </template>
