@@ -89,6 +89,19 @@ def working_video_size(width: int, height: int) -> tuple[int, int]:
     return working_width, working_height
 
 
+def rotate_frame_for_display(frame: Image.Image, rotation: int) -> Image.Image:
+    """Rotate an artwork frame into the display's fixed native orientation."""
+    if rotation == 90:
+        return frame.transpose(Image.Transpose.ROTATE_270)
+    if rotation == 180:
+        return frame.transpose(Image.Transpose.ROTATE_180)
+    if rotation == 270:
+        return frame.transpose(Image.Transpose.ROTATE_90)
+    if rotation != 0:
+        raise ValueError("Video rotation must be 0, 90, 180, or 270 degrees")
+    return frame
+
+
 def working_wan_video_size(width: int, height: int) -> tuple[int, int]:
     """Use Wan's 480p-class canvas while preserving the ESP32 aspect ratio."""
     shortest, longest = min(width, height), max(width, height)
@@ -304,7 +317,7 @@ class LTXVideoGenerator:
         self, prompt: str, width: int, height: int, num_frames: int, fps: int, steps: int,
         seed: int | None, output_path: Path, progress: Callable[[int, int, str], None],
         cancelled: Callable[[], bool], source_image_path: Path | None = None,
-        model_id: str = "ltx-2b-0.9.6-distilled",
+        model_id: str = "ltx-2b-0.9.6-distilled", rotation: int = 0,
     ) -> Path:
         with self._lock:
             model = VIDEO_MODELS.get(model_id)
@@ -345,15 +358,20 @@ class LTXVideoGenerator:
                 elif model["family"] == "hunyuan":
                     generation_options = {"image": source_frame}
 
+            if rotation not in {0, 90, 180, 270}:
+                raise ValueError("Video rotation must be 0, 90, 180, or 270 degrees")
+            artwork_width, artwork_height = (
+                (height, width) if rotation in {90, 270} else (width, height)
+            )
             # Native ESP32 screens are far below LTX's useful working size.
             # Generate on an aspect-matched, 32-pixel-aligned canvas first,
-            # then downscale the decoded frames to the display dimensions.
+            # then rotate and downscale the decoded frames to the display dimensions.
             generation_width, generation_height = (
-                working_wan_video_size(width, height)
-                if model["family"] == "wan" else working_video_size(width, height)
+                working_wan_video_size(artwork_width, artwork_height)
+                if model["family"] == "wan" else working_video_size(artwork_width, artwork_height)
             )
             if model["family"] == "hunyuan":
-                generation_width, generation_height = working_hunyuan_video_size(width, height)
+                generation_width, generation_height = working_hunyuan_video_size(artwork_width, artwork_height)
                 progress(0, 0, "Generating HunyuanVideo frames (progress is reported when encoding finishes)")
                 frames = generation_pipeline(
                     prompt=prompt,
@@ -382,15 +400,18 @@ class LTXVideoGenerator:
                 raise GenerationCancelled()
             progress(steps, steps, "Decoding generated video frames")
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            if (generation_width, generation_height) != (width, height):
+            if (generation_width, generation_height) != (artwork_width, artwork_height):
                 progress(steps, steps, "Resizing video for your ESP32 display")
                 frames = [
                     ImageOps.fit(
                         frame_to_rgb_image(frame),
-                        (width, height), method=Image.Resampling.LANCZOS,
+                        (artwork_width, artwork_height), method=Image.Resampling.LANCZOS,
                     )
                     for frame in frames
                 ]
+            if rotation:
+                progress(steps, steps, "Rotating video for your ESP32 display")
+                frames = [rotate_frame_for_display(frame_to_rgb_image(frame), rotation) for frame in frames]
             progress(steps, steps, "Encoding MP4 video")
             export_to_video(frames, str(output_path), fps=fps)
             return output_path

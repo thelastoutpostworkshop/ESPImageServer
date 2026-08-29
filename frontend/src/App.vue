@@ -2311,7 +2311,10 @@ async function generateVideo() {
         steps: Number(videoSteps.value),
         model_id: videoModelId.value,
         seed: videoSeed.value === '' ? null : Number(videoSeed.value),
-        source_image_id: videoSourceImage.value?.id || null
+        source_image_id: videoSourceImage.value?.id || null,
+        ...(hasDisplayTargets.value
+          ? { display_ids: selectedTargetDisplayIds.value }
+          : {})
       })
     })
     if (!response.ok) {
@@ -3235,6 +3238,18 @@ onUnmounted(() => {
                 <strong>{{ display.name }} is offline.</strong> This video will still be created for its {{ display.width }} × {{ display.height }} screen, but display and SD-card actions are unavailable until it reconnects.
               </v-alert>
               <div v-if="display?.connected && activeDisplayOnline" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
+              <v-select
+                :model-value="displayRotation"
+                :items="rotationOptions"
+                :label="display?.connected ? `Video rotation for ${display.name}` : 'Video rotation'"
+                variant="outlined"
+                density="comfortable"
+                :disabled="generationBusy || Boolean(displays.length && !display?.connected)"
+                hint="This display-wide setting applies to both images and videos. The video is generated in the rotated aspect, then delivered at the screen’s native dimensions."
+                persistent-hint
+                class="mb-4"
+                @update:model-value="setDisplayRotation"
+              />
               <v-alert v-if="videoModelId === 'wan-2.1-t2v-1.3b'" type="info" variant="tonal" density="compact" class="mb-4">
                 Wan 2.1 uses text only. It generates at a larger 480p-class working size, then is resized for your display. The first download can take several minutes.
               </v-alert>

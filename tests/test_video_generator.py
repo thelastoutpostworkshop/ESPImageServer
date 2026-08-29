@@ -2,7 +2,7 @@ import numpy as np
 from PIL import Image
 
 from esp_image_server.video_generator import (
-    VIDEO_MODELS, frame_to_rgb_image, remove_cached_video_model, video_model_is_cached, working_hunyuan_video_size,
+    VIDEO_MODELS, frame_to_rgb_image, remove_cached_video_model, rotate_frame_for_display, video_model_is_cached, working_hunyuan_video_size,
     working_video_size, working_wan_video_size,
 )
 
@@ -47,6 +47,15 @@ def test_wan_float_frame_arrays_are_converted_to_pillow_images() -> None:
 
     assert image.size == (32, 24)
     assert image.getpixel((0, 0)) == (128, 128, 128)
+
+
+def test_video_frame_rotation_matches_the_display_image_rotation_contract() -> None:
+    frame = Image.new("RGB", (32, 24), "blue")
+
+    assert rotate_frame_for_display(frame, 0).size == (32, 24)
+    assert rotate_frame_for_display(frame, 90).size == (24, 32)
+    assert rotate_frame_for_display(frame, 180).size == (32, 24)
+    assert rotate_frame_for_display(frame, 270).size == (24, 32)
 
 
 def test_video_module_image_helper_is_available_without_a_reference_image() -> None:

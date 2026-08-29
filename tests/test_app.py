@@ -81,7 +81,8 @@ class BlankFakeGenerator(FakeGenerator):
 
 
 class FakeVideoGenerator:
-    def generate(self, prompt, width, height, num_frames, fps, steps, seed, output_path, progress, cancelled, source_image_path, model_id) -> Path:
+    def generate(self, prompt, width, height, num_frames, fps, steps, seed, output_path, progress, cancelled, source_image_path, model_id, rotation=0) -> Path:
+        self.last_rotation = rotation
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"video")
         return output_path

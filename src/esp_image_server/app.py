@@ -224,6 +224,7 @@ class VideoGenerateRequest(BaseModel):
     model_id: str = Field(default="ltx-2b-0.9.6-distilled")
     seed: int | None = Field(default=None, ge=0, le=4_294_967_295)
     source_image_id: str | None = Field(default=None, min_length=1, max_length=64)
+    display_ids: list[str] | None = Field(default=None, min_length=1, max_length=1)
 
 
 def create_app(
@@ -1794,15 +1795,19 @@ def create_app(
         source_image_path = image_library.find_path(request.source_image_id) if request.source_image_id else None
         if request.source_image_id and source_image_path is None:
             raise HTTPException(status_code=404, detail="The selected Creation Gallery image was not found")
-        profile = active_display_store.get()
+        target_displays = requested_target_displays(request.display_ids)
+        profile = target_displays[0] if target_displays else active_display_store.get()
         output_width = profile.width if profile else request.width
         output_height = profile.height if profile else request.height
+        rotation = profile.rotation if isinstance(profile, DisplayDevice) else display_settings_store.get_rotation()
         filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
         output_path = video_output_path / filename
         video_metadata: dict[str, object] = {
             "label": request.prompt[:80], "model": {"id": request.model_id, "name": video_model["name"]},
             "prompt": request.prompt, "steps": request.steps, "seed": request.seed,
             "frames": request.num_frames, "fps": request.fps, "source_image_id": request.source_image_id,
+            "rotation": rotation,
+            "display_ids": [display.id for display in target_displays],
             "display": (
                 {"name": profile.name, "width": profile.width, "height": profile.height}
                 if profile is not None else None
@@ -1815,6 +1820,7 @@ def create_app(
             result = video_generator.generate(
                 request.prompt, output_width, output_height, request.num_frames, request.fps,
                 request.steps, request.seed, output_path, progress, cancelled, source_image_path, request.model_id,
+                rotation=rotation,
             )
             video_metadata["generation_time_seconds"] = round(perf_counter() - generation_started_at, 2)
             if auto_save_videos:
