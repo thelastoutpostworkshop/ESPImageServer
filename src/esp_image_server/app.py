@@ -553,6 +553,16 @@ def create_app(
             raise HTTPException(status_code=422, detail="Image rotation must be 0, 90, 180, or 270 degrees")
         return {"rotation": display_settings_store.set_rotation(request.rotation)}
 
+    @app.get("/video-display-settings")
+    def get_video_display_settings() -> dict[str, int]:
+        return {"rotation": display_settings_store.get_video_rotation()}
+
+    @app.put("/video-display-settings")
+    def update_video_display_settings(request: DisplaySettingsRequest) -> dict[str, int]:
+        if request.rotation not in VALID_ROTATIONS:
+            raise HTTPException(status_code=422, detail="Video rotation must be 0, 90, 180, or 270 degrees")
+        return {"rotation": display_settings_store.set_video_rotation(request.rotation)}
+
     def get_registered_display(display_id: str) -> DisplayDevice:
         try:
             return display_registry.get(display_id)
@@ -705,6 +715,22 @@ def create_app(
         except DisplayRegistryError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"rotation": display.rotation}
+
+    @app.get("/displays/{display_id}/video-display-settings")
+    def get_registered_video_display_settings(display_id: str) -> dict[str, int]:
+        return {"rotation": get_registered_display(display_id).video_rotation}
+
+    @app.put("/displays/{display_id}/video-display-settings")
+    def update_registered_video_display_settings(
+        display_id: str, request: DisplaySettingsRequest,
+    ) -> dict[str, int]:
+        try:
+            display = display_registry.set_video_rotation(display_id, request.rotation)
+        except DisplayNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except DisplayRegistryError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"rotation": display.video_rotation}
 
     @app.post("/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
     def save_latest_to_display_sd_card() -> dict[str, object]:
@@ -1799,7 +1825,7 @@ def create_app(
         profile = target_displays[0] if target_displays else active_display_store.get()
         output_width = profile.width if profile else request.width
         output_height = profile.height if profile else request.height
-        rotation = profile.rotation if isinstance(profile, DisplayDevice) else display_settings_store.get_rotation()
+        rotation = profile.video_rotation if isinstance(profile, DisplayDevice) else display_settings_store.get_video_rotation()
         filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
         output_path = video_output_path / filename
         video_metadata: dict[str, object] = {

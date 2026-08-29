@@ -34,6 +34,7 @@ class DisplayDevice:
     height: int
     firmware_version: str
     rotation: int
+    video_rotation: int
     capabilities: dict[str, bool]
     paired_at: float
     last_seen: float
@@ -48,6 +49,7 @@ class DisplayDevice:
             "height": self.height,
             "firmware_version": self.firmware_version,
             "rotation": self.rotation,
+            "video_rotation": self.video_rotation,
             "capabilities": dict(self.capabilities),
             "online": now - self.last_seen <= DisplayRegistry.online_after_seconds,
             "paired_at": datetime.fromtimestamp(self.paired_at, UTC).isoformat(),
@@ -168,6 +170,18 @@ class DisplayRegistry:
             row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
         return self._row_to_device(row)
 
+    def set_video_rotation(self, display_id: str, rotation: int) -> DisplayDevice:
+        if rotation not in VALID_ROTATIONS:
+            raise DisplayRegistryError("Video rotation must be 0, 90, 180, or 270 degrees")
+        with self._lock, self._connection() as connection:
+            updated = connection.execute(
+                "UPDATE displays SET video_rotation = ? WHERE id = ?", (rotation, display_id)
+            ).rowcount
+            if not updated:
+                raise DisplayNotFoundError("Display was not found")
+            row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
+        return self._row_to_device(row)
+
     def _initialize_database(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as connection:
@@ -184,12 +198,16 @@ class DisplayRegistry:
                     height INTEGER NOT NULL,
                     firmware_version TEXT NOT NULL,
                     rotation INTEGER NOT NULL DEFAULT 0,
+                    video_rotation INTEGER NOT NULL DEFAULT 0,
                     capabilities TEXT NOT NULL DEFAULT '{}',
                     paired_at REAL NOT NULL,
                     last_seen REAL NOT NULL
                 )
                 """
             )
+            columns = {str(row["name"]) for row in connection.execute("PRAGMA table_info(displays)")}
+            if "video_rotation" not in columns:
+                connection.execute("ALTER TABLE displays ADD COLUMN video_rotation INTEGER NOT NULL DEFAULT 0")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -232,6 +250,7 @@ class DisplayRegistry:
             height=int(row["height"]),
             firmware_version=str(row["firmware_version"]),
             rotation=int(row["rotation"]),
+            video_rotation=int(row["video_rotation"]),
             capabilities={str(key): bool(value) for key, value in capabilities.items()},
             paired_at=float(row["paired_at"]),
             last_seen=float(row["last_seen"]),

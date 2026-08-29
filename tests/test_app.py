@@ -841,7 +841,12 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
         kitchen_rotation = client.put(
             f"/displays/{kitchen_id}/display-settings", json={"rotation": 90},
         )
+        kitchen_video_rotation = client.put(
+            f"/displays/{kitchen_id}/video-display-settings", json={"rotation": 270},
+        )
         office_settings = client.get(f"/displays/{office_id}/display-settings")
+        kitchen_video_settings = client.get(f"/displays/{kitchen_id}/video-display-settings")
+        office_video_settings = client.get(f"/displays/{office_id}/video-display-settings")
         renamed_office = client.patch(f"/displays/{office_id}", json={"name": "Studio"})
         heartbeat = client.post(
             f"/displays/{kitchen_id}/heartbeat",
@@ -887,7 +892,10 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
 
     assert [display["name"] for display in displays.json()] == ["Kitchen", "Office"]
     assert kitchen_rotation.json() == {"rotation": 90}
+    assert kitchen_video_rotation.json() == {"rotation": 270}
     assert office_settings.json() == {"rotation": 0}
+    assert kitchen_video_settings.json() == {"rotation": 270}
+    assert office_video_settings.json() == {"rotation": 0}
     assert renamed_office.json()["name"] == "Studio"
     assert heartbeat.json()["display"]["firmware_version"] == "1.0.1"
     assert kitchen_command.status_code == 202

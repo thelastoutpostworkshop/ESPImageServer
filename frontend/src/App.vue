@@ -85,6 +85,7 @@ const displayConnectedMessage = ref('')
 const generationQueueSnackbar = ref(false)
 const generationQueueSnackbarMessage = ref('')
 const displayRotation = ref(0)
+const videoRotation = ref(0)
 const models = ref([])
 const availableVideoModels = ref([])
 const removingImageModelId = ref('')
@@ -258,27 +259,32 @@ const displayManagementLabel = computed(() => {
   if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height} · ${activeDisplayConnectionLabel.value}`
   return 'No display selected'
 })
-const displayPreviewStyle = computed(() => {
+function buildDisplayPreviewStyle(rotation) {
   const width = Number(display.value?.width) || 4
   const height = Number(display.value?.height) || 3
-  const rotated = displayRotation.value === 90 || displayRotation.value === 270
+  const rotated = rotation === 90 || rotation === 270
   const previewWidth = rotated ? height : width
   const previewHeight = rotated ? width : height
   return {
     '--display-preview-aspect-ratio': `${previewWidth} / ${previewHeight}`,
     '--display-preview-ratio': String(previewWidth / previewHeight)
   }
-})
-const displayPreviewSizeLabel = computed(() => (
-  display.value?.connected
-    ? displayRotation.value === 90 || displayRotation.value === 270
-      ? `${display.value.height} × ${display.value.width}`
-      : `${display.value.width} × ${display.value.height}`
-    : 'Select a display'
-))
-const displayPreviewRotationLabel = computed(() => (
-  displayRotation.value ? `Rotation: ${displayRotation.value}°` : 'Rotation: normal'
-))
+}
+function buildDisplayPreviewSizeLabel(rotation) {
+  if (!display.value?.connected) return 'Select a display'
+  return rotation === 90 || rotation === 270
+    ? `${display.value.height} × ${display.value.width}`
+    : `${display.value.width} × ${display.value.height}`
+}
+function buildDisplayPreviewRotationLabel(rotation) {
+  return rotation ? `Rotation: ${rotation}°` : 'Rotation: normal'
+}
+const imageDisplayPreviewStyle = computed(() => buildDisplayPreviewStyle(displayRotation.value))
+const imageDisplayPreviewSizeLabel = computed(() => buildDisplayPreviewSizeLabel(displayRotation.value))
+const imageDisplayPreviewRotationLabel = computed(() => buildDisplayPreviewRotationLabel(displayRotation.value))
+const videoDisplayPreviewStyle = computed(() => buildDisplayPreviewStyle(videoRotation.value))
+const videoDisplayPreviewSizeLabel = computed(() => buildDisplayPreviewSizeLabel(videoRotation.value))
+const videoDisplayPreviewRotationLabel = computed(() => buildDisplayPreviewRotationLabel(videoRotation.value))
 const compactDisplayLabel = computed(() => {
   if (!display.value?.connected) return displays.value.length ? 'Choose display' : 'Display waiting'
   return `Active: ${display.value.name}`
@@ -640,6 +646,7 @@ watch(activeDisplayId, displayId => {
   selectedSdCardFileNames.value = []
   if (!display.value?.connected) {
     displayRotation.value = 0
+    videoRotation.value = 0
     displaySdCard.value = { available: false, files: [] }
     return
   }
@@ -725,13 +732,19 @@ async function loadDisplay() {
 async function loadDisplaySettings() {
   if (!display.value?.connected) {
     displayRotation.value = 0
+    videoRotation.value = 0
     return
   }
   try {
-    const settings = await fetch(selectedDisplayEndpoint('/display-settings')).then(response => response.json())
-    displayRotation.value = settings.rotation
+    const [imageSettings, videoSettings] = await Promise.all([
+      fetch(selectedDisplayEndpoint('/display-settings')).then(response => response.json()),
+      fetch(selectedDisplayEndpoint('/video-display-settings')).then(response => response.json())
+    ])
+    displayRotation.value = imageSettings.rotation
+    videoRotation.value = videoSettings.rotation
   } catch {
     displayRotation.value = 0
+    videoRotation.value = 0
   }
 }
 
@@ -761,6 +774,35 @@ async function setDisplayRotation(rotation) {
   } catch (requestError) {
     displayRotation.value = previousRotation
     error.value = `Could not save image rotation: ${requestError.message}`
+  }
+}
+
+async function setVideoRotation(rotation) {
+  if (!display.value?.connected) return
+  const previousRotation = videoRotation.value
+  videoRotation.value = rotation
+  error.value = ''
+  try {
+    const response = await fetch(selectedDisplayEndpoint('/video-display-settings'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rotation })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    const settings = await response.json()
+    videoRotation.value = settings.rotation
+    if (selectedRegisteredDisplay.value) {
+      displays.value = displays.value.map(display => (
+        display.id === selectedRegisteredDisplay.value.id ? { ...display, video_rotation: settings.rotation } : display
+      ))
+    }
+    status.value = `Video rotation saved for ${display.value.name}. It will be used for the next video.`
+  } catch (requestError) {
+    videoRotation.value = previousRotation
+    error.value = `Could not save video rotation: ${requestError.message}`
   }
 }
 
@@ -3179,14 +3221,14 @@ onUnmounted(() => {
           <v-img v-if="previewUrl" :src="previewUrl" alt="Image fitted to the connected ESP32 display" />
           <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
             <div class="display-preview-stage mb-4">
-              <div class="display-preview-device" :style="displayPreviewStyle" :aria-label="`Selected display preview: ${displayPreviewSizeLabel}, ${displayPreviewRotationLabel}`">
+              <div class="display-preview-device" :style="imageDisplayPreviewStyle" :aria-label="`Selected display preview: ${imageDisplayPreviewSizeLabel}, ${imageDisplayPreviewRotationLabel}`">
                 <div class="display-preview-device__artwork">
                   <v-icon size="32">mdi-image-outline</v-icon>
                 </div>
               </div>
             </div>
             <div class="text-h6">Your generated image will appear here</div>
-            <div class="text-body-2 text-medium-emphasis mt-2">{{ displayPreviewSizeLabel }} · {{ displayPreviewRotationLabel }}</div>
+            <div class="text-body-2 text-medium-emphasis mt-2">{{ imageDisplayPreviewSizeLabel }} · {{ imageDisplayPreviewRotationLabel }}</div>
             <div class="text-body-2 text-medium-emphasis mt-1">
               Describe an image, choose your settings, then select Generate image.
             </div>
@@ -3239,16 +3281,16 @@ onUnmounted(() => {
               </v-alert>
               <div v-if="display?.connected && activeDisplayOnline" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
               <v-select
-                :model-value="displayRotation"
+                :model-value="videoRotation"
                 :items="rotationOptions"
                 :label="display?.connected ? `Video rotation for ${display.name}` : 'Video rotation'"
                 variant="outlined"
                 density="comfortable"
                 :disabled="generationBusy || Boolean(displays.length && !display?.connected)"
-                hint="This display-wide setting applies to both images and videos. The video is generated in the rotated aspect, then delivered at the screen’s native dimensions."
+                hint="This setting applies only to generated videos. The video is generated in the rotated aspect, then delivered at the screen’s native dimensions."
                 persistent-hint
                 class="mb-4"
-                @update:model-value="setDisplayRotation"
+                @update:model-value="setVideoRotation"
               />
               <v-alert v-if="videoModelId === 'wan-2.1-t2v-1.3b'" type="info" variant="tonal" density="compact" class="mb-4">
                 Wan 2.1 uses text only. It generates at a larger 480p-class working size, then is resized for your display. The first download can take several minutes.
@@ -3350,14 +3392,14 @@ onUnmounted(() => {
                   <video v-if="videoUrl" :src="videoUrl" controls loop class="w-100 rounded" />
                   <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
                     <div class="display-preview-stage mb-4">
-                      <div class="display-preview-device" :style="displayPreviewStyle" :aria-label="`Selected display preview: ${displayPreviewSizeLabel}, ${displayPreviewRotationLabel}`">
+                      <div class="display-preview-device" :style="videoDisplayPreviewStyle" :aria-label="`Selected display preview: ${videoDisplayPreviewSizeLabel}, ${videoDisplayPreviewRotationLabel}`">
                         <div class="display-preview-device__artwork">
                           <v-icon size="32">mdi-movie-open-outline</v-icon>
                         </div>
                       </div>
                     </div>
                     <div class="text-h6">Your generated video will appear here</div>
-                    <div class="text-body-2 text-medium-emphasis mt-2">{{ displayPreviewSizeLabel }} · {{ displayPreviewRotationLabel }}</div>
+                    <div class="text-body-2 text-medium-emphasis mt-2">{{ videoDisplayPreviewSizeLabel }} · {{ videoDisplayPreviewRotationLabel }}</div>
                     <div class="text-body-2 text-medium-emphasis mt-1">Describe a scene, choose your settings, then select Generate video.</div>
                   </v-sheet>
                 </v-card>
