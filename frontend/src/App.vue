@@ -258,6 +258,27 @@ const displayManagementLabel = computed(() => {
   if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height} · ${activeDisplayConnectionLabel.value}`
   return 'No display selected'
 })
+const displayPreviewStyle = computed(() => {
+  const width = Number(display.value?.width) || 4
+  const height = Number(display.value?.height) || 3
+  const rotated = displayRotation.value === 90 || displayRotation.value === 270
+  const previewWidth = rotated ? height : width
+  const previewHeight = rotated ? width : height
+  return {
+    '--display-preview-aspect-ratio': `${previewWidth} / ${previewHeight}`,
+    '--display-preview-ratio': String(previewWidth / previewHeight)
+  }
+})
+const displayPreviewSizeLabel = computed(() => (
+  display.value?.connected
+    ? displayRotation.value === 90 || displayRotation.value === 270
+      ? `${display.value.height} × ${display.value.width}`
+      : `${display.value.width} × ${display.value.height}`
+    : 'Select a display'
+))
+const displayPreviewRotationLabel = computed(() => (
+  displayRotation.value ? `Rotation: ${displayRotation.value}°` : 'Rotation: normal'
+))
 const compactDisplayLabel = computed(() => {
   if (!display.value?.connected) return displays.value.length ? 'Choose display' : 'Display waiting'
   return `Active: ${display.value.name}`
@@ -3154,11 +3175,16 @@ onUnmounted(() => {
           />
           <v-img v-if="previewUrl" :src="previewUrl" alt="Image fitted to the connected ESP32 display" />
           <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
-            <v-avatar color="primary" variant="tonal" size="64" class="mb-4">
-              <v-icon size="34">mdi-image-outline</v-icon>
-            </v-avatar>
+            <div class="display-preview-stage mb-4">
+              <div class="display-preview-device" :style="displayPreviewStyle" :aria-label="`Selected display preview: ${displayPreviewSizeLabel}, ${displayPreviewRotationLabel}`">
+                <div class="display-preview-device__artwork">
+                  <v-icon size="32">mdi-image-outline</v-icon>
+                </div>
+              </div>
+            </div>
             <div class="text-h6">Your generated image will appear here</div>
-            <div class="text-body-2 text-medium-emphasis mt-2">
+            <div class="text-body-2 text-medium-emphasis mt-2">{{ displayPreviewSizeLabel }} · {{ displayPreviewRotationLabel }}</div>
+            <div class="text-body-2 text-medium-emphasis mt-1">
               Describe an image, choose your settings, then select Generate image.
             </div>
           </v-sheet>
@@ -3308,9 +3334,16 @@ onUnmounted(() => {
                   />
                   <video v-if="videoUrl" :src="videoUrl" controls loop class="w-100 rounded" />
                   <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
-                    <v-avatar color="primary" variant="tonal" size="64" class="mb-4"><v-icon size="34">mdi-movie-open-outline</v-icon></v-avatar>
+                    <div class="display-preview-stage mb-4">
+                      <div class="display-preview-device" :style="displayPreviewStyle" :aria-label="`Selected display preview: ${displayPreviewSizeLabel}, ${displayPreviewRotationLabel}`">
+                        <div class="display-preview-device__artwork">
+                          <v-icon size="32">mdi-movie-open-outline</v-icon>
+                        </div>
+                      </div>
+                    </div>
                     <div class="text-h6">Your generated video will appear here</div>
-                    <div class="text-body-2 text-medium-emphasis mt-2">Describe a scene, choose your settings, then select Generate video.</div>
+                    <div class="text-body-2 text-medium-emphasis mt-2">{{ displayPreviewSizeLabel }} · {{ displayPreviewRotationLabel }}</div>
+                    <div class="text-body-2 text-medium-emphasis mt-1">Describe a scene, choose your settings, then select Generate video.</div>
                   </v-sheet>
                 </v-card>
               </v-col>
