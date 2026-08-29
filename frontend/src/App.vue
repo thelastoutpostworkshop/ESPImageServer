@@ -722,6 +722,13 @@ function displayCardSdLabel(target) {
   return `SD card ready · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`
 }
 
+function displayHardwareAddress(target) {
+  const hardwareId = String(target?.hardware_id || '').toUpperCase()
+  const octets = hardwareId.match(/[0-9A-F]{2}/g)
+  if (octets?.length === 6) return octets.join(':')
+  return hardwareId || 'unavailable'
+}
+
 async function loadDisplayCardSdStates() {
   if (!displays.value.length) {
     displayCardSdStates.value = {}
@@ -3604,7 +3611,7 @@ onUnmounted(() => {
                     <div class="text-body-2"><strong>Native size:</strong> {{ target.width }} × {{ target.height }}</div>
                     <div class="text-body-2 mt-1"><strong>Image rotation:</strong> {{ target.rotation || 0 }}° · <strong>Video rotation:</strong> {{ target.video_rotation || 0 }}°</div>
                     <div class="text-body-2 mt-1"><strong>SD card:</strong> {{ displayCardSdLabel(target) }}</div>
-                    <div class="text-caption text-medium-emphasis mt-2">Firmware {{ target.firmware_version }} · Last seen {{ target.online ? 'now' : 'earlier' }}</div>
+                    <div class="text-caption text-medium-emphasis mt-2">MAC {{ displayHardwareAddress(target) }} · Firmware {{ target.firmware_version }} · Last seen {{ target.online ? 'now' : 'earlier' }}</div>
                   </v-card-text>
                   <v-card-actions>
                     <v-btn color="primary" :variant="target.id === activeDisplayId ? 'tonal' : 'flat'" :disabled="target.id === activeDisplayId" @click="selectActiveDisplay(target.id)">
