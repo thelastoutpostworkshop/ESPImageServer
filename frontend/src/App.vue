@@ -242,15 +242,20 @@ const display = computed(() => {
   return activeDisplayId.value ? null : legacyDisplay.value
 })
 const hasDisplayTargets = computed(() => Boolean(selectedRegisteredDisplay.value))
+const activeDisplayOnline = computed(() => Boolean(display.value?.connected && display.value.online !== false))
+const activeDisplayConnectionLabel = computed(() => {
+  if (!display.value?.connected) return 'No display selected'
+  return activeDisplayOnline.value ? 'Online' : 'Offline · last seen earlier'
+})
 const selectedTargetDisplayIds = computed(() => (
   selectedRegisteredDisplay.value ? [selectedRegisteredDisplay.value.id] : []
 ))
 const displayTargetLabel = computed(() => {
-  if (display.value?.connected) return `Active display: ${display.value.name} · ${display.value.width}×${display.value.height} · v${display.value.firmware_version}`
+  if (display.value?.connected) return `Active display: ${display.value.name} · ${display.value.width}×${display.value.height} · ${activeDisplayOnline.value ? 'online' : 'offline'}`
   return displays.value.length ? 'Choose active display' : 'Active display waiting'
 })
 const displayManagementLabel = computed(() => {
-  if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height}`
+  if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height} · ${activeDisplayConnectionLabel.value}`
   return 'No display selected'
 })
 const compactDisplayLabel = computed(() => {
@@ -577,6 +582,10 @@ watch(sdCardItemsPerPage, itemsPerPage => {
   window.localStorage.setItem(sdCardItemsPerPageSettingsKey, String(itemsPerPage))
 })
 
+watch(activeDisplayOnline, online => {
+  if (!online) selectedSdCardFileNames.value = []
+})
+
 watch(compact, isCompact => {
   if (isCompact) {
     drawer.value = false
@@ -619,6 +628,9 @@ const displayMessage = computed(() => {
       ? 'Choose an active display to manage its settings and receive generated images.'
       : 'Waiting for the ESP32 board to report its integrated display...'
   }
+  if (!activeDisplayOnline.value) {
+    return `${display.value.name} is offline (last seen earlier). Generated images remain ready for it, while display and SD-card commands are unavailable.`
+  }
   const firmwareVersion = display.value.firmware_version
   const availability = display.value.online === false ? 'Last seen earlier' : 'Online'
   return `${display.value.name} — ${availability}, ${display.value.width} × ${display.value.height}. Firmware ${firmwareVersion}. Images will fit this screen.`
@@ -633,6 +645,11 @@ function selectedDisplayCommandEndpoint(commandId) {
   return `${selectedDisplayEndpoint('/display-commands')}/${encodeURIComponent(commandId)}`
 }
 
+function activeDisplayCommandUnavailableMessage() {
+  if (!display.value?.connected) return 'Choose one display before managing it.'
+  return `${display.value.name} is offline. Reconnect it before sending display or SD-card commands.`
+}
+
 function displaySdCardThumbnailUrl(filename) {
   return selectedDisplayEndpoint(`/display-sd-card/thumbnails/${encodeURIComponent(filename)}`)
 }
@@ -644,7 +661,7 @@ function selectActiveDisplay(displayId) {
 
 async function loadDisplay() {
   try {
-    const previousKey = display.value?.connected
+    const previousKey = display.value?.connected && display.value.online !== false
       ? `${display.value.id || 'legacy'}:${display.value.name}:${display.value.width}x${display.value.height}:${display.value.firmware_version}`
       : ''
     const [registeredResponse, legacyResponse] = await Promise.all([
@@ -659,7 +676,7 @@ async function loadDisplay() {
     if (activeDisplayId.value && !availableIds.has(activeDisplayId.value)) activeDisplayId.value = ''
     if (nextDisplays.length && !activeDisplayId.value) activeDisplayId.value = nextDisplays[0].id
     const nextDisplay = display.value
-    const nextKey = nextDisplay?.connected
+    const nextKey = nextDisplay?.connected && nextDisplay.online !== false
       ? `${nextDisplay.id || 'legacy'}:${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}:${nextDisplay.firmware_version}`
       : ''
     if (nextKey && nextKey !== previousKey) {
@@ -1182,7 +1199,7 @@ async function saveSavedVideoToDisplaySdCard() {
 }
 
 async function saveVideoToDisplaySdCard(videoId) {
-  if (!videoId || savingVideoToDisplaySdCard.value) return null
+  if (!videoId || !activeDisplayOnline.value || savingVideoToDisplaySdCard.value) return null
   savingVideoToDisplaySdCard.value = true
   error.value = ''
   status.value = ''
@@ -1225,7 +1242,7 @@ async function saveVideoToDisplaySdCard(videoId) {
 }
 
 async function showSavedVideoOnDisplay(videoId = completedVideoSavedId.value) {
-  if (!display.value?.connected || showingVideoOnDisplay.value) return
+  if (!activeDisplayOnline.value || showingVideoOnDisplay.value) return
   showingVideoOnDisplay.value = true
   videoError.value = ''
   try {
@@ -1314,7 +1331,7 @@ async function loadDisplaySdCard() {
 }
 
 async function refreshDisplaySdCardInventory() {
-  if (!display.value?.connected) throw new Error('Choose one display first')
+  if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
   displaySdCardLoading.value = true
   try {
     const previousReport = await fetchDisplaySdCardReport()
@@ -1407,7 +1424,7 @@ function navigate(nextPage) {
 }
 
 async function saveDisplayExperience() {
-  if (!display.value?.connected) return
+  if (!activeDisplayOnline.value) return
   displayExperienceSaving.value = true
   displayExperienceError.value = ''
   displayExperienceStatus.value = ''
@@ -1447,7 +1464,7 @@ async function saveDisplayExperience() {
 }
 
 async function previewDisplayExperience() {
-  if (!display.value?.connected || displayExperiencePreviewing.value) return
+  if (!activeDisplayOnline.value || displayExperiencePreviewing.value) return
   displayExperienceError.value = ''
   try {
     const response = await fetch(selectedDisplayEndpoint('/display-experience/preview'), {
@@ -1470,7 +1487,7 @@ async function stopDisplayExperiencePreview() {
   if (!displayExperiencePreviewing.value) return
   displayExperiencePreviewing.value = false
   try {
-    if (display.value?.connected) {
+    if (activeDisplayOnline.value) {
       await fetch(selectedDisplayEndpoint('/display-experience/preview'), { method: 'DELETE', keepalive: true })
     }
   } catch {
@@ -1479,8 +1496,8 @@ async function stopDisplayExperiencePreview() {
 }
 
 async function sendDisplaySdCardCommand(endpoint, method = 'POST', notify = true) {
-  if (!display.value?.connected) {
-    error.value = 'Choose one display before managing its SD card.'
+  if (!activeDisplayOnline.value) {
+    error.value = activeDisplayCommandUnavailableMessage()
     return false
   }
   error.value = ''
@@ -1603,7 +1620,7 @@ async function showSDCardFileOnDisplay(filename) {
   error.value = ''
   status.value = ''
   try {
-    if (!display.value?.connected) throw new Error('Choose one display first')
+    if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
     const response = await fetch(
       selectedDisplayEndpoint(`/display-sd-card/files/${encodeURIComponent(filename)}/display`),
       { method: 'POST' }
@@ -1864,7 +1881,9 @@ async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
       const body = await response.json().catch(() => ({}))
       throw new Error(body.detail || `Could not send image to display (${response.status})`)
     }
-    status.value = `Selected image is ready for ${display.value?.name}.`
+    status.value = activeDisplayOnline.value
+      ? `Selected image is ready for ${display.value?.name}.`
+      : `Selected image is ready for ${display.value?.name}; it will appear when the display reconnects.`
   } catch (requestError) {
     error.value = `Could not show the saved image on your display: ${requestError.message}`
   } finally {
@@ -2025,7 +2044,7 @@ async function saveCurrentImageToCreationLibrary() {
 }
 
 async function saveImageToDisplaySdCard(savedImage = null) {
-  if (!display.value?.connected || savingToDisplaySdCard.value) return
+  if (!activeDisplayOnline.value || savingToDisplaySdCard.value) return
   savingToDisplaySdCard.value = true
   error.value = ''
   status.value = ''
@@ -2190,8 +2209,11 @@ async function generate() {
     })
     if (activeJobId.value === job.id) generationStage.value = 'Refreshing your Creation Gallery...'
     await loadSavedImages()
+    const deliveryMessage = display.value?.connected && !activeDisplayOnline.value
+      ? `${display.value.name} is offline; it will request this image when it reconnects.`
+      : 'Your ESP32 display will pick it up shortly.'
     status.value = autoSaveImages.value
-      ? 'Image ready and saved. Your ESP32 display will pick it up shortly.'
+      ? `Image ready and saved. ${deliveryMessage}`
       : 'Image ready. Automatic saving is off—use Save image to computer to keep this image.'
   } catch (requestError) {
     if (requestError.message === 'Image generation cancelled.') {
@@ -2345,7 +2367,7 @@ async function saveVideoToCreationLibrary() {
 }
 
 async function saveCompletedVideoToDisplaySdCard() {
-  if (!display.value?.connected || savingVideoToDisplaySdCard.value) return
+  if (!activeDisplayOnline.value || savingVideoToDisplaySdCard.value) return
   let videoId = completedVideoSavedId.value
   if (!videoId) {
     videoStage.value = 'Saving video to your Creation Gallery before sending it to the display...'
@@ -2437,14 +2459,14 @@ onUnmounted(() => {
       </v-chip>
       <v-menu v-model="displayPickerOpen" location="bottom start" :close-on-content-click="true">
         <template #activator="{ props }">
-          <v-chip v-bind="props" class="app-bar__display-chip" :color="hasDisplayTargets || display?.connected ? 'info' : 'warning'" variant="tonal" :prepend-icon="hasDisplayTargets || display?.connected ? 'mdi-monitor-check' : 'mdi-monitor-dashboard'" :aria-label="`${displayTargetLabel}. Open display chooser.`" :title="`${displayTargetLabel}. Choose active display.`">
+          <v-chip v-bind="props" class="app-bar__display-chip" :color="activeDisplayOnline ? 'info' : 'warning'" variant="tonal" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : display?.connected ? 'mdi-monitor-off' : 'mdi-monitor-dashboard'" :aria-label="`${displayTargetLabel}. Open display chooser.`" :title="`${displayTargetLabel}. Choose active display.`">
             <span class="app-bar__display-label">{{ compact ? compactDisplayLabel : displayTargetLabel }}</span>
             <v-icon class="app-bar__display-chevron" size="18">{{ displayPickerOpen ? 'mdi-menu-up' : 'mdi-menu-down' }}</v-icon>
           </v-chip>
         </template>
         <v-card min-width="300" max-width="420">
           <v-card-title class="text-subtitle-1">Active display</v-card-title>
-          <v-card-subtitle>Images, videos, and display controls use this screen.</v-card-subtitle>
+          <v-card-subtitle>{{ activeDisplayOnline ? 'Images, videos, and display controls use this screen.' : 'This display is offline. Image updates wait until it reconnects.' }}</v-card-subtitle>
           <v-list v-if="displays.length" density="comfortable" class="mt-2">
             <v-list-item
               v-for="target in displays"
@@ -2699,7 +2721,7 @@ onUnmounted(() => {
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'mdi-check-circle' : 'mdi-sd'"
           :title="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'Already saved on display SD card' : 'Save for offline playback'"
-          :disabled="!display?.connected || savingToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image')"
+          :disabled="!activeDisplayOnline || savingToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image')"
           @click="saveContextMenuImageToDisplaySdCard"
         />
         <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
@@ -2719,12 +2741,12 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" title="Show on display" :disabled="!display?.connected || showingVideoOnDisplay" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
+        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" title="Show on display" :disabled="!activeDisplayOnline || showingVideoOnDisplay" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? 'mdi-check-circle' : 'mdi-sd'"
           :title="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? 'Already saved on display SD card' : 'Save for offline playback'"
-          :disabled="!display?.connected || savingVideoToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video')"
+          :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video')"
           @click="saveSavedVideoToDisplaySdCard"
         />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
@@ -2998,9 +3020,12 @@ onUnmounted(() => {
               >
                 <strong>Image processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
               </v-alert>
-              <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-dashboard">
-                <template v-if="display?.connected">
+              <v-alert :type="display?.connected && activeDisplayOnline ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+                <template v-if="display?.connected && activeDisplayOnline">
                   Images will be sent to <strong>{{ display.name }}</strong> ({{ display.width }} × {{ display.height }}). Choose a different active display from the app bar.
+                </template>
+                <template v-else-if="display?.connected">
+                  <strong>{{ display.name }} is offline.</strong> You can still generate an image for this screen. When it reconnects, it will request the most recently generated image for {{ display.name }}.
                 </template>
                 <template v-else>
                   Turn on an ESP32 display, then choose it from the Active display menu in the app bar.
@@ -3013,7 +3038,7 @@ onUnmounted(() => {
                 variant="outlined"
                 density="comfortable"
                 :disabled="generationBusy || Boolean(displays.length && !display?.connected)"
-                :hint="display?.connected ? 'Applied by ESPImageServer before the JPEG is sent. Your ESP32 firmware does not need to change.' : 'Choose one display to change its rotation.'"
+                :hint="display?.connected ? activeDisplayOnline ? 'Applied by ESPImageServer before the JPEG is sent. Your ESP32 firmware does not need to change.' : 'Saved by ESPImageServer and used when this display next receives an image.' : 'Choose one display to change its rotation.'"
                 persistent-hint
                 class="mb-4"
                 @update:model-value="setDisplayRotation"
@@ -3132,7 +3157,7 @@ onUnmounted(() => {
             <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
               Download JPEG
             </v-btn>
-            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!display?.connected" @click="saveImageToDisplaySdCard(selectedSavedImage)">
+            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!activeDisplayOnline" @click="saveImageToDisplaySdCard(selectedSavedImage)">
               Save to SD card for offline playback
             </v-btn>
             <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
@@ -3162,7 +3187,10 @@ onUnmounted(() => {
             <v-row>
               <v-col cols="12" lg="5">
             <v-form @submit.prevent="generateVideo">
-              <div v-if="display?.connected" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
+              <v-alert v-if="display?.connected && !activeDisplayOnline" type="warning" variant="tonal" density="compact" class="mb-3" prepend-icon="mdi-monitor-off">
+                <strong>{{ display.name }} is offline.</strong> This video will still be created for its {{ display.width }} × {{ display.height }} screen, but display and SD-card actions are unavailable until it reconnects.
+              </v-alert>
+              <div v-if="display?.connected && activeDisplayOnline" class="text-caption text-medium-emphasis mb-3">Video will be created at your connected display’s native size: {{ display.width }} × {{ display.height }}.</div>
               <v-alert v-if="videoModelId === 'wan-2.1-t2v-1.3b'" type="info" variant="tonal" density="compact" class="mb-4">
                 Wan 2.1 uses text only. It generates at a larger 480p-class working size, then is resized for your display. The first download can take several minutes.
               </v-alert>
@@ -3271,10 +3299,10 @@ onUnmounted(() => {
             <v-btn color="primary" variant="tonal" prepend-icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" @click="saveVideoToCreationLibrary">
               {{ videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery' }}
             </v-btn>
-            <v-btn color="primary" prepend-icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="showSavedVideoOnDisplay">
+            <v-btn color="primary" prepend-icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" @click="showSavedVideoOnDisplay">
               Show on display
             </v-btn>
-            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!display?.connected || savingVideoToDisplaySdCard" @click="saveCompletedVideoToDisplaySdCard">
+            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" @click="saveCompletedVideoToDisplaySdCard">
               Save to SD card for offline playback
             </v-btn>
           </v-card-actions>
@@ -3390,6 +3418,9 @@ onUnmounted(() => {
               :subtitle="serverInfo?.processing || 'Loading processing information...'"
             />
             <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display" :subtitle="displayMessage" />
+            <v-alert v-if="display?.connected && !activeDisplayOnline" type="warning" variant="tonal" density="compact" class="ma-4" prepend-icon="mdi-monitor-off">
+              {{ display.name }} is offline. It will receive the most recently prepared image after it reconnects; display and SD-card commands are unavailable until then.
+            </v-alert>
             <v-alert v-if="!display?.connected" type="info" variant="tonal" density="compact" class="ma-4">
               Turn on the ESP32, connect it to the same local network as this computer, and confirm its configured server address points here. The display will appear automatically after it registers.
             </v-alert>
@@ -3399,19 +3430,28 @@ onUnmounted(() => {
         <v-card v-if="page === 'display-experience'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
           <v-card-text>
-            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-dashboard">
+            <v-alert :type="activeDisplayOnline ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
               Managing: {{ displayManagementLabel }}
             </v-alert>
+            <v-alert v-if="display?.connected && !activeDisplayOnline" type="warning" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-off">
+              {{ display.name }} is offline. The experience shown below was last reported by the display. Reconnect it to save or preview changes.
+            </v-alert>
             <v-progress-linear v-if="displayExperienceLoading" indeterminate color="primary" class="mb-4" />
-            <v-chip :color="displayExperience.current_mode.startsWith('offline_') ? 'warning' : 'success'" variant="tonal" class="mb-5" :prepend-icon="displayExperience.current_mode.startsWith('offline_') ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
-              {{ displayExperience.current_mode === 'offline_video_loop' ? 'Offline video loop active' : displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow active' : 'Server controlled' }}
-            </v-chip>
+            <div class="d-flex flex-wrap ga-2 mb-5">
+              <v-chip :color="activeDisplayOnline ? 'success' : 'warning'" variant="tonal" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+                {{ activeDisplayOnline ? 'Display online' : 'Display offline · last seen earlier' }}
+              </v-chip>
+              <v-chip :color="displayExperience.current_mode.startsWith('offline_') ? 'warning' : 'info'" variant="tonal" :prepend-icon="displayExperience.current_mode.startsWith('offline_') ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
+                {{ activeDisplayOnline ? 'Experience: ' : 'Last reported experience: ' }}{{ displayExperience.current_mode === 'offline_video_loop' ? 'Offline video loop' : displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow' : 'Server controlled' }}
+              </v-chip>
+            </div>
             <p class="text-body-1 mb-5">When the display cannot reach ESPImageServer for a short time, it will use this saved experience. It returns to normal server control automatically when the connection is restored.</p>
             <v-form @submit.prevent="saveDisplayExperience">
               <v-select
                 v-model="displayExperience.offline_experience"
                 label="When ESPImageServer is unavailable"
                 :items="[{ title: 'SD Card Slideshow', value: 'slideshow' }, { title: 'SD Card Video Loop', value: 'video_loop' }]"
+                :disabled="!activeDisplayOnline"
                 variant="outlined"
                 class="mb-3"
               />
@@ -3423,22 +3463,24 @@ onUnmounted(() => {
                 max="3600"
                 step="0.1"
                 suffix="seconds"
+                :disabled="!activeDisplayOnline"
                 variant="outlined"
                 class="mb-1"
               />
               <div v-if="displayExperience.offline_experience === 'slideshow'" class="d-flex flex-wrap ga-2 mb-3">
-                <v-btn v-for="preset in [{ label: '1s', value: 1 }, { label: '2s', value: 2 }, { label: '5s', value: 5 }, { label: '15s', value: 15 }, { label: '30s', value: 30 }, { label: '1 min', value: 60 }]" :key="preset.label" size="small" variant="tonal" @click="displayExperienceIntervalSeconds = preset.value">{{ preset.label }}</v-btn>
+                <v-btn v-for="preset in [{ label: '1s', value: 1 }, { label: '2s', value: 2 }, { label: '5s', value: 5 }, { label: '15s', value: 15 }, { label: '30s', value: 30 }, { label: '1 min', value: 60 }]" :key="preset.label" size="small" variant="tonal" :disabled="!activeDisplayOnline" @click="displayExperienceIntervalSeconds = preset.value">{{ preset.label }}</v-btn>
               </div>
               <v-select
                 v-model="displayExperience.slideshow_order"
                 label="Order"
                 :items="[{ title: 'Newest first', value: 'newest_first' }, { title: 'Oldest first', value: 'oldest_first' }]"
+                :disabled="!activeDisplayOnline"
                 variant="outlined"
                 class="mb-3"
               />
-              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!display?.connected" prepend-icon="mdi-content-save">Save display experience</v-btn>
-              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!display?.connected || displayExperiencePreviewing" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }}</v-btn>
-              <div v-if="!display?.connected" class="text-caption text-medium-emphasis mt-3">Connect the display to save these settings.</div>
+              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline" prepend-icon="mdi-content-save">Save display experience</v-btn>
+              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperiencePreviewing" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }}</v-btn>
+              <div v-if="!activeDisplayOnline" class="text-caption text-medium-emphasis mt-3">Reconnect the display to save or preview these settings.</div>
               <v-alert v-if="displayExperienceStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ displayExperienceStatus }}</v-alert>
               <v-alert v-if="displayExperienceError" type="error" variant="tonal" density="compact" class="mt-4">{{ displayExperienceError }}</v-alert>
             </v-form>
@@ -3449,27 +3491,30 @@ onUnmounted(() => {
           <v-card-title class="d-flex align-center text-h5 pt-5">
             Display SD Card
             <v-spacer />
-            <v-chip v-if="displaySdCard.available" color="success" size="small" variant="tonal" prepend-icon="mdi-sd">
-              Card ready · {{ displaySdCard.files?.length || 0 }} files
+            <v-chip v-if="displaySdCard.available" :color="activeDisplayOnline ? 'success' : 'warning'" size="small" variant="tonal" prepend-icon="mdi-sd">
+              {{ activeDisplayOnline ? 'Card ready' : 'Last reported card' }} · {{ displaySdCard.files?.length || 0 }} files
             </v-chip>
           </v-card-title>
           <v-card-text>
-            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-dashboard">
+            <v-alert :type="activeDisplayOnline ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
               Managing: {{ displayManagementLabel }}
+            </v-alert>
+            <v-alert v-if="display?.connected && !activeDisplayOnline" type="warning" variant="tonal" density="compact" class="mb-4" prepend-icon="mdi-monitor-off">
+              {{ display.name }} is offline. This is its last reported SD-card list; reconnect it to refresh, play, save, or delete files.
             </v-alert>
             <v-alert v-if="!displaySdCard.available" type="warning" variant="tonal" density="compact" class="mb-4">
               Waiting for the display to report its SD card.
             </v-alert>
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
             <div class="d-flex flex-wrap ga-2 mb-4">
-              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="deletingSdCardFile || deletingSdCardFiles" @click="refreshDisplaySdCard">Refresh from display</v-btn>
+              <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="!activeDisplayOnline || deletingSdCardFile || deletingSdCardFiles" @click="refreshDisplaySdCard">Refresh from display</v-btn>
               <v-btn
                 v-if="selectedSdCardFiles.length"
                 color="error"
                 variant="tonal"
                 prepend-icon="mdi-delete-sweep-outline"
                 :loading="deletingSdCardFiles"
-                :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile"
+                :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile"
                 @click="confirmDeleteSelectedSdCardFiles"
               >
                 Delete selected ({{ selectedSdCardFiles.length }})
@@ -3493,7 +3538,7 @@ onUnmounted(() => {
                   <div class="d-flex align-center ga-1">
                     <v-checkbox-btn
                       :model-value="selectedSdCardFileNames.includes(item.name)"
-                      :disabled="deletingSdCardFile || deletingSdCardFiles"
+                      :disabled="!activeDisplayOnline || deletingSdCardFile || deletingSdCardFiles"
                       :aria-label="`Select ${item.name} for deletion`"
                       @update:model-value="setSdCardFileSelected(item.name, $event)"
                     />
@@ -3510,8 +3555,8 @@ onUnmounted(() => {
                 <v-list-item-subtitle>{{ formatFileSize(item.size) }} · Saved on your display SD card</v-list-item-subtitle>
                 <template #append>
                   <div class="d-flex flex-column">
-                    <v-btn icon="mdi-play" size="small" color="primary" variant="text" :loading="displayingSdCardFile === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Show ${item.name} on display`" @click="showSDCardFileOnDisplay(item.name)" />
-                    <v-btn icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Delete ${item.name} from SD card`" @click="confirmDeleteDisplaySdCardFile(item)" />
+                    <v-btn icon="mdi-play" size="small" color="primary" variant="text" :loading="displayingSdCardFile === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Show ${item.name} on display`" @click="showSDCardFileOnDisplay(item.name)" />
+                    <v-btn icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" :aria-label="`Delete ${item.name} from SD card`" @click="confirmDeleteDisplaySdCardFile(item)" />
                   </div>
                 </template>
               </v-list-item>
@@ -3525,7 +3570,7 @@ onUnmounted(() => {
               v-model:items-per-page="sdCardItemsPerPage"
               v-model="selectedSdCardFileNames"
               item-value="name"
-              show-select
+              :show-select="activeDisplayOnline"
               select-strategy="all"
               hover
               density="comfortable"
@@ -3556,14 +3601,14 @@ onUnmounted(() => {
                         color="primary"
                         variant="text"
                         :loading="displayingSdCardFile === item.name"
-                        :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles"
+                        :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles"
                         @click="showSDCardFileOnDisplay(item.name)"
                       />
                     </template>
                   </v-tooltip>
                   <v-tooltip text="Delete from SD card">
                     <template #activator="{ props }">
-                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" @click="confirmDeleteDisplaySdCardFile(item)" />
+                      <v-btn v-bind="props" icon="mdi-delete-outline" size="small" color="error" variant="text" :loading="deletingSdCardFile && sdCardFileToDelete?.name === item.name" :disabled="!activeDisplayOnline || Boolean(displayingSdCardFile) || deletingSdCardFile || deletingSdCardFiles" @click="confirmDeleteDisplaySdCardFile(item)" />
                     </template>
                   </v-tooltip>
                 </div>

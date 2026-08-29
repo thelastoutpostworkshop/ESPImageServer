@@ -26,38 +26,27 @@
    selected display ID; extend video-job metadata to retain a stable display
    ID as well, so a renamed or similarly sized display remains unambiguous.
 
-4. **P1 — Make offline-display behavior explicit.** A last-seen display may
-   stay selected, but the UI must clearly say whether generated work and
-   display commands will wait for it to reconnect or cannot be sent yet. Do
-   not describe a last-seen display as "connected" or say work "will be
-   sent" without explaining what happens while it is offline.
-
-5. **P2 — Add a dedicated Displays page.** Show one card per registered
+4. **P2 — Add a dedicated Displays page.** Show one card per registered
    display with friendly name, online state, native size, rotation, SD-card
    state, and a Make active action. Keep the app-bar selector as the quick
    switcher.
 
-6. **P2 — Scope SD-card and gallery status to the active display.** For
+5. **P2 — Scope SD-card and gallery status to the active display.** For
    example, show “Kitchen's SD card” and “On Kitchen's SD card,” rather than
    generic status that changes silently after the global display is switched.
 
-7. **P2 — Improve physical display identification.** Support friendly room
+6. **P2 — Improve physical display identification.** Support friendly room
    names and expose a short hardware/MAC suffix in the chooser for displays
    with similar names.
 
-8. **P2 — Bring the video page up to the image page's destination clarity.**
+7. **P2 — Bring the video page up to the image page's destination clarity.**
    Name the active display, its output size, and provide the same quick path
    to change it.
 
-9. **P1 — Separate connectivity from display-experience mode.** A green
-   "Server controlled" state describes the experience configuration, not
-   whether the board is reachable. Present it alongside a distinct online,
-   offline, or last-seen status so the two cannot be confused.
-
-10. **P2 — Keep the active-display switcher recognizable in narrow layouts.**
-    Long display names must not hide the chooser affordance or leave only an
-    ambiguous truncated label. Retain a clear display icon/name and visible
-    change indicator at small desktop widths and on mobile.
+8. **P2 — Keep the active-display switcher recognizable in narrow layouts.**
+   Long display names must not hide the chooser affordance or leave only an
+   ambiguous truncated label. Retain a clear display icon/name and visible
+   change indicator at small desktop widths and on mobile.
 
 ## Backend and installer hardening
 
