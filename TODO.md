@@ -13,10 +13,6 @@
    names and expose a short hardware/MAC suffix in the chooser for displays
    with similar names.
 
-6. **P2 — Bring the video page up to the image page's destination clarity.**
-   Name the active display, its output size, and provide the same quick path
-   to change it.
-
 7. **P2 — Keep the active-display switcher recognizable in narrow layouts.**
    Long display names must not hide the chooser affordance or leave only an
    ambiguous truncated label. Retain a clear display icon/name and visible
