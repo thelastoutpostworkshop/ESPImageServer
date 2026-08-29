@@ -75,6 +75,14 @@
 ## Verification
 
 - Frontend: `npm --prefix frontend run build`.
+- Live frontend check: for a visible frontend change, use Codex Desktop's
+  built-in Browser to test the running app at `http://127.0.0.1:8000` after
+  the frontend build. Navigate to the affected page and inspect the expected
+  state and controls. Do not trigger image/video generation, display commands,
+  file deletion, or settings changes unless the task specifically requires it.
+  If the browser is unavailable, report that the live check was skipped. To
+  connect it, enable **Browser** in Codex Desktop Settings > Browser and set
+  **Local URL open destination** to **ChatGPT**.
 - Backend tests: use `& .\.venv\Scripts\python.exe -m pytest` when the project virtual environment is available. If it is not, report that clearly; do not install unrelated dependencies without approval.
 - Firmware: use the Arduino CLI profile in `JC4827W543_ai/sketch.yaml`. Compile the relevant target before handoff when practical.
 
