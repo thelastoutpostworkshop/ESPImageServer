@@ -53,6 +53,7 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .saved-image-thumbnail__prompt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .saved-creation-tooltip__prompt { display: -webkit-box; margin-top: 4px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .creation-preview__video { display: block; width: 100%; max-height: 65vh; background: #000; }
+.creation-preview__metadata { max-height: 260px; margin: 0; padding: 12px; overflow: auto; border-radius: 4px; background: rgb(var(--v-theme-surface-variant)); font: 0.75rem/1.45 monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .model-switch-dialog__heading { min-width: 0; }
 .model-switch-dialog__heading > div { overflow-wrap: anywhere; }
 .image-library-resize-handle { position: absolute; z-index: 2; top: 0; bottom: 0; left: -6px; width: 12px; cursor: col-resize; touch-action: none; }

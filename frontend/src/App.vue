@@ -576,6 +576,10 @@ function creationSdCardLabel(creation, mediaType) {
   return onDisplaySdCardLabel.value
 }
 
+function savedCreationMetadata(creation) {
+  return JSON.stringify(creation?.metadata || {}, null, 2)
+}
+
 function creationIsOnDisplaySdCard(creation, mediaType) {
   return creationSdCardStatus(creation, mediaType).present
 }
@@ -3055,6 +3059,8 @@ onUnmounted(() => {
             class="creation-preview__video rounded"
           />
           <div class="text-body-2 text-medium-emphasis mt-4 text-break">{{ creationPreview.item.metadata?.prompt || `Saved ${creationPreview.type}` }}</div>
+          <div class="text-subtitle-2 mt-5 mb-2">Saved metadata</div>
+          <pre class="creation-preview__metadata">{{ savedCreationMetadata(creationPreview.item) }}</pre>
         </v-card-text>
       </v-card>
     </v-dialog>
