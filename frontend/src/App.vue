@@ -359,7 +359,8 @@ const appBarStatus = computed(() => {
     return {
       color: 'primary', icon: isVideo ? 'mdi-movie-open-outline' : 'mdi-image-outline', page: isVideo ? 'video' : 'generate',
       label: cancelling ? `Cancelling ${kind}` : Number.isFinite(progress) && progress > 0 ? `Generating ${kind} · ${progress}%` : `Preparing ${kind}`,
-      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : isVideo ? 'Video' : 'Image'
+      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : isVideo ? 'Video' : 'Image',
+      description: cancelling ? `Cancelling ${kind} generation.` : `Image and video generation progress: ${Number.isFinite(progress) && progress > 0 ? `${progress}%` : `preparing ${kind}`}.`
     }
   }
   if (videoGenerationActive.value) {
@@ -369,7 +370,8 @@ const appBarStatus = computed(() => {
     return {
       color: 'primary', icon: 'mdi-movie-open-outline', page: 'video',
       label: cancelling ? 'Cancelling video' : Number.isFinite(progress) && progress > 0 ? `Generating video · ${progress}%` : 'Preparing video',
-      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : 'Video'
+      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : 'Video',
+      description: cancelling ? 'Cancelling video generation.' : `Video generation progress: ${Number.isFinite(progress) && progress > 0 ? `${progress}%` : 'preparing'}.`
     }
   }
   if (imageGenerationActive.value) {
@@ -386,13 +388,24 @@ const appBarStatus = computed(() => {
     return {
       color: 'primary', icon: 'mdi-image-outline', page: 'generate',
       label: cancelling ? 'Cancelling image' : Number.isFinite(progress) && progress > 0 ? `${activity} · ${progress}%` : generationStage.value || 'Preparing image',
-      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : downloadingModel ? 'Download' : 'Image'
+      compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : downloadingModel ? 'Download' : 'Image',
+      description: cancelling ? 'Cancelling image generation.' : `Image generation progress: ${Number.isFinite(progress) && progress > 0 ? `${progress}%` : activity}.`
     }
   }
   if (health.value?.status === 'ready') {
-    return { color: 'success', icon: 'mdi-server', page: '', label: 'Server ready', compactLabel: 'Ready' }
+    const cuda = health.value?.device === 'cuda'
+    return {
+      color: cuda ? 'success' : 'warning',
+      icon: cuda ? 'mdi-expansion-card-variant' : 'mdi-cpu-64-bit',
+      page: '',
+      label: cuda ? 'CUDA ready' : 'CPU mode',
+      compactLabel: cuda ? 'CUDA' : 'CPU',
+      description: cuda
+        ? 'NVIDIA graphics card acceleration is ready for image and video generation.'
+        : 'CPU processing is active. Image generation works but may be slow; video generation requires NVIDIA CUDA acceleration.'
+    }
   }
-  return { color: 'warning', icon: 'mdi-server', page: '', label: 'Server loading', compactLabel: 'Loading' }
+  return { color: 'warning', icon: 'mdi-server', page: '', label: 'Server loading', compactLabel: 'Loading', description: 'ESPImageServer is still starting.' }
 })
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
@@ -2652,7 +2665,7 @@ onUnmounted(() => {
     <v-app-bar name="primary-app-bar" order="-1" color="surface" border elevation="2" class="app-bar">
       <v-app-bar-nav-icon :aria-label="drawer ? 'Close navigation menu' : 'Open navigation menu'" :title="drawer ? 'Close navigation menu' : 'Open navigation menu'" @click="drawer = !drawer" />
       <v-avatar :image="logoImageUrl" size="36" class="mr-3" />
-      <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.label" @click="openActiveGeneration">
+      <v-chip class="app-bar__activity-chip mr-2" :color="appBarStatus.color" variant="tonal" :prepend-icon="appBarStatus.icon" :link="Boolean(appBarStatus.page)" :title="appBarStatus.page ? 'Open active generation' : appBarStatus.description" @click="openActiveGeneration">
         <span>{{ compact ? appBarStatus.compactLabel : appBarStatus.label }}</span>
       </v-chip>
       <v-menu v-model="displayPickerOpen" location="bottom start" :close-on-content-click="true">
@@ -3231,15 +3244,6 @@ onUnmounted(() => {
                 class="mb-4"
                 @update:model-value="selectModelById"
               />
-              <v-alert
-                :icon="health?.device === 'cuda' ? 'mdi-expansion-card-variant' : 'mdi-cpu-64-bit'"
-                :type="health?.device === 'cuda' ? 'success' : 'info'"
-                variant="tonal"
-                density="compact"
-                class="mb-4"
-              >
-                <strong>Image processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
-              </v-alert>
               <v-select
                 :model-value="displayRotation"
                 :items="rotationOptions"
