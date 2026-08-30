@@ -40,11 +40,12 @@ function loadGenerationSettings() {
       prompt: typeof saved.prompt === 'string' ? saved.prompt : 'A cheerful small robot holding a paintbrush, friendly illustration',
       steps: Number.isInteger(saved.steps) ? saved.steps : 1,
       seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed(),
+      randomizeSeed: saved.randomizeSeed === true,
       negativePrompt: typeof saved.negativePrompt === 'string' ? saved.negativePrompt : '',
       modelId: typeof saved.modelId === 'string' ? saved.modelId : ''
     }
   } catch {
-    return { prompt: 'A cheerful small robot holding a paintbrush, friendly illustration', steps: 1, seed: createRandomSeed(), negativePrompt: '', modelId: '' }
+    return { prompt: 'A cheerful small robot holding a paintbrush, friendly illustration', steps: 1, seed: createRandomSeed(), randomizeSeed: false, negativePrompt: '', modelId: '' }
   }
 }
 
@@ -63,10 +64,11 @@ function loadVideoGenerationSettings() {
       fps: [8, 12, 15, 24].includes(saved.fps) ? saved.fps : 8,
       steps: validSteps.includes(saved.steps) ? saved.steps : modelId === 'ltx-2b-0.9.6-distilled' ? 8 : 30,
       modelId,
-      seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed()
+      seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed(),
+      randomizeSeed: saved.randomizeSeed === true
     }
   } catch {
-    return { prompt: 'Gentle cinematic camera movement, subtle natural motion', frames: 25, fps: 8, steps: 8, modelId: 'ltx-2b-0.9.6-distilled', seed: createRandomSeed() }
+    return { prompt: 'Gentle cinematic camera movement, subtle natural motion', frames: 25, fps: 8, steps: 8, modelId: 'ltx-2b-0.9.6-distilled', seed: createRandomSeed(), randomizeSeed: false }
   }
 }
 
@@ -113,6 +115,7 @@ const showingVideoOnDisplay = ref(false)
 const videoSourceImage = ref(null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
+const randomizeVideoSeed = ref(savedVideoGenerationSettings.randomizeSeed)
 const videoFrames = ref(savedVideoGenerationSettings.frames)
 const videoFps = ref(savedVideoGenerationSettings.fps)
 const videoDurationPresetSeconds = ref(null)
@@ -216,6 +219,7 @@ const generationProgress = ref(0)
 const generationStage = ref('')
 const steps = ref(savedGenerationSettings.steps)
 const seed = ref(savedGenerationSettings.seed)
+const randomizeImageSeed = ref(savedGenerationSettings.randomizeSeed)
 const activeModelId = ref(savedGenerationSettings.modelId)
 const logoImageUrl = '/assets/test-page-logo.png'
 const drawer = ref(true)
@@ -563,24 +567,26 @@ const savedVideoGroups = computed(() => {
   return [...groups].map(([modelName, videos]) => ({ modelName, videos }))
 })
 
-watch([prompt, negativePrompt, steps, seed, activeModelId], () => {
+watch([prompt, negativePrompt, steps, seed, randomizeImageSeed, activeModelId], () => {
   window.localStorage.setItem(generationSettingsKey, JSON.stringify({
     prompt: prompt.value,
     negativePrompt: negativePrompt.value,
     steps: Number(steps.value),
     seed: seed.value === '' ? null : Number(seed.value),
+    randomizeSeed: randomizeImageSeed.value,
     modelId: activeModelId.value
   }))
 })
 
-watch([videoPrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed], () => {
+watch([videoPrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed, randomizeVideoSeed], () => {
   window.localStorage.setItem(videoGenerationSettingsKey, JSON.stringify({
     prompt: videoPrompt.value,
     frames: Number(videoFrames.value),
     fps: Number(videoFps.value),
     steps: Number(videoSteps.value),
     modelId: videoModelId.value,
-    seed: videoSeed.value === '' ? null : Number(videoSeed.value)
+    seed: videoSeed.value === '' ? null : Number(videoSeed.value),
+    randomizeSeed: randomizeVideoSeed.value
 }))
 })
 
@@ -2300,6 +2306,8 @@ async function generate() {
   let job
   try {
     if (!models.value.some(model => model.id === activeModelId.value)) throw new Error('Choose an image model before generating.')
+    const requestedSeed = randomizeImageSeed.value ? createRandomSeed() : (seed.value === '' ? null : Number(seed.value))
+    if (randomizeImageSeed.value) seed.value = requestedSeed
     if (!alreadyShowingImageProgress) generationStage.value = 'Adding image to the queue...'
     const response = await fetch('/generation-jobs', {
       method: 'POST',
@@ -2309,7 +2317,7 @@ async function generate() {
         model_id: activeModelId.value,
         negative_prompt: negativePrompt.value || null,
         steps: Number(steps.value),
-        seed: seed.value === '' ? null : Number(seed.value),
+        seed: requestedSeed,
         ...(hasDisplayTargets.value
           ? { display_ids: selectedTargetDisplayIds.value }
           : {})
@@ -2416,6 +2424,8 @@ async function generateVideo() {
   }
   let job
   try {
+    const requestedSeed = randomizeVideoSeed.value ? createRandomSeed() : (videoSeed.value === '' ? null : Number(videoSeed.value))
+    if (randomizeVideoSeed.value) videoSeed.value = requestedSeed
     const response = await fetch('/video-generation-jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2425,7 +2435,7 @@ async function generateVideo() {
         fps: Number(videoFps.value),
         steps: Number(videoSteps.value),
         model_id: videoModelId.value,
-        seed: videoSeed.value === '' ? null : Number(videoSeed.value),
+        seed: requestedSeed,
         source_image_id: videoSourceImage.value?.id || null,
         ...(hasDisplayTargets.value
           ? { display_ids: selectedTargetDisplayIds.value }
@@ -3248,6 +3258,7 @@ onUnmounted(() => {
                 <v-col cols="12" sm="6">
                   <v-text-field v-model="seed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint append-inner-icon="mdi-dice-5" @click:append-inner="chooseRandomSeed" />
                   <v-btn class="mt-1" size="small" variant="text" prepend-icon="mdi-dice-5" @click="chooseRandomSeed">Create random seed</v-btn>
+                  <v-switch v-model="randomizeImageSeed" color="primary" density="compact" hide-details label="Use a new random seed for every image" class="mt-2" />
                 </v-col>
               </v-row>
               <div class="generation-form-actions">
@@ -3433,7 +3444,10 @@ onUnmounted(() => {
                   <v-text-field v-if="showAdvancedVideoFrames" v-model.number="videoFrames" label="Frames" type="number" min="9" max="249" step="8" variant="outlined" density="comfortable" hint="Valid values run from 9 to 249 in steps of 8." persistent-hint class="mt-2" />
                 </v-col>
                 <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'hunyuanvideo-1.5-480p' ? '30 is recommended for HunyuanVideo 1.5.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
-                <v-col cols="12" sm="6"><v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" /></v-col>
+                <v-col cols="12" sm="6">
+                  <v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" />
+                  <v-switch v-model="randomizeVideoSeed" color="primary" density="compact" hide-details label="Use a new random seed for every video" class="mt-2" />
+                </v-col>
               </v-row>
               <div class="generation-form-actions mt-4">
                 <v-btn type="submit" color="primary" :disabled="health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">{{ generationBusy ? 'Add video to queue' : 'Generate video' }}</v-btn>
