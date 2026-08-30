@@ -3186,17 +3186,6 @@ onUnmounted(() => {
               >
                 <strong>Image processing:</strong> {{ serverInfo?.processing || 'Loading processing information...' }}
               </v-alert>
-              <v-alert :type="display?.connected && activeDisplayOnline ? 'info' : 'warning'" variant="tonal" density="compact" class="mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
-                <template v-if="display?.connected && activeDisplayOnline">
-                  Images will be sent to <strong>{{ display.name }}</strong> ({{ display.width }} × {{ display.height }}). Choose a different active display from the app bar.
-                </template>
-                <template v-else-if="display?.connected">
-                  <strong>{{ display.name }} is offline.</strong> You can still generate an image for this screen. When it reconnects, it will request the most recently generated image for {{ display.name }}.
-                </template>
-                <template v-else>
-                  Turn on an ESP32 display, then choose it from the Active display menu in the app bar.
-                </template>
-              </v-alert>
               <v-select
                 :model-value="displayRotation"
                 :items="rotationOptions"
