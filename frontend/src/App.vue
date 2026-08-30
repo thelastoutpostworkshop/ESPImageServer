@@ -2720,10 +2720,6 @@ onUnmounted(() => {
       </div>
       <v-divider />
       <div class="creation-library-drawer__body pa-4">
-        <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
-          <strong>Working with:</strong> {{ displayManagementLabel }}
-          <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
-        </v-alert>
         <v-slider
           v-if="imageLibraryView === 'thumbnails'"
           v-model="imageLibraryThumbnailSize"
