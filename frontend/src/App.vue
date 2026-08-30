@@ -314,6 +314,16 @@ function buildDisplayPreviewStyle(rotation) {
     '--display-preview-ratio': String(previewWidth / previewHeight)
   }
 }
+function orientationComparisonStyle(rotation) {
+  const width = Number(display.value?.width) || 4
+  const height = Number(display.value?.height) || 3
+  const rotated = rotation === 90 || rotation === 270
+  const previewWidth = rotated ? height : width
+  const previewHeight = rotated ? width : height
+  const frameHeight = 104
+  const frameWidth = Math.max(56, Math.min(160, frameHeight * (previewWidth / previewHeight)))
+  return { '--orientation-comparison-width': `${frameWidth}px` }
+}
 function buildDisplayPreviewSizeLabel(rotation) {
   if (!display.value?.connected) return 'Select a display'
   return rotation === 90 || rotation === 270
@@ -3364,9 +3374,17 @@ onUnmounted(() => {
             height="6"
             rounded
           />
-          <div v-if="imageOrientationChanged" class="d-flex flex-wrap ga-2 mx-4 mb-3">
-            <v-chip size="small" variant="tonal" prepend-icon="mdi-image-outline">This preview: {{ previewImageRotation }}°</v-chip>
-            <v-chip size="small" color="primary" variant="tonal" prepend-icon="mdi-rotate-right">Next image: {{ displayRotation }}°</v-chip>
+          <div v-if="imageOrientationChanged" class="orientation-comparison mx-4 mb-3">
+            <div class="orientation-comparison__item">
+              <div class="orientation-comparison__label">Current preview · {{ previewImageRotation }}°</div>
+              <div class="orientation-comparison__frame" :style="orientationComparisonStyle(previewImageRotation)"><v-icon size="28">mdi-image-outline</v-icon></div>
+            </div>
+            <v-icon class="orientation-comparison__arrow" color="primary">mdi-arrow-right</v-icon>
+            <div class="orientation-comparison__item">
+              <div class="orientation-comparison__label text-primary">Next image · {{ displayRotation }}°</div>
+              <div class="orientation-comparison__frame orientation-comparison__frame--next" :style="orientationComparisonStyle(displayRotation)"><v-icon size="28">mdi-image-outline</v-icon></div>
+              <div class="orientation-comparison__size">{{ imageDisplayPreviewSizeLabel }}</div>
+            </div>
           </div>
           <v-img v-if="previewUrl" :src="previewUrl" alt="Image fitted to the connected ESP32 display" />
           <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
@@ -3544,9 +3562,17 @@ onUnmounted(() => {
                     height="6"
                     rounded
                   />
-                  <div v-if="videoOrientationChanged" class="d-flex flex-wrap ga-2 mx-4 mb-3">
-                    <v-chip size="small" variant="tonal" prepend-icon="mdi-movie-open-outline">This video: {{ previewVideoRotation }}°</v-chip>
-                    <v-chip size="small" color="primary" variant="tonal" prepend-icon="mdi-rotate-right">Next video: {{ videoRotation }}°</v-chip>
+                  <div v-if="videoOrientationChanged" class="orientation-comparison mx-4 mb-3">
+                    <div class="orientation-comparison__item">
+                      <div class="orientation-comparison__label">Current video · {{ previewVideoRotation }}°</div>
+                      <div class="orientation-comparison__frame" :style="orientationComparisonStyle(previewVideoRotation)"><v-icon size="28">mdi-movie-open-outline</v-icon></div>
+                    </div>
+                    <v-icon class="orientation-comparison__arrow" color="primary">mdi-arrow-right</v-icon>
+                    <div class="orientation-comparison__item">
+                      <div class="orientation-comparison__label text-primary">Next video · {{ videoRotation }}°</div>
+                      <div class="orientation-comparison__frame orientation-comparison__frame--next" :style="orientationComparisonStyle(videoRotation)"><v-icon size="28">mdi-movie-open-outline</v-icon></div>
+                      <div class="orientation-comparison__size">{{ videoDisplayPreviewSizeLabel }}</div>
+                    </div>
                   </div>
                   <video v-if="videoUrl" :src="videoUrl" controls loop class="w-100 rounded" />
                   <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">

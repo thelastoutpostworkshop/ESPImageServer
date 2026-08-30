@@ -33,6 +33,13 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .display-preview-stage { display: grid; width: 100%; height: clamp(260px, 46vh, 460px); place-items: center; container-type: size; }
 .display-preview-device { display: grid; width: min(100cqw, calc(100cqh * var(--display-preview-ratio, 1))); height: auto; aspect-ratio: var(--display-preview-aspect-ratio, 4 / 3); place-items: center; overflow: hidden; }
 .display-preview-device__artwork { display: grid; width: 100%; height: 100%; place-items: center; color: rgb(var(--v-theme-primary)); border: 1px solid rgba(var(--v-theme-primary), 0.55); border-radius: 10px; background: repeating-linear-gradient(45deg, rgba(var(--v-theme-primary), 0.13) 0 8px, transparent 8px 16px); }
+.orientation-comparison { display: flex; align-items: center; gap: 20px; overflow-x: auto; padding-block: 4px; }
+.orientation-comparison__item { display: grid; flex: 0 0 auto; justify-items: center; gap: 6px; }
+.orientation-comparison__label { font-size: 0.875rem; font-weight: 600; text-align: center; }
+.orientation-comparison__frame { display: grid; width: var(--orientation-comparison-width, 104px); height: 104px; place-items: center; color: rgba(var(--v-theme-on-surface), 0.78); border: 2px solid rgba(var(--v-theme-on-surface), 0.38); border-radius: 8px; background: rgba(var(--v-theme-on-surface), 0.04); }
+.orientation-comparison__frame--next { color: rgb(var(--v-theme-primary)); border-color: rgb(var(--v-theme-primary)); background: repeating-linear-gradient(45deg, rgba(var(--v-theme-primary), 0.14) 0 8px, transparent 8px 16px); }
+.orientation-comparison__size { font-size: 0.8rem; color: rgba(var(--v-theme-on-surface), 0.65); }
+.orientation-comparison__arrow { flex: 0 0 auto; }
 .model-in-use { background: rgba(var(--v-theme-primary), 0.10); }
 .model-list__active { background: rgba(var(--v-theme-success), 0.08); }
 .metadata-list .v-list-item-subtitle { white-space: normal; }
@@ -74,6 +81,8 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
   .v-field__input { font-size: 16px; }
   .preview-placeholder { min-height: 260px; }
   .display-preview-stage { height: 260px; }
+  .orientation-comparison { flex-direction: column; align-items: center; }
+  .orientation-comparison__arrow { transform: rotate(90deg); }
   .model-in-use { align-items: flex-start !important; }
   .generation-form-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
   .generation-form-actions .v-btn { width: 100%; min-height: 44px; }
