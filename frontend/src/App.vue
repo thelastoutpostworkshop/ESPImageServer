@@ -3284,11 +3284,11 @@ onUnmounted(() => {
               />
               <v-switch
                 :model-value="autoSaveImages"
-                label="Save generated images automatically"
+                label="Automatically save generated images to Creation Gallery"
                 color="primary"
                 :loading="autoSaveSaving"
                 :disabled="generationBusy || autoSaveSaving"
-                hint="When off, images still reach your ESP32, but are not added to the Creation Library."
+                hint="Saved on this computer. SD-card saving is separate."
                 persistent-hint
                 class="mb-4"
                 @update:model-value="setAutoSaveImages"
@@ -3485,11 +3485,11 @@ onUnmounted(() => {
               </v-card>
               <v-switch
                 :model-value="autoSaveVideos"
-                label="Save generated videos automatically"
+                label="Automatically save generated videos to Creation Gallery"
                 color="primary"
                 :loading="autoSaveVideoSaving"
                 :disabled="generationBusy || autoSaveVideoSaving"
-                hint="When off, use Save to Creation Gallery after a video finishes."
+                hint="Saved on this computer. SD-card saving is separate."
                 persistent-hint
                 class="mb-4"
                 @update:model-value="setAutoSaveVideos"
