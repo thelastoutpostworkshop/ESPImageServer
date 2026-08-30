@@ -104,6 +104,7 @@ const imageUrl = ref('')
 const videoUrl = ref('')
 const completedVideoJobId = ref('')
 const completedVideoSavedId = ref('')
+const completedVideoMetadata = ref(null)
 const savingVideoToCreationLibrary = ref(false)
 const videoSavedToCreationLibrary = ref(false)
 const savedVideos = ref([])
@@ -328,6 +329,18 @@ const imageDisplayPreviewRotationLabel = computed(() => buildDisplayPreviewRotat
 const videoDisplayPreviewStyle = computed(() => buildDisplayPreviewStyle(videoRotation.value))
 const videoDisplayPreviewSizeLabel = computed(() => buildDisplayPreviewSizeLabel(videoRotation.value))
 const videoDisplayPreviewRotationLabel = computed(() => buildDisplayPreviewRotationLabel(videoRotation.value))
+function capturedRotation(metadata) {
+  const rotation = Number(metadata?.rotation)
+  return [0, 90, 180, 270].includes(rotation) ? rotation : null
+}
+const previewImageRotation = computed(() => capturedRotation(generatedMetadata.value))
+const previewVideoRotation = computed(() => capturedRotation(completedVideoMetadata.value))
+const imageOrientationChanged = computed(() => (
+  Boolean(imageUrl.value) && previewImageRotation.value !== null && previewImageRotation.value !== displayRotation.value
+))
+const videoOrientationChanged = computed(() => (
+  Boolean(videoUrl.value) && previewVideoRotation.value !== null && previewVideoRotation.value !== videoRotation.value
+))
 const compactDisplayLabel = computed(() => {
   if (!display.value?.connected) return displays.value.length ? 'Choose display' : 'Display waiting'
   return display.value.name
@@ -1073,7 +1086,8 @@ async function updateImagePreview(imageBlob, {
 async function updateVideoPreview(videoBlob, {
   requestId = ++videoPreviewRequestId,
   jobId = '',
-  savedToLibrary = false
+  savedToLibrary = false,
+  metadata = null
 } = {}) {
   const nextVideoUrl = URL.createObjectURL(videoBlob)
   if (requestId !== videoPreviewRequestId) {
@@ -1083,6 +1097,7 @@ async function updateVideoPreview(videoBlob, {
   if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
   videoUrl.value = nextVideoUrl
   completedVideoJobId.value = jobId
+  completedVideoMetadata.value = metadata
   videoSavedToCreationLibrary.value = savedToLibrary
   if (jobId) displayedVideoGenerationJobId.value = jobId
   return true
@@ -1098,6 +1113,7 @@ async function loadCompletedImageGeneration(job, { force = false } = {}) {
     await updateImagePreview(await response.blob(), {
       requestId,
       jobId: job.id,
+      metadata: job.metadata || null,
       savedToLibrary: autoSaveImages.value
     })
   } catch {
@@ -1115,7 +1131,7 @@ async function loadCompletedVideoGeneration(job, { force = false } = {}) {
   try {
     const response = await fetch(`/video-generation-jobs/${encodeURIComponent(job.id)}/video`)
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
-    await updateVideoPreview(await response.blob(), { requestId, jobId: job.id })
+    await updateVideoPreview(await response.blob(), { requestId, jobId: job.id, metadata: job.metadata || null })
   } catch {
     // Keep the previous completed video if a queue entry disappears before it loads.
   } finally {
@@ -1359,7 +1375,7 @@ async function openSavedVideo(savedVideo) {
   try {
     const response = await fetch(`/saved-videos/${encodeURIComponent(savedVideo.id)}/video`)
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
-    const shown = await updateVideoPreview(await response.blob(), { requestId, savedToLibrary: true })
+    const shown = await updateVideoPreview(await response.blob(), { requestId, savedToLibrary: true, metadata: savedVideo.metadata || null })
     if (!shown) return
     completedVideoSavedId.value = savedVideo.id
     videoStage.value = 'Viewing saved video from the Creation Gallery.'
@@ -2534,7 +2550,7 @@ async function generateVideo() {
     if (activeVideoJobId.value === job.id) videoStage.value = 'Preparing video preview...'
     const autoSaved = currentJob.metadata?.auto_saved === true
     completedVideoSavedId.value = autoSaved ? currentJob.metadata?.saved_video_id || '' : ''
-    await updateVideoPreview(await videoResponse.blob(), { jobId: job.id, savedToLibrary: autoSaved })
+    await updateVideoPreview(await videoResponse.blob(), { jobId: job.id, savedToLibrary: autoSaved, metadata: currentJob.metadata || null })
     if (autoSaved) await loadSavedVideos()
     if (activeVideoJobId.value === job.id) videoStage.value = autoSaved
       ? 'Video ready and saved to your Creation Gallery.'
@@ -3352,6 +3368,10 @@ onUnmounted(() => {
             height="6"
             rounded
           />
+          <div v-if="imageOrientationChanged" class="d-flex flex-wrap ga-2 mx-4 mb-3">
+            <v-chip size="small" variant="tonal" prepend-icon="mdi-image-outline">This preview: {{ previewImageRotation }}°</v-chip>
+            <v-chip size="small" color="primary" variant="tonal" prepend-icon="mdi-rotate-right">Next image: {{ displayRotation }}°</v-chip>
+          </div>
           <v-img v-if="previewUrl" :src="previewUrl" alt="Image fitted to the connected ESP32 display" />
           <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
             <div class="display-preview-stage mb-4">
@@ -3526,6 +3546,10 @@ onUnmounted(() => {
                     height="6"
                     rounded
                   />
+                  <div v-if="videoOrientationChanged" class="d-flex flex-wrap ga-2 mx-4 mb-3">
+                    <v-chip size="small" variant="tonal" prepend-icon="mdi-movie-open-outline">This video: {{ previewVideoRotation }}°</v-chip>
+                    <v-chip size="small" color="primary" variant="tonal" prepend-icon="mdi-rotate-right">Next video: {{ videoRotation }}°</v-chip>
+                  </div>
                   <video v-if="videoUrl" :src="videoUrl" controls loop class="w-100 rounded" />
                   <v-sheet v-else class="preview-placeholder d-flex flex-column align-center justify-center text-center pa-8">
                     <div class="display-preview-stage mb-4">
