@@ -3391,19 +3391,21 @@ onUnmounted(() => {
             <v-chip v-if="previewFittedFor" size="small" variant="tonal" prepend-icon="mdi-monitor-dashboard">
               Preview: fitted for {{ previewFittedFor.name }} ({{ previewFittedFor.width }}×{{ previewFittedFor.height }})
             </v-chip>
-            <v-btn v-if="selectedSavedImage" color="primary" prepend-icon="mdi-restore" @click="useSelectedSavedImageSettings">
-              Use saved settings
-            </v-btn>
-            <v-btn v-if="selectedSavedImage" color="primary" variant="tonal" prepend-icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets" @click="showSavedImageOnDisplay()">
-              {{ showOnDisplayLabel }}
-            </v-btn>
-            <v-btn :href="imageUrl" download="esp-image.jpg" color="secondary" prepend-icon="mdi-download">
-              Download JPEG
-            </v-btn>
-            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!activeDisplayOnline" @click="saveImageToDisplaySdCard(selectedSavedImage)">
-              {{ saveToDisplaySdCardLabel }}
-            </v-btn>
-            <v-btn variant="text" prepend-icon="mdi-image-text" @click="openMetadataPane">Creation Library</v-btn>
+            <v-tooltip v-if="selectedSavedImage" text="Use saved settings">
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-restore" aria-label="Use saved settings" @click="useSelectedSavedImageSettings" /></template>
+            </v-tooltip>
+            <v-tooltip v-if="selectedSavedImage" :text="showOnDisplayLabel">
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets" :aria-label="showOnDisplayLabel" @click="showSavedImageOnDisplay()" /></template>
+            </v-tooltip>
+            <v-tooltip text="Download JPEG">
+              <template #activator="{ props }"><v-btn v-bind="props" :href="imageUrl" download="esp-image.jpg" color="secondary" icon="mdi-download" aria-label="Download JPEG" /></template>
+            </v-tooltip>
+            <v-tooltip :text="saveToDisplaySdCardLabel">
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!activeDisplayOnline" :aria-label="saveToDisplaySdCardLabel" @click="saveImageToDisplaySdCard(selectedSavedImage)" /></template>
+            </v-tooltip>
+            <v-tooltip text="Open Creation Library">
+              <template #activator="{ props }"><v-btn v-bind="props" variant="text" icon="mdi-image-text" aria-label="Open Creation Library" @click="openMetadataPane" /></template>
+            </v-tooltip>
           </v-card-actions>
           <v-alert v-if="imageUrl && !autoSaveImages" type="warning" variant="tonal" class="compact-stack-alert-actions mx-4 mb-4" density="comfortable" icon="mdi-content-save-alert">
             <div class="font-weight-medium">This image is not saved in your Creation Library.</div>
@@ -3568,16 +3570,18 @@ onUnmounted(() => {
             </v-row>
           </v-card-text>
           <v-card-actions v-if="videoUrl" class="result-actions">
-            <v-btn :href="videoUrl" download="esp-image-video.mp4" color="secondary" prepend-icon="mdi-download">Download MP4</v-btn>
-            <v-btn color="primary" variant="tonal" prepend-icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" @click="saveVideoToCreationLibrary">
-              {{ videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery' }}
-            </v-btn>
-            <v-btn color="primary" prepend-icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" @click="showSavedVideoOnDisplay">
-              {{ showOnDisplayLabel }}
-            </v-btn>
-            <v-btn color="primary" variant="tonal" prepend-icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" @click="saveCompletedVideoToDisplaySdCard">
-              {{ saveToDisplaySdCardLabel }}
-            </v-btn>
+            <v-tooltip text="Download MP4">
+              <template #activator="{ props }"><v-btn v-bind="props" :href="videoUrl" download="esp-image-video.mp4" color="secondary" icon="mdi-download" aria-label="Download MP4" /></template>
+            </v-tooltip>
+            <v-tooltip :text="videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery'">
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" :aria-label="videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery'" @click="saveVideoToCreationLibrary" /></template>
+            </v-tooltip>
+            <v-tooltip :text="showOnDisplayLabel">
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" :aria-label="showOnDisplayLabel" @click="showSavedVideoOnDisplay" /></template>
+            </v-tooltip>
+            <v-tooltip :text="saveToDisplaySdCardLabel">
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" :aria-label="saveToDisplaySdCardLabel" @click="saveCompletedVideoToDisplaySdCard" /></template>
+            </v-tooltip>
           </v-card-actions>
         </v-card>
 
