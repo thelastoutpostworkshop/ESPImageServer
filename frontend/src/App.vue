@@ -254,6 +254,28 @@ const activeDisplayConnectionLabel = computed(() => {
   if (!display.value?.connected) return 'No display selected'
   return activeDisplayOnline.value ? 'Online' : 'Offline · last seen earlier'
 })
+const firmwareActivity = computed(() => {
+  const target = display.value
+  if (!target?.connected) {
+    return {
+      color: 'secondary',
+      description: 'No active display is connected to ESPImageServer.',
+      icon: 'mdi-lan-disconnect',
+      pulse: false
+    }
+  }
+  const activity = target.last_activity || {}
+  const activityAt = activity.at || target.last_seen
+  const activityTime = new Date(activityAt).getTime()
+  const ageSeconds = Number.isNaN(activityTime) ? Infinity : Math.max(0, (Date.now() - activityTime) / 1000)
+  const message = activity.message || 'Last contact with ESPImageServer'
+  return {
+    color: activeDisplayOnline.value ? 'success' : 'warning',
+    description: `${target.name}: ${message} · ${formatRelativeTime(activityAt)}`,
+    icon: activeDisplayOnline.value ? 'mdi-access-point' : 'mdi-lan-disconnect',
+    pulse: activeDisplayOnline.value && ageSeconds < 12
+  }
+})
 const selectedTargetDisplayIds = computed(() => (
   selectedRegisteredDisplay.value ? [selectedRegisteredDisplay.value.id] : []
 ))
@@ -2671,6 +2693,21 @@ onUnmounted(() => {
           </v-card-actions>
         </v-card>
       </v-menu>
+      <v-tooltip :text="firmwareActivity.description" :disabled="compact" location="bottom">
+        <template #activator="{ props }">
+          <v-btn
+            v-bind="props"
+            :class="{ 'firmware-activity-icon--pulse': firmwareActivity.pulse }"
+            :color="firmwareActivity.color"
+            :aria-label="firmwareActivity.description"
+            icon
+            size="small"
+            variant="text"
+          >
+            <v-icon :icon="firmwareActivity.icon" />
+          </v-btn>
+        </template>
+      </v-tooltip>
       <v-spacer />
       <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
     </v-app-bar>
