@@ -616,11 +616,35 @@ function savedMetadataValue(key, value) {
 }
 
 function savedCreationMetadata(creation) {
-  return Object.entries(creation?.metadata || {}).map(([key, value]) => ({
+  return Object.entries(creation?.metadata || {}).filter(([key]) => key !== 'prompt' && key !== 'negative_prompt').map(([key, value]) => ({
     key,
     label: savedMetadataLabels[key] || key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, letter => letter.toUpperCase()),
     value: savedMetadataValue(key, value)
   }))
+}
+
+async function copySavedMetadataText(creation, key, label) {
+  const value = creation?.metadata?.[key]
+  if (value === null || value === undefined || value === '') return
+  const text = String(value)
+  try {
+    const fallback = document.createElement('textarea')
+    fallback.value = text
+    fallback.setAttribute('readonly', '')
+    fallback.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+    document.body.append(fallback)
+    fallback.select()
+    const copied = document.execCommand('copy')
+    fallback.remove()
+    if (!copied) {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable')
+      await navigator.clipboard.writeText(text)
+    }
+    metadataError.value = ''
+    status.value = `${label} copied to the clipboard.`
+  } catch {
+    status.value = `Could not copy the ${label.toLowerCase()}.`
+  }
 }
 
 function creationIsOnDisplaySdCard(creation, mediaType) {
@@ -3109,9 +3133,34 @@ onUnmounted(() => {
                   Saved details
                 </v-expansion-panel-title>
                 <v-expansion-panel-text>
-                  <v-list density="compact" class="creation-preview__metadata">
-                    <v-list-item v-for="entry in savedCreationMetadata(creationPreview.item)" :key="entry.key" :title="entry.label" :subtitle="entry.value" />
-                  </v-list>
+                  <div class="creation-preview__metadata">
+                    <div class="creation-preview__prompts">
+                      <div class="creation-preview__prompt-block">
+                        <div class="d-flex align-center ga-1 mb-1">
+                          <span class="text-caption font-weight-bold">Prompt</span>
+                          <v-tooltip text="Copy prompt">
+                            <template #activator="{ props }"><v-btn v-bind="props" icon="mdi-content-copy" size="x-small" variant="text" :disabled="!creationPreview.item.metadata?.prompt" aria-label="Copy prompt" @click.stop="copySavedMetadataText(creationPreview.item, 'prompt', 'Prompt')" /></template>
+                          </v-tooltip>
+                        </div>
+                        <div class="text-body-2">{{ savedMetadataValue('prompt', creationPreview.item.metadata?.prompt) }}</div>
+                      </div>
+                      <div class="creation-preview__prompt-block">
+                        <div class="d-flex align-center ga-1 mb-1">
+                          <span class="text-caption font-weight-bold">Negative prompt</span>
+                          <v-tooltip text="Copy negative prompt">
+                            <template #activator="{ props }"><v-btn v-bind="props" icon="mdi-content-copy" size="x-small" variant="text" :disabled="!creationPreview.item.metadata?.negative_prompt" aria-label="Copy negative prompt" @click.stop="copySavedMetadataText(creationPreview.item, 'negative_prompt', 'Negative prompt')" /></template>
+                          </v-tooltip>
+                        </div>
+                        <div class="text-body-2">{{ savedMetadataValue('negative_prompt', creationPreview.item.metadata?.negative_prompt) }}</div>
+                      </div>
+                    </div>
+                    <div class="creation-preview__metadata-grid">
+                      <div v-for="entry in savedCreationMetadata(creationPreview.item)" :key="entry.key" class="creation-preview__metadata-entry">
+                        <div class="text-caption text-medium-emphasis">{{ entry.label }}</div>
+                        <div class="text-body-2 text-break">{{ entry.value }}</div>
+                      </div>
+                    </div>
+                  </div>
                 </v-expansion-panel-text>
               </v-expansion-panel>
             </v-expansion-panels>

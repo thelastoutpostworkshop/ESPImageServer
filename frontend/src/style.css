@@ -53,8 +53,11 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .saved-image-thumbnail__prompt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .saved-creation-tooltip__prompt { display: -webkit-box; margin-top: 4px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .creation-preview__video { display: block; width: 100%; max-height: 65vh; background: #000; }
-.creation-preview__metadata { max-height: 300px; overflow: auto; }
-.creation-preview__metadata .v-list-item-subtitle { white-space: normal; overflow-wrap: anywhere; }
+.creation-preview__metadata { max-height: 320px; overflow: auto; }
+.creation-preview__prompts { display: grid; gap: 12px; }
+.creation-preview__prompt-block { overflow-wrap: anywhere; }
+.creation-preview__metadata-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 16px; margin-top: 16px; }
+.creation-preview__metadata-entry { min-width: 0; }
 .model-switch-dialog__heading { min-width: 0; }
 .model-switch-dialog__heading > div { overflow-wrap: anywhere; }
 .image-library-resize-handle { position: absolute; z-index: 2; top: 0; bottom: 0; left: -6px; width: 12px; cursor: col-resize; touch-action: none; }
