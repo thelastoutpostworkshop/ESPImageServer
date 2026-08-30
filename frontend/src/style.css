@@ -14,6 +14,9 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .app-bar__display-chevron { flex: 0 0 auto; }
 .firmware-activity-icon--pulse .v-icon { animation: firmware-activity-pulse 1.2s ease-in-out infinite; }
 @keyframes firmware-activity-pulse { 0%, 100% { opacity: 0.5; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.14); } }
+.result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.result-actions .v-btn { min-width: 0; max-width: 100%; height: auto; }
+.result-actions .v-btn__content { white-space: normal; line-height: 1.2; text-align: center; }
 .activity-drawer { border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); }
 .activity-drawer .v-navigation-drawer__content { display: flex; flex-direction: column; }
 .activity-drawer__content { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
