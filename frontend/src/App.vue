@@ -3313,7 +3313,6 @@ onUnmounted(() => {
                 </v-col>
                 <v-col cols="12" sm="6">
                   <v-text-field v-model="seed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" hint="Use the same seed to reproduce an image." persistent-hint append-inner-icon="mdi-dice-5" @click:append-inner="chooseRandomSeed" />
-                  <v-btn class="mt-1" size="small" variant="text" prepend-icon="mdi-dice-5" @click="chooseRandomSeed">Create random seed</v-btn>
                   <v-switch v-model="randomizeImageSeed" color="primary" density="compact" hide-details label="Use a new random seed for every image" class="mt-2" />
                 </v-col>
               </v-row>
