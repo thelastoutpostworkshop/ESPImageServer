@@ -12,6 +12,7 @@ dependencies = [
     "accelerate>=0.30",
     "diffusers>=0.39",
     "fastapi>=0.110",
+    "hf_xet>=1.1",
     "Pillow>=10.0",
     "safetensors>=0.4",
     "transformers>=4.40,<5.0",
