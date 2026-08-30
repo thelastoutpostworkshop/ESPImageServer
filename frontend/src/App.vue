@@ -576,8 +576,51 @@ function creationSdCardLabel(creation, mediaType) {
   return onDisplaySdCardLabel.value
 }
 
+const savedMetadataLabels = {
+  version: 'Format version',
+  createdAt: 'Generated',
+  model: 'Model',
+  prompt: 'Prompt',
+  negative_prompt: 'Negative prompt',
+  steps: 'Steps',
+  seed: 'Seed',
+  rotation: 'Rotation',
+  display: 'Display',
+  display_id: 'Display ID',
+  display_ids: 'Display IDs',
+  broadcast_aspect_mode: 'Aspect handling',
+  generation_time_seconds: 'Generation time',
+  frames: 'Frames',
+  fps: 'Frame rate',
+  source_image_id: 'Source image ID',
+  auto_saved: 'Saved automatically',
+  saved_video_id: 'Saved video ID',
+  label: 'Label'
+}
+
+function savedMetadataValue(key, value) {
+  if (value === null || value === undefined || value === '') return 'Not set'
+  if (key === 'createdAt') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
+  }
+  if (key === 'generation_time_seconds') return formatGenerationTime(value) || `${value} seconds`
+  if (key === 'rotation') return Number(value) === 0 ? 'Normal (0°)' : `${value}°`
+  if (key === 'broadcast_aspect_mode') return String(value).replace(/\b\w/g, letter => letter.toUpperCase())
+  if (key === 'model' && typeof value === 'object') return value.name ? `${value.name}${value.id ? ` (${value.id})` : ''}` : JSON.stringify(value)
+  if (key === 'display' && typeof value === 'object') return value.name ? `${value.name}${value.width && value.height ? ` · ${value.width} × ${value.height}` : ''}` : JSON.stringify(value)
+  if (Array.isArray(value)) return value.length ? value.map(item => typeof item === 'object' ? JSON.stringify(item) : String(item)).join(', ') : 'None'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 function savedCreationMetadata(creation) {
-  return JSON.stringify(creation?.metadata || {}, null, 2)
+  return Object.entries(creation?.metadata || {}).map(([key, value]) => ({
+    key,
+    label: savedMetadataLabels[key] || key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, letter => letter.toUpperCase()),
+    value: savedMetadataValue(key, value)
+  }))
 }
 
 function creationIsOnDisplaySdCard(creation, mediaType) {
@@ -3058,9 +3101,21 @@ onUnmounted(() => {
             controls
             class="creation-preview__video rounded"
           />
-          <div class="text-body-2 text-medium-emphasis mt-4 text-break">{{ creationPreview.item.metadata?.prompt || `Saved ${creationPreview.type}` }}</div>
-          <div class="text-subtitle-2 mt-5 mb-2">Saved metadata</div>
-          <pre class="creation-preview__metadata">{{ savedCreationMetadata(creationPreview.item) }}</pre>
+          <div class="mt-5" @click.stop>
+            <v-expansion-panels variant="accordion">
+              <v-expansion-panel>
+                <v-expansion-panel-title>
+                  <v-icon start>mdi-information-outline</v-icon>
+                  Saved details
+                </v-expansion-panel-title>
+                <v-expansion-panel-text>
+                  <v-list density="compact" class="creation-preview__metadata">
+                    <v-list-item v-for="entry in savedCreationMetadata(creationPreview.item)" :key="entry.key" :title="entry.label" :subtitle="entry.value" />
+                  </v-list>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+            </v-expansion-panels>
+          </div>
         </v-card-text>
       </v-card>
     </v-dialog>
