@@ -3307,9 +3307,6 @@ onUnmounted(() => {
                 auto-grow
                 class="mb-2"
               />
-              <v-alert type="info" variant="tonal" density="compact" class="mb-4">
-                <strong>Steps</strong> trade speed for detail: more steps take longer. <strong>Seed</strong> lets you repeat a result. Use Create random seed for a fresh image variation.
-              </v-alert>
               <v-row dense class="mb-6">
                 <v-col cols="12" sm="6">
                   <v-text-field v-model.number="steps" label="Generation steps" type="number" :min="models.find(model => model.id === activeModelId)?.minimum_steps" :max="models.find(model => model.id === activeModelId)?.maximum_steps" variant="outlined" density="comfortable" hint="More steps can improve detail. Use the reset icon for this model's recommendation." persistent-hint append-inner-icon="mdi-restore" @click:append-inner="useRecommendedSteps" />
