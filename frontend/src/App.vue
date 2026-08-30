@@ -2893,7 +2893,7 @@ onUnmounted(() => {
                 <template #activator="{ props }">
                   <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
                     <v-img :src="`/saved-images/${encodeURIComponent(savedImage.id)}/thumbnail`" aspect-ratio="1.33" cover />
-                    <v-chip v-if="creationIsOnDisplaySdCard(savedImage, 'image')" class="saved-image-thumbnail__sd-status" size="x-small" color="success" variant="flat" prepend-icon="mdi-sd" @click.stop>{{ onDisplaySdCardLabel }}</v-chip>
+                    <v-avatar v-if="creationIsOnDisplaySdCard(savedImage, 'image')" class="saved-image-thumbnail__sd-status" size="28" color="success" :aria-label="creationSdCardLabel(savedImage, 'image')" :title="creationSdCardLabel(savedImage, 'image')" @click.stop><v-icon size="16">mdi-sd</v-icon></v-avatar>
                     <v-btn class="saved-image-thumbnail__more" icon="mdi-dots-vertical" size="small" color="surface" variant="flat" elevation="3" aria-label="More actions for saved image" title="More actions" @pointerdown.stop @click.stop="openSavedImageActions($event, savedImage)" />
                     <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedImage.metadata?.prompt || 'Generated image' }}</div>
                   </v-card>
@@ -2912,7 +2912,7 @@ onUnmounted(() => {
           <v-list-item v-for="savedImage in filteredSavedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
             <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
             <template #append>
-              <v-chip v-if="creationIsOnDisplaySdCard(savedImage, 'image')" size="x-small" color="success" variant="tonal" prepend-icon="mdi-sd" class="mr-1">{{ onDisplaySdCardLabel }}</v-chip>
+              <v-icon v-if="creationIsOnDisplaySdCard(savedImage, 'image')" class="mr-3" color="success" :aria-label="creationSdCardLabel(savedImage, 'image')" :title="creationSdCardLabel(savedImage, 'image')">mdi-sd</v-icon>
               <v-btn icon="mdi-dots-vertical" size="small" variant="text" aria-label="More actions for saved image" title="More actions" @pointerdown.stop @click.stop="openSavedImageActions($event, savedImage)" />
             </template>
             <v-list-item-subtitle>{{ savedImage.metadata?.model?.name || 'ESPImageServer' }} · {{ new Date(savedImage.created_at).toLocaleString() }}</v-list-item-subtitle>
@@ -2929,7 +2929,7 @@ onUnmounted(() => {
                 <v-card v-bind="props" class="saved-image-thumbnail" variant="outlined" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
                   <v-img v-if="savedVideo.thumbnail_filename" :src="`/saved-videos/${encodeURIComponent(savedVideo.id)}/thumbnail`" aspect-ratio="1.33" cover />
                   <v-sheet v-else class="d-flex align-center justify-center" height="120"><v-icon size="40">mdi-movie-open-outline</v-icon></v-sheet>
-                  <v-chip v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" class="saved-image-thumbnail__sd-status" size="x-small" color="success" variant="flat" prepend-icon="mdi-sd" @click.stop>{{ onDisplaySdCardLabel }}</v-chip>
+                  <v-avatar v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" class="saved-image-thumbnail__sd-status" size="28" color="success" :aria-label="creationSdCardLabel(savedVideo, 'video')" :title="creationSdCardLabel(savedVideo, 'video')" @click.stop><v-icon size="16">mdi-sd</v-icon></v-avatar>
                   <v-btn class="saved-image-thumbnail__more" icon="mdi-dots-vertical" size="small" color="surface" variant="flat" elevation="3" aria-label="More actions for saved video" title="More actions" @pointerdown.stop @click.stop="openSavedVideoActions($event, savedVideo)" />
                   <div class="pa-2 text-caption saved-image-thumbnail__prompt">{{ savedVideo.metadata?.prompt || 'Generated video' }}</div>
                 </v-card>
@@ -2948,7 +2948,7 @@ onUnmounted(() => {
           <v-list-item v-for="savedVideo in filteredSavedVideos" :key="savedVideo.id" prepend-icon="mdi-movie-open-outline" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
             <v-list-item-title>{{ savedVideo.metadata?.prompt || 'Generated video' }}</v-list-item-title>
             <template #append>
-              <v-chip v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" size="x-small" color="success" variant="tonal" prepend-icon="mdi-sd" class="mr-1">{{ onDisplaySdCardLabel }}</v-chip>
+              <v-icon v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" class="mr-3" color="success" :aria-label="creationSdCardLabel(savedVideo, 'video')" :title="creationSdCardLabel(savedVideo, 'video')">mdi-sd</v-icon>
               <v-btn icon="mdi-dots-vertical" size="small" variant="text" aria-label="More actions for saved video" title="More actions" @pointerdown.stop @click.stop="openSavedVideoActions($event, savedVideo)" />
             </template>
             <v-list-item-subtitle>{{ savedVideo.metadata?.model?.name || 'LTX-Video' }} · {{ new Date(savedVideo.created_at).toLocaleString() }}</v-list-item-subtitle>
