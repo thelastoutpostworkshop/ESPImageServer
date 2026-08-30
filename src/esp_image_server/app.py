@@ -569,6 +569,22 @@ def create_app(
         except DisplayNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    def display_command_activity(command: dict[str, object], outcome: str) -> str:
+        labels = {
+            "save_latest": "Save latest image",
+            "save_saved_image": "Save image",
+            "save_saved_video": "Save video",
+            "refresh_sd_card": "Refresh SD card",
+            "display_sd_file": "Show SD-card file",
+            "delete_sd_file": "Delete SD-card file",
+            "set_mode": "Change display mode",
+            "set_display_experience": "Save display experience",
+            "preview_display_experience": "Preview display experience",
+            "stop_display_experience_preview": "Stop experience preview",
+        }
+        label = labels.get(str(command.get("type", "")), "Display command")
+        return f"{label} {outcome}"
+
     def requested_target_displays(display_ids: list[str] | None) -> list[DisplayDevice]:
         """Resolve an explicit recipient list while preserving its chosen order."""
         if display_ids is None:
@@ -1036,7 +1052,7 @@ def create_app(
         report: DisplaySDCardReport,
     ) -> Response:
         get_registered_display(display_id)
-        display_registry.heartbeat(display_id)
+        display_registry.record_activity(display_id, "SD-card list received")
         display_command_store.report_sd_card(report.model_dump(), display_id=display_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1105,6 +1121,8 @@ def create_app(
     def next_registered_display_command(display_id: str) -> Response:
         get_registered_display(display_id)
         command = display_command_store.next(display_id)
+        if command is not None:
+            display_registry.record_activity(display_id, display_command_activity(command, "received"))
         return JSONResponse(command) if command is not None else Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post("/displays/{display_id}/display-commands/{command_id}/ack")
@@ -1122,6 +1140,8 @@ def create_app(
         )
         if command is None:
             raise HTTPException(status_code=404, detail="Display command not found")
+        outcome = "completed" if acknowledgement.success else "failed"
+        display_registry.record_activity(display_id, display_command_activity(command, outcome))
         return command
 
     @app.get("/displays/{display_id}/display-commands/{command_id}")
@@ -1258,13 +1278,16 @@ def create_app(
             raise HTTPException(status_code=422, detail="Width and height must be provided together")
         if width is not None and (width != display.width or height != display.height):
             raise HTTPException(status_code=422, detail="Use the registered display's native dimensions")
-        return latest_image_response(
+        response = latest_image_response(
             latest_image_store.get_assignment(display_id),
             width=display.width,
             height=display.height,
             rotation=display.rotation,
             if_none_match=if_none_match,
         )
+        if response.status_code == status.HTTP_200_OK:
+            display_registry.record_activity(display_id, "Latest image sent")
+        return response
 
     @app.get("/saved-images")
     def saved_images() -> list[dict[str, object]]:

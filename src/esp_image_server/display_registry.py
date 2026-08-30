@@ -38,6 +38,8 @@ class DisplayDevice:
     capabilities: dict[str, bool]
     paired_at: float
     last_seen: float
+    last_activity_message: str
+    last_activity_at: float
 
     def as_dict(self, now: float | None = None) -> dict[str, object]:
         now = time.time() if now is None else now
@@ -54,6 +56,10 @@ class DisplayDevice:
             "online": now - self.last_seen <= DisplayRegistry.online_after_seconds,
             "paired_at": datetime.fromtimestamp(self.paired_at, UTC).isoformat(),
             "last_seen": datetime.fromtimestamp(self.last_seen, UTC).isoformat(),
+            "last_activity": {
+                "message": self.last_activity_message,
+                "at": datetime.fromtimestamp(self.last_activity_at, UTC).isoformat(),
+            },
         }
 
 
@@ -93,8 +99,9 @@ class DisplayRegistry:
                 """
                 INSERT INTO displays (
                     id, hardware_id, token_digest, name, width, height,
-                    firmware_version, rotation, capabilities, paired_at, last_seen
-                ) VALUES (?, ?, '', ?, ?, ?, ?, 0, ?, ?, ?)
+                    firmware_version, rotation, capabilities, paired_at, last_seen,
+                    last_activity_message, last_activity_at
+                ) VALUES (?, ?, '', ?, ?, ?, ?, 0, ?, ?, ?, 'Connected to ESPImageServer', ?)
                 ON CONFLICT(hardware_id) DO UPDATE SET
                     name = excluded.name,
                     width = excluded.width,
@@ -105,7 +112,7 @@ class DisplayRegistry:
                 """,
                 (
                     display_id, normalized_hardware_id, name.strip(), width, height,
-                    firmware_version, json.dumps(normalized_capabilities, separators=(",", ":")), now, now,
+                    firmware_version, json.dumps(normalized_capabilities, separators=(",", ":")), now, now, now,
                 ),
             )
             row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
@@ -142,6 +149,23 @@ class DisplayRegistry:
         with self._lock, self._connection() as connection:
             updated = connection.execute(
                 f"UPDATE displays SET {', '.join(fields)} WHERE id = ?", values,
+            ).rowcount
+            if not updated:
+                raise DisplayNotFoundError("Display was not found")
+            row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
+        return self._row_to_device(row)
+
+    def record_activity(self, display_id: str, message: str) -> DisplayDevice:
+        """Record a meaningful firmware interaction while keeping the display online."""
+        now = time.time()
+        with self._lock, self._connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE displays
+                SET last_seen = ?, last_activity_message = ?, last_activity_at = ?
+                WHERE id = ?
+                """,
+                (now, message, now, display_id),
             ).rowcount
             if not updated:
                 raise DisplayNotFoundError("Display was not found")
@@ -201,13 +225,26 @@ class DisplayRegistry:
                     video_rotation INTEGER NOT NULL DEFAULT 0,
                     capabilities TEXT NOT NULL DEFAULT '{}',
                     paired_at REAL NOT NULL,
-                    last_seen REAL NOT NULL
+                    last_seen REAL NOT NULL,
+                    last_activity_message TEXT NOT NULL DEFAULT '',
+                    last_activity_at REAL NOT NULL DEFAULT 0
                 )
                 """
             )
             columns = {str(row["name"]) for row in connection.execute("PRAGMA table_info(displays)")}
             if "video_rotation" not in columns:
                 connection.execute("ALTER TABLE displays ADD COLUMN video_rotation INTEGER NOT NULL DEFAULT 0")
+            if "last_activity_message" not in columns:
+                connection.execute("ALTER TABLE displays ADD COLUMN last_activity_message TEXT NOT NULL DEFAULT ''")
+            if "last_activity_at" not in columns:
+                connection.execute("ALTER TABLE displays ADD COLUMN last_activity_at REAL NOT NULL DEFAULT 0")
+            connection.execute(
+                """
+                UPDATE displays
+                SET last_activity_message = 'Last contact with ESPImageServer', last_activity_at = last_seen
+                WHERE last_activity_message = '' OR last_activity_at = 0
+                """
+            )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -254,4 +291,6 @@ class DisplayRegistry:
             capabilities={str(key): bool(value) for key, value in capabilities.items()},
             paired_at=float(row["paired_at"]),
             last_seen=float(row["last_seen"]),
+            last_activity_message=str(row["last_activity_message"]),
+            last_activity_at=float(row["last_activity_at"]),
         )

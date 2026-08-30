@@ -42,3 +42,16 @@ def test_registering_a_hardware_id_keeps_its_display_id_and_rotation(tmp_path) -
     assert second_display.rotation == 270
     assert second_display.video_rotation == 90
     assert second_display.firmware_version == "1.1.0"
+
+
+def test_display_activity_is_persisted_with_the_display_profile(tmp_path) -> None:
+    path = tmp_path / "displays.sqlite3"
+    registry = DisplayRegistry(path)
+    display = registry.register("abcdef", "Office", 320, 820, "1.0.0")
+
+    updated = registry.record_activity(display.id, "SD-card list received")
+
+    assert updated.last_activity_message == "SD-card list received"
+    assert updated.last_activity_at >= updated.paired_at
+    restarted = DisplayRegistry(path).get(display.id)
+    assert restarted.last_activity_message == "SD-card list received"

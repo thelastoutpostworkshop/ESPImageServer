@@ -728,6 +728,23 @@ function displayCardSdLabel(target) {
   return `SD card ready · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`
 }
 
+function displayActivityLabel(target) {
+  return target?.last_activity?.message || 'Last contact with ESPImageServer'
+}
+
+function formatRelativeTime(value) {
+  const date = new Date(value)
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+  if (Number.isNaN(seconds)) return 'earlier'
+  if (seconds < 10) return 'just now'
+  if (seconds < 60) return `${seconds} sec ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} hr ago`
+  return `${Math.floor(hours / 24)} d ago`
+}
+
 function displayHardwareAddress(target) {
   const hardwareId = String(target?.hardware_id || '').toUpperCase()
   const octets = hardwareId.match(/[0-9A-F]{2}/g)
@@ -3614,6 +3631,7 @@ onUnmounted(() => {
                     <div class="text-body-2"><strong>Native size:</strong> {{ target.width }} × {{ target.height }}</div>
                     <div class="text-body-2 mt-1"><strong>Image rotation:</strong> {{ target.rotation || 0 }}° · <strong>Video rotation:</strong> {{ target.video_rotation || 0 }}°</div>
                     <div class="text-body-2 mt-1"><strong>SD card:</strong> {{ displayCardSdLabel(target) }}</div>
+                    <div class="text-body-2 mt-2 d-flex align-center ga-1"><v-icon :color="target.online ? 'success' : 'warning'" size="18">mdi-pulse</v-icon><strong>Activity:</strong> {{ displayActivityLabel(target) }} · {{ formatRelativeTime(target.last_activity?.at || target.last_seen) }}</div>
                     <div class="text-caption text-medium-emphasis mt-2">MAC {{ displayHardwareAddress(target) }} · Firmware {{ target.firmware_version }} · Last seen {{ target.online ? 'now' : 'earlier' }}</div>
                   </v-card-text>
                   <v-card-actions>
