@@ -146,6 +146,8 @@ const savedImageContextMenu = ref(false)
 const savedImageContextMenuPosition = ref([0, 0])
 const contextMenuSavedImage = ref(null)
 const selectedSavedImage = ref(null)
+const creationPreview = ref(null)
+const creationPreviewDialog = ref(false)
 const deleteSavedImageDialog = ref(false)
 const deletingSavedImage = ref(false)
 const deleteSavedImageDontAskAgain = ref(false)
@@ -1377,7 +1379,14 @@ function openSavedVideoActions(event, savedVideo) {
   showSavedVideoActions(savedVideo, [bounds.right, bounds.bottom])
 }
 
-async function openSavedVideo(savedVideo) {
+function openSavedVideo(savedVideo) {
+  savedVideoContextMenu.value = false
+  creationPreview.value = { type: 'video', item: savedVideo }
+  creationPreviewDialog.value = true
+}
+
+async function useSavedVideoAsCurrent(savedVideo) {
+  creationPreviewDialog.value = false
   await useSavedVideoSettings(savedVideo.metadata, 'all')
   videoError.value = ''
   videoStage.value = 'Loading saved video...'
@@ -2225,7 +2234,14 @@ async function deleteSavedImage() {
   }
 }
 
-async function openSavedImage(savedImage) {
+function openSavedImage(savedImage) {
+  savedImageContextMenu.value = false
+  creationPreview.value = { type: 'image', item: savedImage }
+  creationPreviewDialog.value = true
+}
+
+async function useSavedImageAsCurrent(savedImage) {
+  creationPreviewDialog.value = false
   metadataError.value = ''
   const requestId = ++imagePreviewRequestId
   try {
@@ -2965,6 +2981,8 @@ onUnmounted(() => {
       :close-on-content-click="true"
     >
       <v-list min-width="220" density="comfortable">
+        <v-list-item prepend-icon="mdi-eye-outline" title="Preview" @click="openSavedImage(contextMenuSavedImage)" />
+        <v-divider class="my-1" />
         <v-list-subheader>Reuse generation settings</v-list-subheader>
         <v-list-item prepend-icon="mdi-text" title="Use prompt" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'prompt')" />
         <v-list-item prepend-icon="mdi-dice-5" title="Use seed" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'seed')" />
@@ -2989,6 +3007,8 @@ onUnmounted(() => {
 
     <v-menu v-model="savedVideoContextMenu" :target="savedVideoContextMenuPosition" location="bottom start" :close-on-content-click="true">
       <v-list min-width="230" density="comfortable">
+        <v-list-item prepend-icon="mdi-eye-outline" title="Preview" @click="openSavedVideo(contextMenuSavedVideo)" />
+        <v-divider class="my-1" />
         <v-list-subheader>Reuse video settings</v-list-subheader>
         <v-list-item prepend-icon="mdi-text" title="Use prompt" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'prompt')" />
         <v-list-item prepend-icon="mdi-dice-5" title="Use seed" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'seed')" />
@@ -3011,6 +3031,33 @@ onUnmounted(() => {
         <v-list-item color="error" prepend-icon="mdi-delete-outline" title="Delete from Creation Gallery" @click="confirmDeleteSavedVideo" />
       </v-list>
     </v-menu>
+
+    <v-dialog v-model="creationPreviewDialog" max-width="960" width="calc(100% - 32px)">
+      <v-card v-if="creationPreview" @click="creationPreviewDialog = false">
+        <v-card-title class="d-flex align-center ga-2">
+          <v-icon>{{ creationPreview.type === 'image' ? 'mdi-image-outline' : 'mdi-movie-open-outline' }}</v-icon>
+          {{ creationPreview.type === 'image' ? 'Image preview' : 'Video preview' }}
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" aria-label="Close preview" title="Close preview" @click="creationPreviewDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <v-img
+            v-if="creationPreview.type === 'image'"
+            :src="`/saved-images/${encodeURIComponent(creationPreview.item.id)}/image`"
+            max-height="65vh"
+            contain
+            class="bg-black rounded"
+          />
+          <video
+            v-else
+            :src="`/saved-videos/${encodeURIComponent(creationPreview.item.id)}/video`"
+            controls
+            class="creation-preview__video rounded"
+          />
+          <div class="text-body-2 text-medium-emphasis mt-4 text-break">{{ creationPreview.item.metadata?.prompt || `Saved ${creationPreview.type}` }}</div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
 
     <v-dialog v-model="deleteSavedImageDialog" max-width="440" width="calc(100% - 32px)">
       <v-card title="Delete saved image">
