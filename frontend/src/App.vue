@@ -2623,7 +2623,11 @@ onUnmounted(() => {
               :active="target.id === activeDisplayId"
               @click="selectActiveDisplay(target.id)"
             >
-              <template #prepend><v-icon :color="target.online ? 'success' : 'warning'">{{ target.online ? 'mdi-monitor-check' : 'mdi-monitor-off' }}</v-icon></template>
+              <template #prepend>
+                <v-avatar :color="target.online ? 'success' : 'warning'" size="32" variant="tonal">
+                  <span style="color: white; font-size: 18px; font-weight: 700; line-height: 1">{{ target.online ? '✓' : '!' }}</span>
+                </v-avatar>
+              </template>
               <v-list-item-title>{{ target.name }}</v-list-item-title>
               <v-list-item-subtitle>{{ target.width }} × {{ target.height }} · v{{ target.firmware_version }} · {{ target.online ? 'Online' : 'Last seen earlier' }}</v-list-item-subtitle>
               <template #append><v-icon v-if="target.id === activeDisplayId" color="primary">mdi-check</v-icon></template>
