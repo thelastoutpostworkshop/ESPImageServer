@@ -1,4 +1,5 @@
 from io import BytesIO
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from esp_image_server.app import create_app
+from esp_image_server.app import create_app, embed_jpeg_metadata
 from esp_image_server.app_settings import AppSettingsStore
 from esp_image_server.config import Settings
 from esp_image_server.display_settings import DisplaySettingsStore
@@ -18,6 +19,7 @@ from esp_image_server.model_settings import ModelSelectionStore
 from esp_image_server.generation_jobs import GenerationCancelled
 from esp_image_server.generation_queue import GenerationQueue
 from esp_image_server.image_library import ImageLibrary
+from esp_image_server.image_processor import to_display_jpeg
 from esp_image_server.mjpeg_cache import MjpegConversionCache
 from esp_image_server.retention import RetentionPolicy
 from esp_image_server.video_library import VideoLibrary
@@ -519,6 +521,34 @@ def test_saved_images_include_their_sd_card_content_key(tmp_path) -> None:
     assert saved_images.status_code == 200
     assert saved_images.json()[0]["id"] == record["id"]
     assert saved_images.json()[0]["sd_card_content_key"].startswith("v1-")
+
+
+def test_saved_images_include_their_display_sized_sd_card_content_key(tmp_path) -> None:
+    library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
+    source = BytesIO()
+    Image.new("RGB", (80, 80), "purple").save(source, format="JPEG", quality=95)
+    metadata = {
+        "rotation": 90,
+        "broadcast_aspect_mode": "crop",
+        "display": {"name": "C6", "width": 172, "height": 320},
+    }
+    original_jpeg = embed_jpeg_metadata(source.getvalue(), metadata)
+    record = library.save(original_jpeg, metadata)
+    with Image.open(BytesIO(original_jpeg)) as image:
+        display_jpeg = to_display_jpeg(
+            image, width=172, height=320, rotation=90, quality=85, aspect_mode="crop",
+        )
+    expected_key = f"v1-{hashlib.sha256(embed_jpeg_metadata(display_jpeg, metadata)).hexdigest()[:16]}"
+    app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+
+    with TestClient(app) as client:
+        saved_images = client.get("/saved-images")
+
+    saved = saved_images.json()[0]
+    assert saved["id"] == record["id"]
+    assert saved["sd_card_content_keys"] == [
+        f"v1-{hashlib.sha256(original_jpeg).hexdigest()[:16]}", expected_key,
+    ]
 
 
 def test_deletion_confirmation_video_quality_and_auto_save_video_settings_are_saved(tmp_path) -> None:

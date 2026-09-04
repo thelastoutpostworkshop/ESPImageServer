@@ -857,6 +857,52 @@ def create_app(
             return f"/display-sd-card/thumbnails/{Path(filename).name}"
         return f"/displays/{display_id}/display-sd-card/thumbnails/{Path(filename).name}"
 
+    def saved_image_sd_card_content_keys(image_path: Path) -> list[str]:
+        """Return identities for both a gallery original and its first display rendition.
+
+        Saving a Creation Gallery item directly writes the original JPEG to the
+        SD card. Saving the latest generated image writes a display-sized JPEG
+        instead. The latter has a different hash even though it represents the
+        same creation, so retain both identities for the gallery's SD-card
+        status check.
+        """
+        try:
+            original_jpeg = image_path.read_bytes()
+        except OSError:
+            return []
+        content_keys = [f"v1-{hashlib.sha256(original_jpeg).hexdigest()[:16]}"]
+        metadata = extract_jpeg_metadata(original_jpeg)
+        display = metadata.get("display") if isinstance(metadata, dict) else None
+        if not isinstance(display, dict):
+            return content_keys
+        width, height = display.get("width"), display.get("height")
+        rotation = metadata.get("rotation")
+        aspect_mode = metadata.get("broadcast_aspect_mode", "crop")
+        if (
+            not isinstance(width, int)
+            or not isinstance(height, int)
+            or not isinstance(rotation, int)
+            or rotation not in VALID_ROTATIONS
+            or aspect_mode not in {"crop", "fit"}
+        ):
+            return content_keys
+        try:
+            with Image.open(BytesIO(original_jpeg)) as source:
+                display_jpeg = to_display_jpeg(
+                    source,
+                    width=width,
+                    height=height,
+                    rotation=rotation,
+                    quality=jpeg_quality,
+                    aspect_mode=aspect_mode,
+                )
+        except (OSError, ValueError):
+            return content_keys
+        content_keys.append(
+            f"v1-{hashlib.sha256(embed_jpeg_metadata(display_jpeg, metadata)).hexdigest()[:16]}"
+        )
+        return content_keys
+
     def write_sd_thumbnail(
         filename: str, jpeg: bytes, *, display_id: str = LEGACY_DISPLAY_ID,
     ) -> None:
@@ -1296,13 +1342,14 @@ def create_app(
             image_path = image_library.find_path(str(record.get("id", "")))
             if image_path is None:
                 continue
-            try:
-                content_key = f"v1-{hashlib.sha256(image_path.read_bytes()).hexdigest()[:16]}"
-            except OSError:
-                content_key = ""
+            content_keys = saved_image_sd_card_content_keys(image_path)
             records.append({
                 **record,
-                "sd_card_content_key": content_key,
+                # Keep the original field for clients that save a gallery
+                # file directly to the card, while newer clients can also
+                # recognize its display-sized counterpart.
+                "sd_card_content_key": content_keys[0] if content_keys else "",
+                "sd_card_content_keys": content_keys,
             })
         return records
 

@@ -17,6 +17,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $python = Join-Path $projectRoot '.venv\Scripts\python.exe'
+$serverPort = if ([string]::IsNullOrWhiteSpace($env:ESP_IMAGE_PORT)) { 8000 } else { $env:ESP_IMAGE_PORT }
 
 if (-not (Test-Path -LiteralPath $python)) {
     throw "The project Python environment was not found at: $python"
@@ -41,7 +42,7 @@ try {
     }
 
     Write-Host "`n==> Starting ESPImageServer" -ForegroundColor Cyan
-    Write-Host 'Open http://127.0.0.1:8000 in a browser after the server is ready.' -ForegroundColor Green
+    Write-Host "Open http://127.0.0.1:$serverPort in a browser after the server is ready." -ForegroundColor Green
     & $python -m esp_image_server
     if ($LASTEXITCODE -ne 0) {
         throw "ESPImageServer stopped with exit code $LASTEXITCODE."

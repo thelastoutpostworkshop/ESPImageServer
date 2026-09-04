@@ -539,12 +539,17 @@ function creationSdCardStatus(creation, mediaType) {
   if (!displaySdCard.value?.available) return { known: true, present: false, file: null, activeFormat: false }
   const files = displaySdCardFiles().filter(file => (file.type || (String(file.name || '').endsWith('.mjpeg') ? 'video' : 'image')) === mediaType)
   if (mediaType === 'image') {
-    const contentKey = String(creation.sd_card_content_key || '')
-    const imageHash = contentKey.startsWith('v1-') ? contentKey.slice(3) : ''
+    const contentKeys = Array.isArray(creation.sd_card_content_keys)
+      ? creation.sd_card_content_keys.map(key => String(key || '')).filter(Boolean)
+      : [String(creation.sd_card_content_key || '')].filter(Boolean)
     const file = files.find(item => {
       const name = String(item.name || '')
-      return (contentKey && (String(item.content_key || '') === contentKey || name.endsWith(`-${contentKey}.jpg`)))
-        || (imageHash && name.endsWith(`-${imageHash}.jpg`))
+      return contentKeys.some(contentKey => {
+        const imageHash = contentKey.startsWith('v1-') ? contentKey.slice(3) : ''
+        return String(item.content_key || '') === contentKey
+          || name.endsWith(`-${contentKey}.jpg`)
+          || (imageHash && name.endsWith(`-${imageHash}.jpg`))
+      })
     }) || null
     return { known: true, present: Boolean(file), file, activeFormat: Boolean(file) }
   }
