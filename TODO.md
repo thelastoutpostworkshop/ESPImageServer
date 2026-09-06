@@ -1,5 +1,101 @@
 # TODO
 
+## USB Wi-Fi provisioning
+
+Let users configure a display from ESPImageServer while it is connected by a
+USB data cable. Network scanning results, credentials, and setup status travel
+over USB serial; the user never needs to join an ESP32 hotspot. After setup,
+the display communicates with ESPImageServer over the existing Wi-Fi/LAN
+connection. USB can remain connected for power.
+
+### ESP32 firmware (`ESPImageDisplay` repository)
+
+- [ ] Add a shared serial provisioning service for every supported board,
+  using native USB CDC or the board's USB-to-UART connection as appropriate.
+  Verify the connector and serial configuration for JC4827W543, ST7701
+  320x820, ESP32-C6 LCD 1.47, and Cheap Yellow Display.
+- [ ] Define a versioned, newline-delimited JSON protocol with request IDs,
+  bounded message sizes, structured responses/events, and commands for
+  `hello`, `wifi_scan`, `wifi_connect`, `wifi_cancel`, `status`, and
+  `wifi_forget`. Distinguish protocol messages from diagnostic logs and
+  tolerate partial input, malformed messages, and reconnects.
+- [ ] Return the stable hardware ID used for LAN registration, board name,
+  firmware version, protocol version, and capabilities in the handshake.
+  Status may include the SSID and assigned IP address, never the password.
+- [ ] Scan networks asynchronously and return SSID, signal strength, and
+  authentication type. Support manual entry for hidden networks and validate
+  credentials according to the supported authentication mode.
+- [ ] Replace the blocking Wi-Fi connection loop with a state machine that
+  keeps USB responsive during scanning, connection attempts, server retries,
+  and offline image/video playback. Coordinate Wi-Fi changes with existing
+  background tasks to prevent competing connection attempts.
+- [ ] Test candidate credentials using an actual new connection, even when
+  already connected. Keep previous saved credentials until the candidate
+  connects and obtains an IP address; restore the old connection on failure
+  or cancellation. Control Wi-Fi driver persistence so failed candidates
+  cannot implicitly overwrite working settings.
+- [ ] Load saved credentials with `AppConfig::load()` at boot instead of
+  unconditionally assigning `WIFI_SSID` and `WIFI_PASSWORD`. Make `secrets.h`
+  optional for development builds so distributed firmware needs no personal
+  credentials. Persist validated settings safely through power interruption,
+  check storage errors, and avoid rewriting unchanged credentials.
+- [ ] With no saved credentials, display instructions to connect USB and open
+  ESPImageServer. Keep USB setup available for later network changes without
+  reflashing, touch input, or working Wi-Fi. Do not automatically start the
+  setup hotspot as part of this flow.
+- [ ] Report scanning, connecting, obtaining an IP address, Wi-Fi connected,
+  finding the server, and ready states. Distinguish authentication failures,
+  unavailable networks, and timeouts where driver evidence permits. Save
+  valid Wi-Fi credentials even if server discovery fails; report that
+  separately and retain the existing server retry behavior.
+- [ ] Implement explicit Wi-Fi reset without erasing SD-card content or other
+  display settings. Never echo credentials in logs, errors, or status. Update
+  firmware setup documentation and credential guidance for this flow.
+
+### Desktop app (`ESPImageServer` repository)
+
+- [ ] Add serial-port access in Electron's main process and a narrow,
+  validated preload IPC API for the setup UI. Keep provisioning local to the
+  desktop app and retain FastAPI as the display's LAN endpoint.
+- [ ] Detect compatible devices using the protocol handshake; identify them
+  by hardware ID rather than COM-port number alone. Provide a device/port
+  picker for multiple boards or failed automatic detection, and explain when
+  installed firmware needs a provisioning-capable update.
+- [ ] Add a **Set up display over USB** flow: select the detected display,
+  choose a scanned network or enter a hidden SSID, enter the password, and
+  connect. Explain supported Wi-Fi bands and authentication modes in plain
+  language. Allow retry, cancellation, changing Wi-Fi, and confirmed Wi-Fi
+  reset. Browser-only sessions should explain that USB setup uses the desktop
+  app.
+- [ ] Show live progress and separate **Wi-Fi connected** from **Server
+  found**. Match the USB hardware ID to LAN registration before marking the
+  display ready. Offer server discovery troubleshooting without asking users
+  to re-enter a working Wi-Fi password.
+- [ ] Handle unplug/replug, COM-port changes, boot logs, timeouts, port-in-use
+  errors, missing drivers, and charge-only cables. Avoid deliberate DTR/RTS
+  reset toggles, tolerate boards that reset on port open, and release ports
+  after setup and on app shutdown so firmware upload remains possible.
+- [ ] Keep passwords out of app logs, analytics, and persistent desktop
+  storage; clear temporary password state after completion or cancellation.
+- [ ] Include serial dependencies in desktop packaging and document any
+  board-specific driver requirements. Rebuild the installer only when asked.
+
+### Verification and acceptance
+
+- [ ] Verify first-time setup, reboot/power-loss persistence, network changes,
+  wrong passwords, missing/hidden/open networks, cancellation, and restoration
+  of previous working credentials.
+- [ ] Verify USB disconnects during setup, reconnect/status recovery,
+  multiple boards, unsupported firmware, malformed/oversized protocol input,
+  and storage-write failure handling.
+- [ ] Verify Wi-Fi settings persist while the server is unavailable and the
+  display registers automatically once the server becomes reachable.
+- [ ] Check USB responsiveness during offline slideshow/video playback and
+  failed server retries. Confirm normal LAN image delivery remains intact.
+- [ ] Test the desktop setup UI and packaged serial support on Windows with
+  each supported board/USB transport. The user compiles and flashes firmware
+  manually; do not build firmware or the installer as part of this TODO update.
+
 ## Browser UX review — 2026-09-06
 
 Reviewed the running app reporting v1.0.62 at `http://127.0.0.1:8000`,
