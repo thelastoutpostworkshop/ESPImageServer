@@ -1,100 +1,156 @@
 # TODO
 
-## USB Wi-Fi provisioning
+## USB firmware flashing and Wi-Fi provisioning
 
-Let users configure a display from ESPImageServer while it is connected by a
-USB data cable. Network scanning results, credentials, and setup status travel
-over USB serial; the user never needs to join an ESP32 hotspot. After setup,
-the display communicates with ESPImageServer over the existing Wi-Fi/LAN
-connection. USB can remain connected for power.
+Implement and test these milestones in order. The first deliverable is flashing
+firmware from ESPImageServer on one supported board. Complete its hardware test
+before moving on to USB provisioning; Wi-Fi setup is not a prerequisite for
+that first test. All items below are planned work, not completed features.
 
-### ESP32 firmware (`ESPImageDisplay` repository)
+Final user flow: **Connect USB -> Install firmware -> Set up Wi-Fi -> Ready**.
+Firmware installation, network scan results, credentials, and setup status use
+the USB data cable. Users never need to join an ESP32 hotspot. Normal display
+communication continues over Wi-Fi/LAN, and USB can remain connected for power.
 
-- [ ] Add a shared serial provisioning service for every supported board,
-  using native USB CDC or the board's USB-to-UART connection as appropriate.
-  Verify the connector and serial configuration for JC4827W543, ST7701
-  320x820, ESP32-C6 LCD 1.47, and Cheap Yellow Display.
-- [ ] Define a versioned, newline-delimited JSON protocol with request IDs,
-  bounded message sizes, structured responses/events, and commands for
-  `hello`, `wifi_scan`, `wifi_connect`, `wifi_cancel`, `status`, and
-  `wifi_forget`. Distinguish protocol messages from diagnostic logs and
-  tolerate partial input, malformed messages, and reconnects.
-- [ ] Return the stable hardware ID used for LAN registration, board name,
-  firmware version, protocol version, and capabilities in the handshake.
-  Status may include the SSID and assigned IP address, never the password.
-- [ ] Scan networks asynchronously and return SSID, signal strength, and
-  authentication type. Support manual entry for hidden networks and validate
-  credentials according to the supported authentication mode.
-- [ ] Replace the blocking Wi-Fi connection loop with a state machine that
-  keeps USB responsive during scanning, connection attempts, server retries,
-  and offline image/video playback. Coordinate Wi-Fi changes with existing
-  background tasks to prevent competing connection attempts.
-- [ ] Test candidate credentials using an actual new connection, even when
-  already connected. Keep previous saved credentials until the candidate
-  connects and obtains an IP address; restore the old connection on failure
-  or cancellation. Control Wi-Fi driver persistence so failed candidates
-  cannot implicitly overwrite working settings.
-- [ ] Load saved credentials with `AppConfig::load()` at boot instead of
-  unconditionally assigning `WIFI_SSID` and `WIFI_PASSWORD`. Make `secrets.h`
-  optional for development builds so distributed firmware needs no personal
-  credentials. Persist validated settings safely through power interruption,
-  check storage errors, and avoid rewriting unchanged credentials.
-- [ ] With no saved credentials, display instructions to connect USB and open
-  ESPImageServer. Keep USB setup available for later network changes without
-  reflashing, touch input, or working Wi-Fi. Do not automatically start the
-  setup hotspot as part of this flow.
-- [ ] Report scanning, connecting, obtaining an IP address, Wi-Fi connected,
-  finding the server, and ready states. Distinguish authentication failures,
-  unavailable networks, and timeouts where driver evidence permits. Save
-  valid Wi-Fi credentials even if server discovery fails; report that
-  separately and retain the existing server retry behavior.
-- [ ] Implement explicit Wi-Fi reset without erasing SD-card content or other
-  display settings. Never echo credentials in logs, errors, or status. Update
-  firmware setup documentation and credential guidance for this flow.
+### Step 1 - Flash firmware from ESPImageServer (first testable milestone)
 
-### Desktop app (`ESPImageServer` repository)
+Scope: one user-selected supported board, a local precompiled firmware package,
+and a desktop flashing screen. Automatic model recognition, Wi-Fi provisioning,
+and online firmware downloads are not required for this milestone.
 
-- [ ] Add serial-port access in Electron's main process and a narrow,
-  validated preload IPC API for the setup UI. Keep provisioning local to the
-  desktop app and retain FastAPI as the display's LAN endpoint.
-- [ ] Detect compatible devices using the protocol handshake; identify them
-  by hardware ID rather than COM-port number alone. Provide a device/port
-  picker for multiple boards or failed automatic detection, and explain when
-  installed firmware needs a provisioning-capable update.
-- [ ] Add a **Set up display over USB** flow: select the detected display,
-  choose a scanned network or enter a hidden SSID, enter the password, and
-  connect. Explain supported Wi-Fi bands and authentication modes in plain
-  language. Allow retry, cancellation, changing Wi-Fi, and confirmed Wi-Fi
-  reset. Browser-only sessions should explain that USB setup uses the desktop
-  app.
-- [ ] Show live progress and separate **Wi-Fi connected** from **Server
-  found**. Match the USB hardware ID to LAN registration before marking the
-  display ready. Offer server discovery troubleshooting without asking users
-  to re-enter a working Wi-Fi password.
-- [ ] Handle unplug/replug, COM-port changes, boot logs, timeouts, port-in-use
-  errors, missing drivers, and charge-only cables. Avoid deliberate DTR/RTS
-  reset toggles, tolerate boards that reset on port open, and release ports
-  after setup and on app shutdown so firmware upload remains possible.
-- [ ] Keep passwords out of app logs, analytics, and persistent desktop
-  storage; clear temporary password state after completion or cancellation.
-- [ ] Include serial dependencies in desktop packaging and document any
-  board-specific driver requirements. Rebuild the installer only when asked.
+- [ ] **Firmware package:** The user manually compiles the selected board in
+  `ESPImageDisplay` and supplies its binaries and actual build flash arguments.
+  Define a package manifest with board target, chip type, firmware version,
+  flash size/settings, binary offsets, and SHA-256 checksums. Include all
+  components required for first installation, not just the application binary.
+  Do not guess offsets or distribute firmware containing personal credentials.
+- [ ] **Desktop flashing service:** Include a pinned Windows esptool executable
+  and invoke it from Electron's main process using structured arguments and a
+  narrow, validated preload IPC API. Run it asynchronously with progress and
+  error reporting. Keep flashing local to the desktop app; retain FastAPI as
+  the display's LAN endpoint. No Arduino IDE/compiler is required on end-user
+  machines, and esptool must not depend on a system PATH installation.
+- [ ] **Minimal flashing screen:** List serial ports, let the user select the
+  board model and local firmware package, and show the target/version before
+  **Install firmware**. Validate checksums, package paths/offsets, detected chip,
+  and flash capacity before writing. Chip detection alone cannot distinguish
+  different display boards using the same ESP32 chip.
+- [ ] **Bootloader and port handling:** Use esptool's appropriate reset sequence
+  to enter the built-in ROM bootloader. Provide board-specific BOOT/RESET and
+  connector instructions if automatic entry fails. Exclusively own the port
+  during flashing, handle a busy/missing port, and release it on completion or
+  failure. First installation must work without existing ESPImageDisplay code
+  or the future USB provisioning handshake.
+- [ ] **Write and verify:** Show connecting, writing, verifying, and restarting
+  states. Check process exit status and successful flash verification; do not
+  report a successful write as proof the application booted. Avoid full-chip
+  erase by default and explain any required settings loss before installation.
+  Give retry/recovery instructions after an interrupted write.
+- [ ] **First hardware test:** From the running ESPImageServer desktop app,
+  install the supplied package over USB, verify the write, restart the board,
+  and confirm expected display startup/version through existing screen or
+  serial output. Record board, connector, package version, and reset method.
+  Also check wrong-chip/package rejection and a busy-port error.
 
-### Verification and acceptance
+**Advance when:** The user has successfully flashed and booted the selected
+board from ESPImageServer. No Wi-Fi provisioning implementation is required to
+pass this milestone. If automatic boot identity is unavailable, record the
+manual boot/version check separately from the tool's write verification.
 
-- [ ] Verify first-time setup, reboot/power-loss persistence, network changes,
-  wrong passwords, missing/hidden/open networks, cancellation, and restoration
-  of previous working credentials.
-- [ ] Verify USB disconnects during setup, reconnect/status recovery,
-  multiple boards, unsupported firmware, malformed/oversized protocol input,
-  and storage-write failure handling.
-- [ ] Verify Wi-Fi settings persist while the server is unavailable and the
-  display registers automatically once the server becomes reachable.
-- [ ] Check USB responsiveness during offline slideshow/video playback and
-  failed server retries. Confirm normal LAN image delivery remains intact.
-- [ ] Test the desktop setup UI and packaged serial support on Windows with
-  each supported board/USB transport. The user compiles and flashes firmware
-  manually; do not build firmware or the installer as part of this TODO update.
+### Step 2 - Identify the running firmware over USB
+
+- [ ] **Firmware:** Add a shared serial service using native USB CDC or the
+  board's USB-to-UART connection. Start with versioned, newline-delimited JSON
+  commands `hello` and `status`, request IDs, bounded message sizes, and
+  structured responses/events. Separate protocol messages from diagnostic logs
+  and tolerate partial/malformed input. Do not wait indefinitely for USB.
+- [ ] **Identity:** Return the stable hardware ID used for LAN registration,
+  board target/name, firmware version, protocol version, and capabilities.
+- [ ] **Desktop:** Add serial communication through the validated preload API.
+  Close the provisioning connection before esptool runs, then reconnect after
+  restart, including COM-port changes. Avoid deliberate reset toggles during
+  normal provisioning; reserve bootloader reset sequences for flashing.
+- [ ] **Discovery:** Identify compatible devices by handshake/hardware ID,
+  provide a picker for multiple devices, and offer flashing when firmware is
+  missing or unsupported. Preserve the manual model choice for first installs.
+- [ ] **Test:** Flash a handshake-capable build, verify board/version afterward,
+  unplug/replug, and test unsupported firmware plus malformed/oversized input.
+
+**Advance when:** The app reliably reconnects after flashing and verifies the
+running firmware identity, with clear recovery when no handshake arrives.
+
+### Step 3 - Connect to Wi-Fi and save credentials over USB
+
+- [ ] **Firmware:** Add `wifi_scan`, `wifi_connect`, and `wifi_cancel` commands.
+  Scan asynchronously and return SSID, signal strength, and authentication
+  type. Support hidden-network entry and validate supported credential formats.
+- [ ] **Connection state:** Replace blocking Wi-Fi connection attempts with a
+  state machine. Keep USB responsive during connection, server retries, and
+  offline slideshow/video playback. Coordinate background tasks so they cannot
+  initiate competing scans or connections.
+- [ ] **Credential storage:** Load `AppConfig::load()` at boot instead of always
+  assigning `WIFI_SSID`/`WIFI_PASSWORD`. Make `secrets.h` optional for development;
+  distributed builds contain no personal credentials. Test candidates through
+  an actual new connection, even if already connected. Save only after an IP
+  address is obtained; preserve and restore previous working settings on
+  failure/cancellation. Control Wi-Fi driver persistence, check storage errors,
+  make replacement safe across power interruption, and avoid redundant writes.
+- [ ] **Desktop setup:** Show scanned networks, manual hidden SSID entry,
+  password input, Connect, Cancel, and Retry. Explain supported Wi-Fi bands and
+  authentication modes. Report scanning, connecting, obtaining an IP address,
+  and connected states, with useful errors based on driver evidence.
+- [ ] **Privacy and first boot:** Never echo passwords in serial responses,
+  errors, logs, analytics, or desktop persistent storage. Clear temporary app
+  password state on completion/cancellation. With no credentials, show USB
+  setup instructions on the display; do not automatically start a hotspot.
+- [ ] **Test:** Verify first setup, wrong password, missing/hidden/open networks,
+  cancellation, network changes, rollback, storage failure, USB interruption,
+  and successful reconnection after power loss. Verify USB remains responsive
+  during offline playback and server retries.
+
+**Advance when:** A user can configure Wi-Fi entirely over USB and the board
+reconnects after reboot without reflashing or joining a setup hotspot.
+
+### Step 4 - Complete the guided setup and recovery flow
+
+- [ ] **Wizard:** Join flashing, post-boot identification, and Wi-Fi setup into
+  one flow. Skip flashing when compatible firmware is already installed.
+  Browser-only sessions should explain that USB setup uses the desktop app.
+- [ ] **Server handoff:** Distinguish **Wi-Fi connected** from **Server found**.
+  Match USB hardware ID to LAN registration before showing Ready. Save valid
+  Wi-Fi credentials even when the server is unavailable; retain existing
+  server retries and offer discovery troubleshooting without password re-entry.
+- [ ] **Change/reset Wi-Fi:** Keep USB setup accessible without working Wi-Fi,
+  touch input, or reflashing. Add confirmed `wifi_forget` behavior that clears
+  only Wi-Fi settings, preserving SD content and other display settings.
+- [ ] **Test:** Walk through first installation to Ready, existing-firmware
+  setup, server-unavailable recovery, Wi-Fi reset, and normal LAN image
+  delivery. Ensure unplug/replug and multiple devices do not select the wrong
+  display or mix setup status between devices.
+
+**Advance when:** The full USB setup flow reaches the correct LAN-connected
+display and explains how to recover at each failed stage.
+
+### Step 5 - Support all boards and package for distribution
+
+- [ ] **Board matrix:** Repeat flashing, boot verification, provisioning, and
+  recovery tests for JC4827W543, ST7701 320x820, ESP32-C6 LCD 1.47, and Cheap
+  Yellow Display. Document connectors, reset behavior, drivers, and build
+  profiles; include model pictures to simplify manual selection.
+- [ ] **Offline release bundle:** Include tested firmware packages, manifests,
+  esptool, and serial dependencies in Electron packaging. Verify on Windows
+  without a separate Arduino/Python installation, and provide guidance for
+  missing drivers, charge-only cables, port changes, and port-in-use errors.
+  Release ports on app shutdown. Online firmware downloads can follow later.
+- [ ] **Updates versus first installs:** Define compatible update packages that
+  preserve Wi-Fi/display settings and avoid writing across their NVS region,
+  including padding in merged binaries. Detect partition-layout changes and
+  explain migrations or required resets. Keep full erase/factory reset an
+  explicit choice; test interrupted-write recovery and settings preservation.
+- [ ] **Documentation and release checks:** Update setup instructions and both
+  projects' credential guidance. Run relevant builds/tests and a packaged-app
+  hardware pass. The user compiles firmware manually; rebuild the installer
+  only when requested. This TODO edit itself performs no builds or flashing.
 
 ## Browser UX review — 2026-09-06
 
