@@ -5,7 +5,8 @@
 Implement and test these milestones in order. The first deliverable is flashing
 firmware from ESPImageServer on one supported board. Complete its hardware test
 before moving on to USB provisioning; Wi-Fi setup is not a prerequisite for
-that first test. All items below are planned work, not completed features.
+that first test. Checked items are implemented; hardware acceptance is tracked
+separately and remains required before advancing to USB provisioning.
 
 Final user flow: **Connect USB -> Install firmware -> Set up Wi-Fi -> Ready**.
 Firmware installation, network scan results, credentials, and setup status use
@@ -18,19 +19,19 @@ Scope: one user-selected supported board, a local precompiled firmware package,
 and a desktop flashing screen. Automatic model recognition, Wi-Fi provisioning,
 and online firmware downloads are not required for this milestone.
 
-- [ ] **Firmware package:** The user manually compiles the selected board in
+- [x] **Firmware package:** The user manually compiles the selected board in
   `ESPImageDisplay` and supplies its binaries and actual build flash arguments.
   Define a package manifest with board target, chip type, firmware version,
   flash size/settings, binary offsets, and SHA-256 checksums. Include all
   components required for first installation, not just the application binary.
   Do not guess offsets or distribute firmware containing personal credentials.
-- [ ] **Desktop flashing service:** Include a pinned Windows esptool executable
+- [x] **Desktop flashing service:** Include a pinned Windows esptool executable
   and invoke it from Electron's main process using structured arguments and a
   narrow, validated preload IPC API. Run it asynchronously with progress and
   error reporting. Keep flashing local to the desktop app; retain FastAPI as
   the display's LAN endpoint. No Arduino IDE/compiler is required on end-user
   machines, and esptool must not depend on a system PATH installation.
-- [ ] **Minimal flashing screen:** List serial ports, let the user select the
+- [x] **Minimal flashing screen:** List serial ports, let the user select the
   board model and local firmware package, and show the target/version before
   **Install firmware**. Validate checksums, package paths/offsets, detected chip,
   and flash capacity before writing. Chip detection alone cannot distinguish
@@ -41,7 +42,7 @@ and online firmware downloads are not required for this milestone.
   during flashing, handle a busy/missing port, and release it on completion or
   failure. First installation must work without existing ESPImageDisplay code
   or the future USB provisioning handshake.
-- [ ] **Write and verify:** Show connecting, writing, verifying, and restarting
+- [x] **Write and verify:** Show connecting, writing, verifying, and restarting
   states. Check process exit status and successful flash verification; do not
   report a successful write as proof the application booted. Avoid full-chip
   erase by default and explain any required settings loss before installation.
@@ -56,6 +57,13 @@ and online firmware downloads are not required for this milestone.
 board from ESPImageServer. No Wi-Fi provisioning implementation is required to
 pass this milestone. If automatic boot identity is unavailable, record the
 manual boot/version check separately from the tool's write verification.
+
+Implementation check: the desktop **Install firmware** page accepts local
+manifest packages and runs pinned esptool 5.1.0 with checksum/chip/layout checks,
+exclusive installation jobs, logs, and write verification. Hardware-free tests
+cover validation failures and process recovery. Manual board-specific connector/
+reset guidance and the first real flash/boot test still need hardware validation.
+The built-in Browser was unavailable for the live UI check during implementation.
 
 ### Step 2 - Identify the running firmware over USB
 

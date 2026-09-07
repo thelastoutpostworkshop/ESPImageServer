@@ -24,6 +24,39 @@ Setup uses CPython 3.12. If it is not already installed, the installer asks Wind
 
 The desktop app starts the local server automatically. You can also open the app in a browser at `http://127.0.0.1:8000` while it is running.
 
+## Install firmware over USB (local packages)
+
+In the desktop app, open **Install firmware**. Connect a USB data cable, select
+the physical display model and COM port, then choose the version folder holding
+`manifest.json` and its four binaries. Review the package and replacement notice,
+check the confirmation box, and select **Install firmware**. The app checks the
+package, connected chip, and flash capacity before writing. It reports the write
+verification separately from application startup: check the board's screen for
+the expected firmware version afterward. USB Wi-Fi provisioning is not yet
+implemented. The connection-help panel covers manual bootloader entry and retries.
+
+This is a first-install flow, not a guaranteed settings-preserving update. It
+does not erase the entire flash or change SD-card files, but a different old
+partition layout can make existing settings unavailable. Keep USB connected and
+wait for the result before closing the app. Close other serial monitors first.
+
+For a development checkout, start the updated desktop shell with:
+
+```powershell
+npm --prefix frontend run build
+npm --prefix desktop start
+```
+
+Close an older desktop instance first. The first start/build downloads the pinned
+official esptool 5.1.0 Windows archive and verifies its checksum. Subsequent starts
+use the verified local copy. Desktop packaging includes esptool and its license,
+but does not bundle firmware packages or require a separate Python/Arduino install
+for flashing. The existing image-generation server still uses its Python setup.
+No installer rebuild is needed to test the development checkout.
+
+See [firmware package instructions](scripts/firmware-packages.md) to prepare a
+package. Run `npm --prefix desktop test` for hardware-free installer tests.
+
 ## Connect your display
 
 Start your ESP32 display on the same Wi-Fi network as the computer. The board registers its name and screen size automatically. Once connected, ESPImageServer shows the display name and resolution near the top of the app.

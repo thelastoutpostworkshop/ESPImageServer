@@ -7,7 +7,10 @@
   "type": "module",
   "main": "main.mjs",
   "scripts": {
-    "build": "npm --prefix ../frontend run build && electron-builder --win --x64 --dir"
+    "build": "npm run prepare:esptool && npm --prefix ../frontend run build && electron-builder --win --x64 --dir",
+    "prepare:esptool": "powershell -NoProfile -ExecutionPolicy Bypass -File ./prepare-esptool.ps1",
+    "start": "npm run prepare:esptool && electron .",
+    "test": "node --test firmware.test.mjs"
   },
   "devDependencies": {
     "electron": "^43.3.0",
@@ -23,11 +26,23 @@
       "main.mjs",
       "preload.cjs",
       "splash.html",
-      "package.json"
+      "package.json",
+      "firmware.mjs"
     ],
     "win": {
       "target": "dir",
       "icon": "../installer/assets/espimageserver-icon.ico"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "tools/esptool/esptool-windows-amd64",
+        "to": "tools/esptool/esptool-windows-amd64",
+        "filter": [
+          "esptool.exe",
+          "LICENSE",
+          "README.md"
+        ]
+      }
+    ]
   }
 }

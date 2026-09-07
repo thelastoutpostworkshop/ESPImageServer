@@ -3,8 +3,11 @@ import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { FirmwareInstaller, listPorts } from './firmware.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
+const firmwareInstaller = new FirmwareInstaller(path.join(
+  app.isPackaged ? process.resourcesPath : desktopDirectory, 'tools', 'esptool', 'esptool-windows-amd64', 'esptool.exe'))
 const projectRoot = app.isPackaged
   ? path.resolve(process.resourcesPath, '..', '..')
   : path.resolve(desktopDirectory, '..')
@@ -142,7 +145,14 @@ async function createWindow() {
   mainWindow.on('move', scheduleWindowStateSave)
   mainWindow.on('maximize', scheduleWindowStateSave)
   mainWindow.on('unmaximize', scheduleWindowStateSave)
-  mainWindow.on('close', saveWindowState)
+  mainWindow.on('close', event => {
+    if (firmwareInstaller.state.busy) {
+      event.preventDefault()
+      dialog.showMessageBoxSync(mainWindow, { type: 'info', message: 'Firmware installation is in progress.', detail: 'Wait for the result before closing ESPImageServer.' })
+      return
+    }
+    saveWindowState()
+  })
   await mainWindow.loadFile(path.join(desktopDirectory, 'splash.html'), {
     query: { version: app.getVersion() }
   })
@@ -177,6 +187,32 @@ ipcMain.handle('choose-image-library', async () => {
 ipcMain.handle('reveal-image-library', async (_, libraryPath) => shell.openPath(libraryPath))
 ipcMain.handle('startup-state', () => ({ status: splashStatus, lines: serverLogLines }))
 
+function requireFirmwareSender(event) {
+  if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame ||
+      new URL(event.senderFrame.url).origin !== 'http://127.0.0.1:8000') {
+    throw new Error('Firmware installation is available only in the local desktop window.')
+  }
+}
+for (const [channel, handler] of Object.entries({
+  'firmware-state': () => firmwareInstaller.snapshot(),
+  'firmware-ports': () => listPorts(),
+  'firmware-package': async () => {
+    if (firmwareInstaller.state.busy) throw new Error('Wait for the current firmware operation.')
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose the firmware version folder containing manifest.json', properties: ['openDirectory']
+    })
+    if (!result.canceled) await firmwareInstaller.select(result.filePaths[0])
+    return firmwareInstaller.snapshot()
+  },
+  'firmware-install': ({ port, board, baud } = {}) => firmwareInstaller.start(port, board, baud)
+})) {
+  ipcMain.handle(channel, async (event, payload) => {
+    requireFirmwareSender(event)
+    try { return { ok: true, value: await handler(payload) } }
+    catch (error) { return { ok: false, error: error.message } }
+  })
+}
+
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
   app.on('second-instance', () => {
@@ -187,7 +223,8 @@ else {
   })
   app.whenReady().then(createWindow)
   app.on('window-all-closed', () => app.quit())
-  app.on('before-quit', () => {
+  app.on('before-quit', event => {
+    if (firmwareInstaller.state.busy) { event.preventDefault(); return }
     isQuitting = true
     clearTimeout(saveWindowStateTimer)
     if (serverProcess) serverProcess.kill()

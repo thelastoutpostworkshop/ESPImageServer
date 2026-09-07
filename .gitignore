@@ -9,3 +9,4 @@ dist/
 frontend/node_modules/
 desktop/node_modules/
 desktop/release/
+desktop/tools/

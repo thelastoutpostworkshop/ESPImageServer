@@ -41,8 +41,14 @@ check the physical device and image compatibility, and verify the write/boot.
 Treat local packages as trusted publisher inputs, not as arbitrary commands.
 
 No compilation, flashing, firmware download, or installer build is performed.
-Only `manifest.json` changes in the input folder. The flashing screen remains
-a separate implementation step.
+Only `manifest.json` changes in the input folder. In the desktop app's
+**Install firmware** screen, select this version folder, the matching physical
+board, and its COM port. The app revalidates the package and checks ESP image
+headers and the application partition before starting esptool. Current flashing
+support is limited to the standard Arduino layout (partition table at 0x8000,
+OTA data at 0xe000, application at 0x10000, and the chip's normal bootloader
+offset); other layouts are rejected. No hardware flashing test is performed by
+the packaging script or automated test suite.
 
 Run the hardware-free packaging checks with:
 
