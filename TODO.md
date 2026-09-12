@@ -2,6 +2,67 @@
 
 ## Firmware and USB setup — remaining work
 
+### Firmware reliability review — 2026-09-12
+
+Source review of the separate ESPImageDisplay repository; these findings have
+not been verified by new hardware tests. Start with the three P1 tasks below,
+then run the SD-card recovery and long-video checks in Hardware validation.
+Settings-preserving firmware updates remain a separate task under Updates and
+distribution.
+
+- [ ] **P1 — Protect interrupted SD saves:** In `SDCard.cpp`, images and
+  videos are written directly to their final filenames, and existing files
+  are treated as successfully saved without validation. Write to a temporary
+  file, verify completion, then rename it. Validate existing files before
+  skipping downloads and recover incomplete temporary files. Verify retry
+  after a power cut, card removal, and a full card never reports a partial
+  image or video as successfully saved.
+- [ ] **P1 — Keep LAN commands responsive during playback and downloads:**
+  `MjpegPlayer::play()` runs until the file ends, and downloads also occupy
+  the main loop. Process playback and transfers incrementally, allowing
+  command polling, card-state checks, progress reporting, and cancellation.
+  USB setup already has its own task; preserve its responsiveness. Test
+  stopping a long video and recovering from a stalled download or removed
+  card without waiting for the entire operation to finish.
+- [ ] **P1 — Acknowledge media saves promptly:** In `ESPImageDisplay.ino`,
+  thumbnail downloading and the 1.5-second save-result screen delay precede
+  the command acknowledgement. Report success after the main media file is
+  safely committed, handle thumbnails separately, and show status without
+  blocking. Measure download, card-write, thumbnail, acknowledgement, and
+  file-list reporting times. This sequence may contribute to the observed
+  Waveshare delay; it is not yet established as the entire cause.
+- [ ] **P2 — Restore display content after network recovery:**
+  `noteServerContact()` clears `connectionProblemActive` before the
+  unchanged-image recovery branch checks it. Track connection state
+  separately from the content currently drawn, and restore the image after
+  recovery without overwriting a manual SD selection. Test a temporary server
+  outage followed by an unchanged-image response; an error screen must not
+  remain visible after reconnection.
+- [ ] **P2 — Verify offline settings persistence:** `saveDisplayMode()`
+  ignores Preferences write results, while its caller unconditionally
+  reports success. Check storage results and persist the related settings
+  together, following the versioned Wi-Fi record approach. Verify storage
+  failure and interrupted writes do not produce a false saved confirmation
+  or a mixture of old and new settings after reboot.
+- [ ] **P2 — Make slideshow order chronological:** The image and video
+  selection functions in `SDCard.cpp` compare filenames, but current
+  filenames contain content hashes rather than creation dates. Persist a
+  saved timestamp or sequence number, define ordering for older files, and
+  use it for newest-first/oldest-first playback. Verify order survives reboot
+  and does not depend on alphabetical hash order.
+- [ ] **P2 — Select the board through one build choice:**
+  `FirmwareTarget.h` currently explicitly selects Cheap Yellow Display
+  before the automatic-selection block. Make the build command/profile
+  select the target without editing shared source. Keep clear mismatch
+  errors and distinguish the two ESP32-S3 displays. The user compiles each
+  target manually; verify the resulting board identity and package manifest.
+- [ ] **P2 — Make timers safe across uptime rollover:** Replace absolute
+  `millis()` deadline comparisons in the main loop, SD remount checks, and
+  JPEG download timeout with rollover-safe elapsed-time comparisons. Add
+  focused tests around the approximately 50-day counter wrap, including a
+  deadline missed while another operation runs, so retries, polling,
+  slideshow timing, and downloads cannot stall or time out incorrectly.
+
 ### Hardware validation
 
 - [ ] **Adaptive status messages:** Manually compile and flash the new status
