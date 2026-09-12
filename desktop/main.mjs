@@ -7,6 +7,7 @@ import { FirmwareInstaller } from './firmware.mjs'
 import { identifyPort, identifyAfterFlash, serialPorts } from './identification.mjs'
 import { WifiSetup } from './wifi.mjs'
 import { FirmwareLibrary } from './firmware-library.mjs'
+import { FirmwareReleases } from './firmware-releases.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
 const firmwareInstaller = new FirmwareInstaller(path.join(
@@ -14,6 +15,7 @@ const firmwareInstaller = new FirmwareInstaller(path.join(
   { ports: serialPorts, identify: identifyPort, reconnect: identifyAfterFlash })
 const wifiSetup = new WifiSetup(firmwareInstaller)
 const firmwareLibrary = new FirmwareLibrary(path.join(app.getPath('userData'), 'firmware-library.json'))
+const firmwareReleases = new FirmwareReleases(path.join(app.getPath('userData'), 'firmware-downloads'))
 const projectRoot = app.isPackaged
   ? path.resolve(process.resourcesPath, '..', '..')
   : path.resolve(desktopDirectory, '..')
@@ -201,6 +203,11 @@ function requireFirmwareSender(event) {
 }
 for (const [channel, handler] of Object.entries({
   'firmware-state': () => firmwareInstaller.snapshot(),
+  'firmware-releases': () => firmwareReleases.check(),
+  'firmware-releases-check': () => firmwareReleases.check(true),
+  'firmware-download-state': () => firmwareReleases.snapshot(),
+  'firmware-download-cancel': () => firmwareReleases.cancel(),
+  'firmware-release-select': request => firmwareReleases.select(request, firmwareInstaller),
   'firmware-library': () => firmwareLibrary.load(),
   'firmware-library-check': () => firmwareLibrary.scan(),
   'firmware-library-choose': async () => {
@@ -229,6 +236,9 @@ for (const [channel, handler] of Object.entries({
 })) {
   ipcMain.handle(channel, async (event, payload) => {
     requireFirmwareSender(event)
+    if (firmwareReleases.state.busy && !['firmware-state', 'firmware-download-state', 'firmware-download-cancel'].includes(channel)) {
+      return { ok: false, error: 'Wait for the firmware download to finish or cancel it.' }
+    }
     try { return { ok: true, value: await handler(payload) } }
     catch (error) { return { ok: false, error: error.message } }
   })

@@ -24,29 +24,39 @@ Setup uses CPython 3.12. If it is not already installed, the installer asks Wind
 
 The desktop app starts the local server automatically. You can also open the app in a browser at `http://127.0.0.1:8000` while it is running.
 
-## Install firmware over USB (local packages)
+## Install firmware over USB
 
 In the desktop app, open **Set up display**. Connect a USB data cable, select
 the COM port, and choose **Check display**. Setup shows one stage at a time:
 Connect, Firmware, Wi-Fi, and Ready. The Creation Library panel closes to leave
 room for setup. Compatible firmware can continue without installation.
 
-Choose a **firmware library** once (for example your `ESPImage Firmwares` folder).
-The desktop remembers its location and validates packages in the root, board,
-and version folders. It compares stable versions only for the identified board,
-shows **Update available**, and offers **Review update** or **Continue with
-current version**. **Up to date in your library** refers only to that local source;
-there is no online update catalog. Use **Check for updates** after adding packages.
-Missing/unreadable libraries and invalid packages do not imply up-to-date firmware.
+The desktop app checks the official
+[GitHub firmware releases](https://github.com/thelastoutpostworkshop/ESPImageFirmware/releases)
+automatically and finds firmware for the identified board. Choose **Review
+update** to download and verify it, then review the installation notice,
+confirm, and install. Users do not need a GitHub account or a local firmware
+folder. Download progress and cancellation are available before installation.
+Preview releases are excluded unless **Include preview firmware releases** is
+selected. Failed update checks never mean the firmware is up to date.
 
-To install manually, choose **Install a different package** (or **Choose firmware
-package** for incompatible firmware), then choose the version folder holding
-`manifest.json` and its four binaries. Review the package and replacement notice,
-check the confirmation box, and select **Install firmware**. The app checks the
-package, connected chip, and flash capacity before writing. It reports the write
-verification separately from application startup: check the board's screen for
-the expected firmware version afterward. Firmware 1.1.3 adds USB Wi-Fi setup.
-The connection-help panel covers manual bootloader entry and retries.
+For an unidentified or blank board, choose **Install firmware on this display**,
+select its physical model, and download the matching release. A matching chip
+alone does not establish the correct display model.
+
+Under **Firmware source and advanced options**, a local firmware library remains
+available for offline use. **Reinstall or choose other firmware** also offers
+**Use a local firmware package** for an extracted folder containing its manifest
+and four binaries. GitHub ZIPs are cached in the desktop app's user data folder;
+the app verifies the ZIP checksum, safe archive contents, manifest, binary hashes,
+and board/version before selecting them. The installer separately checks the
+physical chip and verifies the write. Downloading never starts flashing.
+
+Write verification and application startup are reported separately. Check the
+board's screen and expected version after installation. The connection-help
+panel covers bootloader entry and retries. GitHub support requires restarting
+the updated development desktop shell or installing a newly built app version;
+rebuilding the frontend alone does not update an installed Electron shell.
 
 This is a first-install flow, not a guaranteed settings-preserving update. It
 does not erase the entire flash or change SD-card files, but a different old

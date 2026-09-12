@@ -3,14 +3,14 @@
   "description": "ESPImageServer desktop application",
   "author": "ESPImageServer",
   "private": true,
-  "version": "1.0.74",
+  "version": "1.0.75",
   "type": "module",
   "main": "main.mjs",
   "scripts": {
     "build": "npm run prepare:esptool && npm --prefix ../frontend run build && electron-builder --win --x64 --dir",
     "prepare:esptool": "powershell -NoProfile -ExecutionPolicy Bypass -File ./prepare-esptool.ps1",
     "start": "npm run prepare:esptool && electron .",
-    "test": "node --test firmware.test.mjs identification.test.mjs wifi.test.mjs firmware-library.test.mjs"
+    "test": "node --test firmware.test.mjs identification.test.mjs wifi.test.mjs firmware-library.test.mjs firmware-releases.test.mjs"
   },
   "devDependencies": {
     "electron": "^43.3.0",
@@ -29,6 +29,7 @@
       "package.json",
       "firmware.mjs",
       "firmware-library.mjs",
+      "firmware-releases.mjs",
       "identification.mjs",
       "wifi.mjs"
     ],
@@ -53,6 +54,7 @@
     ]
   },
   "dependencies": {
-    "serialport": "13.0.0"
+    "serialport": "13.0.0",
+    "yauzl": "3.4.0"
   }
 }

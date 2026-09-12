@@ -25,7 +25,7 @@ export function compareVersions(a, b) {
 export function firmwareStatus(identity, library) {
   if (!identity || !library?.checkedAt || library.error) return { kind: 'unknown', latest: null }
   const packages = (library.packages || []).filter(p => p.board === identity.board_target &&
-    compareVersions(p.version, p.version) === 0 && !p.version.split('+')[0].includes('-'))
+    compareVersions(p.version, p.version) === 0 && (library.includePrereleases || (!p.prerelease && !p.version.split('+')[0].includes('-'))))
     .sort((a, b) => compareVersions(b.version, a.version))
   const latest = packages[0]
   if (!latest) return { kind: 'missing', latest: null }

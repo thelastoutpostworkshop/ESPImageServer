@@ -12,7 +12,7 @@ const {default:component}=await import(`data:text/javascript;base64,${Buffer.fro
 component.render=()=>null
 const renderer=createRenderer({createComment:()=>({}),insert(){},remove(){},parentNode:()=>null,nextSibling:()=>null,createElement:()=>({}),createText:()=>({}),setText(){},setElementText(){},patchProp(){}})
 const flush=async()=>{await nextTick();await new Promise(r=>setImmediate(r))}
-async function mount(t) {
+async function mount(t, extraApi = {}) {
   const identity={port:'COM8',board_target:'JC4827W543',hardware_id:'aabbccddeeff',firmware_version:'1.1.3',wifi_configured:true,wifi_connected:true,capabilities:['wifi_scan','wifi_connect','wifi_status','wifi_cancel']}
   const state={selectedPort:'COM8',identity,busy:false,stage:'idle'}
   let installs=0, refreshes=0
@@ -21,6 +21,7 @@ async function mount(t) {
     selectFirmwarePort:async({port})=>{state.selectedPort=port;state.identity=null;return {ok:true,value:structuredClone(state)}},
     refreshFirmwareIdentity:async()=>{refreshes++;state.identity={...identity,wifi_connected:true};return {ok:true,value:structuredClone(state)}},
     installFirmware:async()=>{installs++;return {ok:true,value:structuredClone(state)}}}
+  Object.assign(api, extraApi)
   globalThis.window={espImageServerDesktop:api,setTimeout:()=>0,clearTimeout(){}}
   const app=renderer.createApp(component);app.mount({})
   t.after(()=>{app.unmount();delete globalThis.window})
@@ -61,4 +62,29 @@ test('loss of identity requires the next board to pass the firmware step again',
 test('opening firmware management after an earlier install does not auto-close it',async t=>{
   const {form,state}=await mount(t);state.stage='boot_verified';form.showInstall=true
   await form.poll();await flush();assert.equal(form.panel,'install')
+})
+
+test('GitHub is the default source and download ends at an unconfirmed installation review', async t => {
+  let selections = []
+  const {form,state,installs} = await mount(t, {
+    firmwareReleases: async()=>({ok:true,value:{checkedAt:'today',packages:[{id:'42',source:'github',board:'JC4827W543',version:'1.1.4'}]}}),
+    firmwareDownloadState: async()=>({ok:true,value:{busy:false}}),
+    selectReleaseFirmware: async request=>{selections.push(request);return {ok:true,value:{...state,package:{board:'JC4827W543',version:'1.1.4',source:'github'}}}}
+  })
+  assert.equal(form.source,'github'); assert.equal(form.update.kind,'update')
+  await form.reviewUpdate(); await flush()
+  assert.deepEqual(selections,[{id:'42',board:'JC4827W543',port:'COM8',allowPrerelease:false}])
+  assert.equal(form.panel,'install'); assert.equal(form.confirmed,false); assert.equal(form.canInstall,false); assert.equal(installs(),0)
+})
+
+test('GitHub failure stays unknown and download errors do not open an installation review', async t => {
+  const {form,installs} = await mount(t, {
+    firmwareReleases: async()=>({ok:true,value:{checkedAt:null,error:'GitHub unavailable',packages:[]}}),
+    firmwareDownloadState: async()=>({ok:true,value:{busy:false}}),
+    selectReleaseFirmware: async()=>({ok:false,error:'Checksum failed'})
+  })
+  assert.equal(form.update.kind,'unknown')
+  form.library={checkedAt:'today',packages:[{id:'42',source:'github',board:'JC4827W543',version:'1.1.4'}]}
+  await form.reviewUpdate(); await flush()
+  assert.equal(form.error,'Checksum failed'); assert.equal(form.panel,'firmware'); assert.equal(installs(),0)
 })

@@ -2,6 +2,11 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('espImageServerDesktop', {
   firmwareState: () => ipcRenderer.invoke('firmware-state'),
+  firmwareReleases: () => ipcRenderer.invoke('firmware-releases'),
+  checkFirmwareReleases: () => ipcRenderer.invoke('firmware-releases-check'),
+  firmwareDownloadState: () => ipcRenderer.invoke('firmware-download-state'),
+  cancelFirmwareDownload: () => ipcRenderer.invoke('firmware-download-cancel'),
+  selectReleaseFirmware: request => ipcRenderer.invoke('firmware-release-select', request),
   firmwareLibrary: () => ipcRenderer.invoke('firmware-library'),
   checkFirmwareLibrary: () => ipcRenderer.invoke('firmware-library-check'),
   chooseFirmwareLibrary: () => ipcRenderer.invoke('firmware-library-choose'),

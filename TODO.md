@@ -49,7 +49,7 @@
 - [ ] **Offline release bundle:** Bundle tested firmware packages for all four
   boards. Verify the packaged esptool and serial dependencies on Windows without
   a separate Arduino/Python installation, including driver, charge-only cable,
-  port-change, and port-in-use cases. Online downloads can follow later.
+  port-change, and port-in-use cases. GitHub downloads are available; an offline bundle remains optional.
 - [ ] **Board and release documentation:** Document the tested connector,
   BOOT/RESET procedure, drivers, and build profile for each board; add model
   pictures for manual selection. Publish versioned firmware packages with
