@@ -10,10 +10,15 @@ export function responseDecoder(id, onResult, maxLength = 2048) {
       if (character === '\n') {
         if (!overflow) {
           const start = line.indexOf('@ESPIMAGE ')
-          if (start >= 0) {
+          // Early 1.1.3 builds lost the prefix when ArduinoJson replaced the
+          // String destination. Accept a whole JSON line for those builds;
+          // keep protocol/request correlation and downstream validation.
+          const json = start >= 0 ? line.slice(start + 10) : line.trim()
+          if (start >= 0 || json.startsWith('{')) {
             let message
-            try { message = JSON.parse(line.slice(start + 10)) } catch { /* ignore damaged/log lines */ }
-            if (message && (id === null || message.id === id)) onResult(message)
+            try { message = JSON.parse(json) } catch { /* ignore damaged/log lines */ }
+            if (message && (start >= 0 || (message.protocol === 1 && typeof message.id === 'string' && typeof message.ok === 'boolean')) &&
+                (id === null || message.id === id)) onResult(message)
           }
         }
         line = ''; overflow = false

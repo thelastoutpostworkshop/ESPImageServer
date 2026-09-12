@@ -7,6 +7,18 @@ const result = { hardware_id: 'aabbccddeeff', board_target: 'JC4827W543', board_
   firmware_version: '1.1.2', protocol_version: 1, capabilities: ['hello', 'status'], width: 480, height: 272,
   wifi_configured: false, wifi_connected: false }
 const message = id => ({ protocol: 1, id, ok: true, result })
+
+test('early 1.1.3 unprefixed replies retain protocol and request correlation', () => {
+  const received = [], decode = responseDecoder('test-113', r => received.push(r))
+  decode(JSON.stringify({ id: 'test-113', note: 'ordinary JSON log' }) + '\n')
+  decode(JSON.stringify({ ...message('test-113'), protocol: 2 }) + '\n')
+  decode(JSON.stringify(message('unrelated')) + '\n')
+  decode('boot log ' + JSON.stringify(message('test-113')) + '\n')
+  const raw = JSON.stringify(message('test-113')) + '\n'
+  decode(raw.slice(0, 31)); decode(raw.slice(31))
+  assert.equal(received.length, 1)
+  assert.equal(validateIdentity(received[0]).hardware_id, result.hardware_id)
+})
 test('decoder recovers from boot logs, oversized input, fragmentation and unrelated replies', () => {
   const received = [], decode = responseDecoder('abc', r => received.push(r))
   decode('boot log\n' + 'x'.repeat(9000) + '\n@ESPIMAGE broken json\n')

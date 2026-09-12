@@ -25,6 +25,13 @@ ID but unsupported protocol/command receive an error. A separate firmware task
 services serial input while display/network code runs. The host skips ordinary
 boot logs, bounds response lines, and matches IDs before accepting replies.
 
+Compatibility note: the first 1.1.3 build emitted whole JSON lines without the
+`@ESPIMAGE ` prefix because ArduinoJson 7 clears String destinations. The desktop
+also accepts those lines with protocol/envelope checks, matching request IDs,
+and the usual identity/status validation. Firmware source now adds the prefix
+after serialization. A live COM8 check on 2026-09-12 confirmed JC4827W543 1.1.3
+and hardware ID `a03e0997bacc` with the compatible desktop decoder.
+
 The desktop holds one operation lock for identification and flashing. Serial
 ports close on success, timeout, and errors before the next operation. No reset
 sequence is deliberately sent during identification, though some boards/drivers

@@ -139,6 +139,13 @@ clearing. The live server at 127.0.0.1:8000 refused the connection. Firmware
 compilation and the real-board acceptance matrix remain manual and are NOT yet
 complete. See `scripts/usb-wifi-setup.md`.
 
+Hardware follow-up (2026-09-12): user flashed JC4827W543 1.1.3 and confirmed
+the USB Wi-Fi setup screen. Diagnosed missing serial framing in that build;
+fixed firmware serialization and added desktop compatibility. Live identification
+on COM8 now verifies 1.1.3, hardware ID `a03e0997bacc`, and Wi-Fi capabilities.
+All 44 desktop tests pass. Actual Wi-Fi connection/save/reboot tests remain open;
+the installed desktop needs the updated decoder before continuing through its UI.
+
 ### Step 4 - Complete the guided setup and recovery flow
 
 - [ ] **Wizard:** Join flashing, post-boot identification, and Wi-Fi setup into
