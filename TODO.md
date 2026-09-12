@@ -4,33 +4,11 @@
 
 ### Firmware reliability review — 2026-09-12
 
-Source review of the separate ESPImageDisplay repository; these findings have
-not been verified by new hardware tests. Start with the three P1 tasks below,
-then run the SD-card recovery and long-video checks in Hardware validation.
-Settings-preserving firmware updates remain a separate task under Updates and
-distribution.
-
-- [ ] **P1 — Protect interrupted SD saves:** In `SDCard.cpp`, images and
-  videos are written directly to their final filenames, and existing files
-  are treated as successfully saved without validation. Write to a temporary
-  file, verify completion, then rename it. Validate existing files before
-  skipping downloads and recover incomplete temporary files. Verify retry
-  after a power cut, card removal, and a full card never reports a partial
-  image or video as successfully saved.
-- [ ] **P1 — Keep LAN commands responsive during playback and downloads:**
-  `MjpegPlayer::play()` runs until the file ends, and downloads also occupy
-  the main loop. Process playback and transfers incrementally, allowing
-  command polling, card-state checks, progress reporting, and cancellation.
-  USB setup already has its own task; preserve its responsiveness. Test
-  stopping a long video and recovering from a stalled download or removed
-  card without waiting for the entire operation to finish.
-- [ ] **P1 — Acknowledge media saves promptly:** In `ESPImageDisplay.ino`,
-  thumbnail downloading and the 1.5-second save-result screen delay precede
-  the command acknowledgement. Report success after the main media file is
-  safely committed, handle thumbnails separately, and show status without
-  blocking. Measure download, card-write, thumbnail, acknowledgement, and
-  file-list reporting times. This sequence may contribute to the observed
-  Waveshare delay; it is not yet established as the entire cause.
+Source review of the separate ESPImageDisplay repository. The three P1 source
+changes are implemented for firmware 1.1.6 and app 1.0.76, with transaction/parser
+assertions and app tests. Their physical acceptance checks remain below;
+automated checks do not establish recovery on a real card. Remaining source
+improvements are P2. Settings-preserving updates remain under Updates and distribution.
 - [ ] **P2 — Restore display content after network recovery:**
   `noteServerContact()` clears `connectionProblemActive` before the
   unchanged-image recovery branch checks it. Track connection state
@@ -96,9 +74,20 @@ distribution.
   Verify that USB setup, Ready status, and image/SD-card commands remain bound
   to the selected physical display.
 - [ ] **SD-card delays and recovery:** Measure card-refresh, image download,
-  card-write, and acknowledgement times to explain the delayed Waveshare save.
-  Test removal/reinsertion, no card, a full card, and delayed reports. Verify
-  final save notifications and refreshed file lists in the packaged app.
+  card-write, verification/commit, thumbnail, acknowledgement, and file-list
+  times using the new serial timings to explain the delayed Waveshare save.
+  Manually compile/flash 1.1.6 on all four targets. Test power cuts before/during
+  rename, removal/reinsertion during download/verification, no/full card, retry
+  over a legacy partial file, and delayed reports. A partial file must never
+  receive a saved confirmation. Verify the main acknowledgement precedes
+  thumbnail completion/failure and refreshes the file list in the updated app.
+- [ ] **P1 responsiveness hardware acceptance:** During a long MJPEG preview,
+  use Stop preview and a replacement command. Stall a download, cancel while
+  waiting for headers and during verification, then retry immediately and after
+  workers settle. Measure LAN response time and confirm USB Wi-Fi setup and
+  card-removal checks remain responsive. Test late acknowledgements and changing
+  the active display while saving; progress/cancellation must stay on the
+  original board. Confirm recovery without waiting for the whole video/transfer.
 
 ### Updates and distribution
 

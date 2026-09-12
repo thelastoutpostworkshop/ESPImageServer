@@ -39,12 +39,8 @@ class DisplayCommandStore:
             filename=filename,
             image_id=image_id,
             content_key=content_key,
+            thumbnail_url=thumbnail_url or f"/display-sd-card/thumbnails/{filename}",
         )
-        filename = str(command["filename"])
-        command["thumbnail_url"] = thumbnail_url or f"/display-sd-card/thumbnails/{filename}"
-        with self._lock:
-            self._pending[display_id] = dict(command)
-            self._completed[str(command["id"])] = dict(command)
         return command
 
     def queue(
@@ -58,6 +54,11 @@ class DisplayCommandStore:
                 if previous is not None and previous.get("status") == "pending":
                     previous["status"] = "superseded"
                     self._finished_at[previous_id] = time()
+                    if previous.get("type") == "cancel_operation":
+                        original = self._completed.get(str(previous.get("cancelled_command_id", "")))
+                        if original is not None and original.get("status") == "cancelling":
+                            original.update(status="superseded", detail="Replaced by another display command")
+                            self._finished_at[str(original["id"])] = time()
             command_id = uuid4().hex
             command = {
                 "id": command_id,
@@ -109,6 +110,8 @@ class DisplayCommandStore:
             for item in files:
                 if not isinstance(item, dict):
                     continue
+                if report.get("verified_saves") and item.get("verified") is not True:
+                    continue
                 name = str(item.get("name", ""))
                 if (
                     item.get("type", "image") == "image"
@@ -135,6 +138,8 @@ class DisplayCommandStore:
             for item in files:
                 if not isinstance(item, dict) or item.get("type") != media_type:
                     continue
+                if report.get("verified_saves") and item.get("verified") is not True:
+                    continue
                 name = str(item.get("name", ""))
                 extension = "mjpeg" if media_type == "video" else "jpg"
                 if str(item.get("content_key", "")) == content_key or name.endswith(f"-{content_key}.{extension}"):
@@ -155,6 +160,8 @@ class DisplayCommandStore:
             if not report.get("available", False) or not isinstance(files, list):
                 return None
             for item in files:
+                if report.get("verified_saves") and (not isinstance(item, dict) or item.get("verified") is not True):
+                    continue
                 if isinstance(item, dict) and item.get("type") == "video":
                     name = str(item.get("name", ""))
                     if name.startswith("esp-video-") and name.endswith(legacy_suffix):
@@ -178,7 +185,14 @@ class DisplayCommandStore:
             command = self._completed.get(command_id)
             if command is None or command.get("display_id") != display_id:
                 return None
+            if command.get("status") in {"complete", "failed", "cancelled", "superseded"}:
+                return dict(command)
             command.update({"status": "complete" if success else "failed", "detail": detail})
+            if command.get("type") == "cancel_operation":
+                original = self._completed.get(str(command.get("cancelled_command_id", "")))
+                if original is not None and original.get("status") == "cancelling":
+                    original.update(status="cancelled" if success else "failed", detail=detail)
+                    self._finished_at[str(original["id"])] = time()
             if success and command.get("type") == "refresh_sd_card":
                 # Firmware acknowledges a refresh immediately before it posts its
                 # new inventory. The UI waits for this exact next report.
@@ -189,6 +203,36 @@ class DisplayCommandStore:
             self._finished_at[command_id] = time()
             self._prune_completed_locked()
             return dict(command)
+
+    def progress(
+        self, command_id: str, stage: str, received: int, total: int, *, display_id: str,
+    ) -> dict[str, object] | None:
+        if stage not in {"downloading", "verifying"} or not 0 <= received <= total <= 64 * 1024 * 1024:
+            raise ValueError("Invalid transfer progress")
+        with self._lock:
+            command = self._completed.get(command_id)
+            if command is None or command.get("display_id") != display_id:
+                return None
+            if command.get("status") == "pending" and command.get("type") in {"save_latest", "save_saved_image", "save_saved_video"}:
+                command["progress"] = {"stage": stage, "received_bytes": received, "total_bytes": total}
+            return dict(command)
+
+    def cancel(self, command_id: str, *, display_id: str) -> dict[str, object] | None:
+        with self._lock:
+            original = self._completed.get(command_id)
+            if original is None or original.get("display_id") != display_id:
+                return None
+            if original.get("status") != "pending" or original.get("type") not in {"save_latest", "save_saved_image", "save_saved_video"}:
+                return dict(original)
+            if self._pending.get(display_id, {}).get("id") != command_id:
+                return dict(original)
+            original.update(status="cancelling", detail="Cancellation requested; waiting for the display")
+            cancel_id = uuid4().hex
+            command = {"id": cancel_id, "type": "cancel_operation", "status": "pending", "display_id": display_id,
+                       "cancelled_command_id": command_id}
+            self._pending[display_id] = command
+            self._completed[cancel_id] = command
+            return dict(original)
 
     def get(
         self, command_id: str, *, display_id: str = LEGACY_DISPLAY_ID,

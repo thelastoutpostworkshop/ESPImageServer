@@ -1124,3 +1124,38 @@ def test_saved_image_can_target_registered_displays_and_use_their_rendition_rout
     assert mixed_fitted.status_code == 202
     assert Image.open(BytesIO(kitchen_fitted.content)).size == (480, 272)
     assert max(Image.open(BytesIO(kitchen_fitted.content)).convert("RGB").getpixel((0, 0))) < 8
+
+
+def test_registered_media_save_progress_cancel_and_validation() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        ids = []
+        for hardware in ('screen-a', 'screen-b'):
+            response = client.post('/displays/register', json={
+                'hardware_id': hardware, 'name': hardware, 'width': 240, 'height': 320,
+                'firmware_version': '1.1.6', 'capabilities': {'sd_card': True},
+            })
+            assert response.status_code == 201
+            ids.append(response.json()['id'])
+        save = app.state.display_command_store.queue_save('image.jpg', display_id=ids[0])
+        path = f"/displays/{ids[0]}/display-commands/{save['id']}"
+        wrong = f"/displays/{ids[1]}/display-commands/{save['id']}"
+        body = {'stage': 'verifying', 'received_bytes': 100, 'total_bytes': 100}
+        assert client.post(wrong + '/progress', json=body).status_code == 404
+        assert client.post(wrong + '/cancel').status_code == 404
+        assert client.post(path + '/progress', json={**body, 'received_bytes': 101}).status_code == 422
+        assert client.post(path + '/progress', json={**body, 'stage': 'complete'}).status_code == 422
+        progress = client.post(path + '/progress', json=body)
+        assert progress.status_code == 200
+        assert progress.json()['status'] == 'pending'
+        assert client.post(path + '/cancel').json()['status'] == 'cancelling'
+        stop = client.get(f'/displays/{ids[0]}/display-commands/next').json()
+        assert stop['type'] == 'cancel_operation'
+        ack = client.post(f"/displays/{ids[0]}/display-commands/{stop['id']}/ack", json={'success': True, 'detail': 'Save cancelled'})
+        assert ack.status_code == 200
+        assert client.get(path).json()['status'] == 'cancelled'
+        report_path = f'/displays/{ids[0]}/display-sd-card'
+        assert client.post(report_path + '/report', json={'available': True, 'mode': 'server_controlled', 'total_bytes': 1000, 'used_bytes': 100, 'verified_saves': True, 'files': [{'name': 'image.jpg', 'type': 'image', 'verified': True}]}).status_code == 204
+        report = client.get(report_path).json()
+        assert report['verified_saves'] is True
+        assert report['files'][0]['verified'] is True

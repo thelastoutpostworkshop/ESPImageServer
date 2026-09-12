@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import QRCode from 'qrcode'
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
+import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
 
 function createRandomSeed() {
   return Math.floor(Math.random() * 4_294_967_296)
@@ -181,6 +182,8 @@ const displayingSdCardFile = ref('')
 const sdCardSnackbar = ref(false)
 const sdCardSnackbarMessage = ref('')
 const sdCardSnackbarKind = ref('success')
+const activeSDCardSave = ref(null)
+const cancellingSDCardSave = ref(false)
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
@@ -541,7 +544,8 @@ function creationSdCardStatus(creation, mediaType) {
   if (!creation) return { known: false, present: false, file: null, activeFormat: false }
   if (!creationSdCardInventoryConfirmed.value) return { known: false, present: false, file: null, activeFormat: false }
   if (!displaySdCard.value?.available) return { known: true, present: false, file: null, activeFormat: false }
-  const files = displaySdCardFiles().filter(file => (file.type || (String(file.name || '').endsWith('.mjpeg') ? 'video' : 'image')) === mediaType)
+  const files = displaySdCardFiles().filter(file => !displaySdCard.value.verified_saves || file.verified === true)
+    .filter(file => (file.type || (String(file.name || '').endsWith('.mjpeg') ? 'video' : 'image')) === mediaType)
   if (mediaType === 'image') {
     const contentKeys = Array.isArray(creation.sd_card_content_keys)
       ? creation.sd_card_content_keys.map(key => String(key || '')).filter(Boolean)
@@ -1427,6 +1431,20 @@ function showSDCardSaveStatus(message, kind = 'progress') {
   showSDCardSnackbar(message, kind)
 }
 
+async function cancelSDCardSave() {
+  const command = activeSDCardSave.value
+  if (!command || cancellingSDCardSave.value) return
+  cancellingSDCardSave.value = true
+  try {
+    const response = await fetch(`${sdSaveCommandEndpoint(command)}/cancel`, { method: 'POST' })
+    if (!response.ok) throw new Error(`Cancel request failed (${response.status})`)
+    const updated = await response.json()
+    if (activeSDCardSave.value?.id === command.id) activeSDCardSave.value = updated
+    showSDCardSaveStatus(sdSaveProgressMessage(updated) || 'Checking the save result…')
+  } catch (requestError) { showSDCardSnackbar(requestError.message, 'error') }
+  finally { cancellingSDCardSave.value = false }
+}
+
 async function loadSavedImages() {
   savedImagesLoading.value = true
   try {
@@ -1520,13 +1538,15 @@ async function saveSavedVideoToDisplaySdCard() {
 }
 
 async function saveVideoToDisplaySdCard(videoId) {
-  if (!videoId || !activeDisplayOnline.value || savingVideoToDisplaySdCard.value) return null
+  if (!videoId || !activeDisplayOnline.value || (savingVideoToDisplaySdCard.value || savingToDisplaySdCard.value)) return null
+  const displayScope = selectedDisplayEndpoint('')
   savingVideoToDisplaySdCard.value = true
   error.value = ''
   status.value = ''
   try {
     showSDCardSaveStatus(`Checking ${display.value.name}'s SD card for this video…`)
     await refreshDisplaySdCardInventory()
+    if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Start the save again for the selected display.')
     const response = await fetch(
       `${selectedDisplayEndpoint('/display-commands/save-saved-video')}/${encodeURIComponent(videoId)}`,
       { method: 'POST' }
@@ -1538,28 +1558,34 @@ async function saveVideoToDisplaySdCard(videoId) {
     const command = await response.json()
     if (command.status === 'already_saved') {
       showSDCardSaveStatus(command.detail || 'This video is already on the display SD card.', 'success')
-      return { filename: String(command.filename || ''), ready: true, reused: true }
+      return { filename: String(command.filename || ''), ready: true, reused: true, displayScope }
     }
     showSDCardSaveStatus('Copying video to the display SD card for offline playback. It will be converted to MJPEG first.')
-    for (let attempt = 0; attempt < 90; attempt += 1) {
+    activeSDCardSave.value = command
+    for (let attempt = 0; attempt < 600; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
-      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
+      const commandResponse = await fetch(sdSaveCommandEndpoint(command))
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
+      if (activeSDCardSave.value?.id === command.id) activeSDCardSave.value = result
+      const progressMessage = sdSaveProgressMessage(result)
+      if (['cancelled', 'superseded'].includes(result.status)) { showSDCardSaveStatus(progressMessage, 'warning'); return null }
+      if (progressMessage) showSDCardSaveStatus(progressMessage)
       if (result.status === 'complete') {
         showSDCardSaveStatus('Video saved to the display SD card for offline playback.', 'success')
         await loadDisplaySdCard()
-        return { filename: String(command.filename || ''), ready: true }
+        return { filename: String(command.filename || ''), ready: true, displayScope }
       }
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not play this video')
     }
     showSDCardSaveStatus('Video save is still awaiting confirmation. Check the SD Card page before retrying.', 'warning')
-    return { filename: String(command.filename || ''), ready: false }
+    return { filename: String(command.filename || ''), ready: false, displayScope }
   } catch (requestError) {
     error.value = `Could not save the video to the display SD card: ${requestError.message}`
     showSDCardSnackbar(error.value, 'error')
     return null
   } finally {
+    activeSDCardSave.value = null
     savingVideoToDisplaySdCard.value = false
   }
 }
@@ -1586,6 +1612,10 @@ async function showSavedVideoOnDisplay(videoId = completedVideoSavedId.value) {
       return
     }
     videoStage.value = 'Starting video on the display...'
+    if (saved.displayScope !== selectedDisplayEndpoint('')) {
+      videoStage.value = 'Video saved to the original display. Select that display to start playback.'
+      return
+    }
     if (await showSDCardFileOnDisplay(saved.filename)) {
       videoStage.value = 'Video is now playing on the display.'
     } else {
@@ -1655,9 +1685,14 @@ async function loadDisplaySdCard() {
 
 async function refreshDisplaySdCardInventory() {
   if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
+  const displayScope = selectedDisplayEndpoint('')
+  const checkDisplay = () => {
+    if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Refresh its SD card and try again.')
+  }
   displaySdCardLoading.value = true
   try {
     const previousReport = await fetchDisplaySdCardReport()
+    checkDisplay()
     displaySdCard.value = previousReport
     const previousVersion = Number(previousReport.report_version) || 0
     const response = await fetch(selectedDisplayEndpoint('/display-sd-card/refresh'), { method: 'POST' })
@@ -1668,14 +1703,17 @@ async function refreshDisplaySdCardInventory() {
     const command = await response.json()
     for (let attempt = 0; attempt < 40; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
-      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
+      checkDisplay()
+      const commandResponse = await fetch(sdSaveCommandEndpoint(command))
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not refresh its SD card list')
       if (result.status !== 'complete') continue
       const requiredVersion = Number(result.report_version) || previousVersion + 1
       for (let reportAttempt = 0; reportAttempt < 20; reportAttempt += 1) {
+        checkDisplay()
         const report = await fetchDisplaySdCardReport()
+        checkDisplay()
         displaySdCard.value = report
         if ((Number(report.report_version) || 0) >= requiredVersion) {
           if (!report.available) throw new Error('The display reported that no SD card is available')
@@ -2380,13 +2418,15 @@ async function saveCurrentImageToCreationLibrary() {
 }
 
 async function saveImageToDisplaySdCard(savedImage = null) {
-  if (!activeDisplayOnline.value || savingToDisplaySdCard.value) return
+  if (!activeDisplayOnline.value || (savingToDisplaySdCard.value || savingVideoToDisplaySdCard.value)) return
+  const displayScope = selectedDisplayEndpoint('')
   savingToDisplaySdCard.value = true
   error.value = ''
   status.value = ''
   try {
     showSDCardSaveStatus(`Checking ${display.value.name}'s SD card for this image…`)
     await refreshDisplaySdCardInventory()
+    if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Start the save again for the selected display.')
     const endpoint = savedImage
       ? `${selectedDisplayEndpoint('/display-commands/save-saved-image')}/${encodeURIComponent(savedImage.id)}`
       : selectedDisplayEndpoint('/display-commands/save-latest')
@@ -2402,11 +2442,16 @@ async function saveImageToDisplaySdCard(savedImage = null) {
       return
     }
     showSDCardSaveStatus('Save request sent to the display. Waiting for SD-card confirmation…')
-    for (let attempt = 0; attempt < 15; attempt += 1) {
+    activeSDCardSave.value = command
+    for (let attempt = 0; attempt < 600; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
-      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
+      const commandResponse = await fetch(sdSaveCommandEndpoint(command))
       if (!commandResponse.ok) continue
       const currentCommand = await commandResponse.json()
+      if (activeSDCardSave.value?.id === command.id) activeSDCardSave.value = currentCommand
+      const progressMessage = sdSaveProgressMessage(currentCommand)
+      if (['cancelled', 'superseded'].includes(currentCommand.status)) { showSDCardSaveStatus(progressMessage, 'warning'); return  }
+      if (progressMessage) showSDCardSaveStatus(progressMessage)
       if (currentCommand.status === 'complete') {
         showSDCardSaveStatus(`Saved to the display SD card: ${currentCommand.detail}`, 'success')
         await loadDisplaySdCard()
@@ -2419,6 +2464,7 @@ async function saveImageToDisplaySdCard(savedImage = null) {
     error.value = `Could not save to the display SD card: ${requestError.message}`
     showSDCardSnackbar(error.value, 'error')
   } finally {
+    activeSDCardSave.value = null
     savingToDisplaySdCard.value = false
   }
 }
@@ -2786,7 +2832,7 @@ onUnmounted(() => {
         <v-icon v-else :icon="sdCardSnackbarKind === 'success' ? 'mdi-check-circle' : 'mdi-alert-circle'" />
         <span>{{ sdCardSnackbarMessage }}</span>
       </div>
-      <template #actions><v-btn variant="text" @click="sdCardSnackbar = false">Close</v-btn></template>
+      <template #actions><v-btn v-if="activeSDCardSave?.progress && sdCardSnackbarKind === 'progress'" variant="text" :disabled="activeSDCardSave.status === 'cancelling' || cancellingSDCardSave" :loading="cancellingSDCardSave" @click="cancelSDCardSave">Cancel save</v-btn><v-btn variant="text" @click="sdCardSnackbar = false">Close</v-btn></template>
     </v-snackbar>
     <v-snackbar v-model="generationQueueSnackbar" color="success" location="bottom" timeout="5000">
       <div class="d-flex align-center ga-2">

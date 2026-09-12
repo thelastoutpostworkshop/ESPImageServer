@@ -4,6 +4,24 @@ ESPImageServer creates AI images and video on your own computer and sends them t
 
 Your prompts, generated images, and model files stay on your computer. The ESP32 only downloads the finished JPEG or MJPEG from your local network.
 
+## SD saves with firmware 1.1.6
+
+The updated app shows download progress, then verification, and confirms a save
+only after the display acknowledges the committed file. **Cancel save** appears
+once compatible firmware reports progress; cancellation remains pending until
+the display confirms it. Progress follows the original display even if you
+select another display. Older firmware keeps its existing save flow.
+
+Firmware 1.1.6 checks downloaded bytes read back from the SD card before exposing
+the final filename. Thumbnails follow the main acknowledgement and can finish
+later. Files saved by older firmware remain playable, but the first save of the
+same content on 1.1.6 validates/replaces them before they qualify for automatic
+reuse. Keep room for a temporary copy when replacing a file.
+
+These changes require the updated server/frontend and manually compiled 1.1.6
+firmware. No new installer or firmware package is included by this source change;
+physical recovery checks remain listed in `TODO.md`.
+
 ## What you need
 
 - A Windows computer.

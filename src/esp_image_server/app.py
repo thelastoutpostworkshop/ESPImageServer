@@ -197,8 +197,15 @@ class DisplayCommandAcknowledgement(BaseModel):
     detail: str = Field(default="", max_length=200)
 
 
+class DisplayCommandProgress(BaseModel):
+    stage: Literal["downloading", "verifying"]
+    received_bytes: int = Field(ge=0, le=64 * 1024 * 1024)
+    total_bytes: int = Field(ge=0, le=64 * 1024 * 1024)
+
+
 class DisplaySDCardReport(BaseModel):
     available: bool
+    verified_saves: bool = False
     mode: str = Field(pattern="^(server_controlled|offline_slideshow|offline_video_loop|preview_slideshow|preview_video_loop|live_images|sd_card)$")
     total_bytes: int = Field(ge=0)
     used_bytes: int = Field(ge=0)
@@ -1186,8 +1193,28 @@ def create_app(
         )
         if command is None:
             raise HTTPException(status_code=404, detail="Display command not found")
-        outcome = "completed" if acknowledgement.success else "failed"
+        outcome = "completed" if command["status"] == "complete" else str(command["status"])
         display_registry.record_activity(display_id, display_command_activity(command, outcome))
+        return command
+
+    @app.post("/displays/{display_id}/display-commands/{command_id}/progress")
+    def report_registered_command_progress(display_id: str, command_id: str, progress: DisplayCommandProgress) -> dict[str, object]:
+        get_registered_display(display_id)
+        if progress.received_bytes > progress.total_bytes:
+            raise HTTPException(status_code=422, detail="Received bytes exceed transfer size")
+        command = display_command_store.progress(command_id, progress.stage, progress.received_bytes, progress.total_bytes, display_id=display_id)
+        if command is None:
+            raise HTTPException(status_code=404, detail="Display command not found")
+        if command["status"] == "pending" and command.get("progress"):
+            display_registry.record_activity(display_id, "SD-card transfer " + progress.stage)
+        return command
+
+    @app.post("/displays/{display_id}/display-commands/{command_id}/cancel")
+    def cancel_registered_command(display_id: str, command_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        command = display_command_store.cancel(command_id, display_id=display_id)
+        if command is None:
+            raise HTTPException(status_code=404, detail="Display command not found")
         return command
 
     @app.get("/displays/{display_id}/display-commands/{command_id}")
