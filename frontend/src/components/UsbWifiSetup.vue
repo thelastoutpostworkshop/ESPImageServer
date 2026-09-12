@@ -43,7 +43,9 @@ async function cancel() {
   try { const result = await desktop.cancelWifiSetup(); if (!result.ok) throw new Error(result.error) }
   catch (e) { error.value = e.message }
 }
-watch(() => [props.identity?.hardware_id, props.selectedPort], () => {
+// IPC polling replaces identity objects. Compare the two device identifiers
+// separately so an unchanged snapshot does not clear a form being edited.
+watch([() => props.identity?.hardware_id, () => props.selectedPort], () => {
   password.value = ''; ssid.value = ''; error.value = ''; network.value = null
 })
 watch(auth, () => { password.value = '' })
