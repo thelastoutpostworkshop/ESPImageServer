@@ -26,8 +26,10 @@ The desktop app starts the local server automatically. You can also open the app
 
 ## Install firmware over USB (local packages)
 
-In the desktop app, open **Install firmware**. Connect a USB data cable, select
-the physical display model and COM port, then choose the version folder holding
+In the desktop app, open **Set up display**. Connect a USB data cable, select
+the COM port, and choose **Identify and continue**. Compatible firmware skips
+installation and goes straight to Wi-Fi setup. To install or update firmware,
+select the physical display model, then choose the version folder holding
 `manifest.json` and its four binaries. Review the package and replacement notice,
 check the confirmation box, and select **Install firmware**. The app checks the
 package, connected chip, and flash capacity before writing. It reports the write
@@ -55,7 +57,7 @@ for flashing. The existing image-generation server still uses its Python setup.
 No installer rebuild is needed to test the development checkout.
 
 Firmware 1.1.2 adds read-only USB identification. Select a COM port and choose
-**Identify firmware** to read the hardware ID, model, version, dimensions, and
+**Identify and continue** (or **Refresh USB identity**) to read the hardware ID, model, version, dimensions, and
 Wi-Fi status without installing anything. After flashing, the app also attempts
 this check automatically. It follows a changed COM number only when the USB
 serial identity uniquely matches the selected device; otherwise refresh ports
@@ -76,6 +78,16 @@ previous settings. A successful save survives reboot even if ESPImageServer is
 unavailable. If USB is interrupted, reconnect and identify the board: a completed
 connection may already have saved; otherwise the abandoned attempt is cancelled
 after eight seconds. See [USB Wi-Fi tests](scripts/usb-wifi-setup.md) before release.
+
+The final server check shows **Ready** only after fresh LAN contact matches the
+USB board's hardware ID, firmware version, and dimensions. If discovery fails,
+keep the app running and check the local network/server address; saved Wi-Fi
+does not need to be entered again. **Use this display** opens its display page.
+Changing ports or unplugging requires identification again.
+
+**Change Wi-Fi** reopens network setup. With firmware 1.1.4 or later,
+**Forget Wi-Fi…** asks for confirmation before disconnecting and removing only
+that board's Wi-Fi credentials. SD files and other display settings are preserved.
 
 See [the contributor guide](CONTRIBUTING.md#create-a-local-firmware-package-and-manifest)
 for the manifest script, required files, and packaging commands, or

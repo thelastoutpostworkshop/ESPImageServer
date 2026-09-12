@@ -163,3 +163,27 @@ test('process runner handles chunked output, errors and timeouts without hardwar
   await assert.rejects(runProcess(process.execPath, ['-e', 'process.exit(1)']), /failed/)
   await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { timeout: 100 }), /timed out/)
 })
+
+test('USB port disappearance or replacement invalidates identity and Wi-Fi state', async () => {
+  let ports = [{ port: 'COM8', serialNumber: 'one', vendorId: '303a', productId: '1001' }]
+  const installer = new FirmwareInstaller('fake', { ports: async () => ports,
+    identify: async port => ({ port, hardware_id: 'aabbccddeeff' }) })
+  await installer.refreshPorts(); await installer.identifyFirmware('COM8')
+  installer.state.wifi = { stage: 'connected' }
+  ports = [{ ...ports[0], serialNumber: 'two' }]
+  await installer.refreshPorts()
+  assert.equal(installer.state.identity, null); assert.equal(installer.state.wifi, null)
+  await installer.identifyFirmware('COM8')
+  ports = []; await installer.refreshPorts()
+  assert.equal(installer.state.identity, null)
+  ports = [{ port: 'COM8', serialNumber: 'one' }]; await installer.refreshPorts()
+  assert.equal(installer.state.identity, null, 'replug does not silently reuse the previous identity')
+})
+test('selecting another USB port clears setup state and cannot interrupt a flash', () => {
+  const installer = new FirmwareInstaller('fake')
+  installer.state.identity = { port: 'COM8' }; installer.state.wifi = { stage: 'connected' }
+  installer.selectPort('COM9')
+  assert.equal(installer.state.identity, null); assert.equal(installer.state.wifi, null)
+  installer.state.busy = true
+  assert.throws(() => installer.selectPort('COM8'), /Wait for USB/)
+})

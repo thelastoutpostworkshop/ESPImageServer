@@ -3,6 +3,8 @@ import { SerialPort } from 'serialport'
 import { responseDecoder, validateIdentity } from './identification.mjs'
 
 const errors = {
+  confirmation_required: 'Confirm Forget Wi-Fi for the selected USB board before continuing.',
+  forget_failed: 'Wi-Fi removal could not be fully verified. Identify the board again to check its saved settings before retrying.',
   initialization_failed: 'The board could not initialize Wi-Fi safely. Restart it and retry.',
   busy: 'The board is already scanning or connecting. Cancel it and retry.',
   invalid_credentials: 'Enter an SSID of 1–32 UTF-8 bytes and a valid password.',
@@ -16,7 +18,7 @@ const errors = {
   storage_failed: 'The board could not save the credentials. Previous settings are retained; retry.',
   host_disconnected: 'USB setup stopped responding. Previous settings were restored. Reconnect and retry.'
 }
-const stages = ['idle', 'scanning', 'scan_complete', 'connecting', 'obtaining_ip', 'connected', 'cancelled', 'failed']
+const stages = ['idle', 'scanning', 'scan_complete', 'connecting', 'obtaining_ip', 'connected', 'cancelled', 'failed', 'forgotten']
 const errorText = code => typeof code === 'string' && Object.hasOwn(errors, code) ? errors[code] : 'Invalid USB Wi-Fi response.'
 export function validateCredentials({ ssid, password, auth } = {}) {
   if (typeof ssid !== 'string' || !ssid.length || Buffer.byteLength(ssid, 'utf8') > 32 || ssid.includes('\0') ||
@@ -37,6 +39,7 @@ export function validateWifi(message) {
   if (r.wifi_state === 'connected' && (!r.wifi_configured || !r.wifi_connected || !r.ip || r.ip === '0.0.0.0')) {
     throw new Error('Firmware did not confirm a saved connection with an IP address.')
   }
+  if (r.wifi_state === 'forgotten' && (r.wifi_configured || r.wifi_connected || r.ip)) throw new Error('Firmware did not confirm Wi-Fi removal.')
   const networks = r.networks.map(n => {
     if (!n || typeof n.ssid !== 'string' || Buffer.byteLength(n.ssid) > 32 || n.ssid.includes('\0') ||
         !Number.isInteger(n.rssi) || n.rssi < -127 || n.rssi > 0 || !['open', 'personal', 'unsupported'].includes(n.auth)) {
@@ -117,7 +120,8 @@ export class WifiSetup {
     if (!identity || identity.port !== port || identity.hardware_id !== hardwareId || !/^COM\d+$/.test(port)) {
       throw new Error('Identify the selected board before Wi-Fi setup.')
     }
-    if (!['scan', 'connect'].includes(action)) throw new Error('Invalid Wi-Fi setup action.')
+    if (!['scan', 'connect', 'forget'].includes(action)) throw new Error('Invalid Wi-Fi setup action.')
+    if (action === 'forget' && request.confirm !== true) throw new Error(errors.confirmation_required)
     const credentials = action === 'connect' ? validateCredentials(request) : {}
     this.cancelled = false; this.running = true
     this.installer.state.busy = true
@@ -135,23 +139,27 @@ export class WifiSetup {
       await session.open()
       const identity = validateIdentity(await session.request('hello'))
       if (identity.hardware_id !== hardwareId) throw new Error(errors.identity_mismatch)
-      if (!['wifi_scan', 'wifi_connect', 'wifi_cancel', 'wifi_status'].every(c => identity.capabilities.includes(c))) throw new Error(errors.unsupported)
+      const required = action === 'forget' ? ['wifi_forget'] : ['wifi_scan', 'wifi_connect', 'wifi_cancel', 'wifi_status']
+      if (!required.every(c => identity.capabilities.includes(c))) throw new Error(action === 'forget' ? 'Install firmware 1.1.4 or later to forget Wi-Fi over USB.' : errors.unsupported)
       if (this.cancelled) { this.installer.state.wifi.stage = 'cancelled'; return }
       const target = { hardware_id: hardwareId }
       commandStarted = true
-      const response = await session.request(action === 'scan' ? 'wifi_scan' : 'wifi_connect', { ...target, ...credentials })
+      const response = await session.request({ scan: 'wifi_scan', connect: 'wifi_connect', forget: 'wifi_forget' }[action],
+        { ...target, ...credentials, ...(action === 'forget' ? { confirm: true } : {}) })
       credentials.password = ''; credentials.ssid = ''
       let status = validateWifi(response)
       const deadline = Date.now() + 40000
       for (;;) {
         this.installer.state.wifi = { ...status, port, hardwareId }
-        if (['scan_complete', 'connected', 'cancelled', 'failed'].includes(status.stage)) break
+        if (['scan_complete', 'connected', 'cancelled', 'failed', 'forgotten'].includes(status.stage)) break
         if (Date.now() > deadline) throw new Error('Wi-Fi setup timed out. Previous settings will be restored; identify the board and retry.')
         await this.pause(500)
         status = validateWifi(await session.request(this.cancelled ? 'wifi_cancel' : 'wifi_status', target))
       }
       this.installer.state.identity = { ...identity, port, wifi_configured: status.configured, wifi_connected: status.connected }
     } catch (error) {
+      this.installer.state.identity = null
+      this.installer.state.identityError = error.message
       if (commandStarted) {
         try { await session.request('wifi_cancel', { hardware_id: hardwareId }) } catch { /* firmware watchdog also cancels abandoned work */ }
       }

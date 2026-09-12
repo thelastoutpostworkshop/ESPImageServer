@@ -131,10 +131,37 @@ export class FirmwareInstaller {
     this.state = { busy: false, stage: 'idle', log: '', package: null, error: '' }
   }
   snapshot() { return structuredClone(this.state) }
+  selectPort(port) {
+    requireValue(!this.state.busy && (port === '' || /^COM\d+$/.test(port)), 'Wait for USB work to finish and select a valid port.')
+    this.state.selectedPort = port
+    this.state.identity = null; this.state.wifi = null; this.state.identityError = ''
+    this.identityPort = null
+    return this.snapshot()
+  }
+  async refreshPorts() {
+    const ports = await this.ports()
+    const identity = this.state.identity
+    if (identity && !this.state.busy) {
+      const current = ports.find(p => p.port === identity.port)
+      const changed = this.identityPort && ['serialNumber', 'vendorId', 'productId'].some(key =>
+        (this.identityPort[key] || '') !== (current?.[key] || ''))
+      if (!current || changed) {
+        this.state.identity = null; this.state.wifi = null
+        this.state.identityError = 'The USB device was disconnected or changed. Select its port and identify it again.'
+        this.identityPort = null
+      } else this.identityPort = { ...current }
+    }
+    this.knownPorts = ports
+    return ports
+  }
   async identifyFirmware(port) {
     requireValue(!this.state.busy && this.identify && /^COM\d+$/.test(port), 'Select an available port and wait for the current operation.')
     this.state.busy = true; this.state.identityError = ''; this.state.identity = null; this.state.wifi = null
-    try { this.state.identity = await this.identify(port) }
+    try {
+      this.state.identity = await this.identify(port)
+      this.state.selectedPort = port
+      this.identityPort = this.knownPorts?.find(p => p.port === port) || null
+    }
     catch (error) { this.state.identityError = error.message }
     finally { this.state.busy = false }
     return this.snapshot()

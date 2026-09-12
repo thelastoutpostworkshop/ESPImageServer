@@ -150,3 +150,31 @@ test('a delayed port open retains ownership until cleanup, even after its deadli
   await assert.rejects(session.open(), /Cannot open/)
   await session.close(); assert.equal(port.isOpen, false)
 })
+
+test('Forget Wi-Fi requires explicit confirmation before opening any port', () => {
+  const setup = new WifiSetup(installer(), { session: () => { throw new Error('must not open') } })
+  assert.throws(() => setup.start({ ...request, action: 'forget' }), /Confirm Forget/)
+})
+test('Forget Wi-Fi checks the live capability before sending the command', async () => {
+  const inst = installer(), session = fakeSession()
+  const setup = new WifiSetup(inst, { session: () => session })
+  setup.start({ ...request, action: 'forget', confirm: true }); await setup.completion
+  assert.match(inst.state.wifi.error, /1.1.4/)
+  assert.deepEqual(session.commands.map(c => c.command), ['hello'])
+  assert.ok(session.closed)
+})
+test('confirmed Forget Wi-Fi binds the device, omits credentials and verifies removal', async () => {
+  const inst = installer(), commands = []
+  const session = fakeSession({ async request(command, payload) {
+    commands.push({ command, payload })
+    if (command === 'hello') return response({ ...identity, firmware_version: '1.1.4', capabilities: [...identity.capabilities, 'wifi_forget'] })
+    return status('forgotten')
+  } })
+  const setup = new WifiSetup(inst, { session: () => session })
+  setup.start({ ...request, action: 'forget', confirm: true }); await setup.completion
+  assert.equal(inst.state.wifi.stage, 'forgotten')
+  assert.equal(inst.state.identity.wifi_configured, false)
+  assert.deepEqual(commands[1], { command: 'wifi_forget', payload: { hardware_id: identity.hardware_id, confirm: true } })
+  assert.equal(inst.state.busy, false); assert.ok(session.closed)
+  assert.throws(() => validateWifi(status('forgotten', { wifi_configured: true })), /did not confirm/)
+})

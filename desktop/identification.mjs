@@ -44,7 +44,7 @@ export function validateIdentity(message) {
   // Whitelist fields; never forward arbitrary serial data/passwords to the UI.
   return { ...Object.fromEntries(['hardware_id', 'board_target', 'board_name', 'firmware_version',
     'protocol_version', 'width', 'height', 'wifi_configured', 'wifi_connected'].map(key => [key, r[key]])),
-    capabilities: r.capabilities.filter(c => ['hello', 'status', 'wifi_scan', 'wifi_connect', 'wifi_cancel', 'wifi_status'].includes(c)) }
+    capabilities: r.capabilities.filter(c => ['hello', 'status', 'wifi_scan', 'wifi_connect', 'wifi_cancel', 'wifi_status', 'wifi_forget'].includes(c)) }
 }
 
 export async function identifyPort(portName, { timeout = 5000, createPort = options => new SerialPort(options) } = {}) {

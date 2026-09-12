@@ -6,15 +6,18 @@ const emit = defineEmits(['state'])
 const desktop = window.espImageServerDesktop
 const ssid = ref(''), password = ref(''), auth = ref('personal'), error = ref('')
 const showPassword = ref(false)
+const editing = ref(false), forgetDialog = ref(false)
 const pending = ref(false)
 const supported = computed(() => desktop?.startWifiSetup && props.identity?.capabilities?.includes('wifi_connect'))
 const matches = computed(() => props.identity?.port === props.selectedPort)
+const canForget = computed(() => props.identity?.capabilities?.includes('wifi_forget'))
 const wifi = computed(() => props.state?.hardwareId === props.identity?.hardware_id && props.state?.port === props.selectedPort ? props.state : null)
 const active = computed(() => ['opening', 'scanning', 'connecting', 'obtaining_ip'].includes(wifi.value?.stage))
 const disabled = computed(() => !supported.value || !matches.value || props.locked || pending.value)
 const label = computed(() => ({ opening: 'Opening USB connection', scanning: 'Scanning for networks',
   scan_complete: 'Scan complete', connecting: 'Connecting to Wi-Fi', obtaining_ip: 'Obtaining an IP address',
   connected: 'Wi-Fi connected and saved', cancelled: 'Setup cancelled; previous settings retained',
+  forgotten: 'Saved Wi-Fi removed. Choose a network to set up this board again.',
   failed: 'Wi-Fi setup needs attention' }[wifi.value?.stage] || 'Connect this display to Wi-Fi'))
 const networks = computed(() => (wifi.value?.networks || []).map((n, index) => ({
   title: `${n.ssid} · ${n.rssi} dBm · ${n.auth === 'open' ? 'Open' : n.auth === 'personal' ? 'WPA2 Personal' : 'Unsupported security'}`,
@@ -26,10 +29,13 @@ function chooseNetwork(index) {
   if (n) { ssid.value = n.ssid; auth.value = n.auth; password.value = '' }
 }
 async function start(action) {
+  if (disabled.value) return
+  if (action === 'forget' && (!forgetDialog.value || !canForget.value)) return
   pending.value = true; error.value = ''
   try {
     const payload = { action, port: props.selectedPort, hardwareId: props.identity.hardware_id }
     if (action === 'connect') Object.assign(payload, { ssid: ssid.value, password: password.value, auth: auth.value })
+    if (action === 'forget') { payload.confirm = true; forgetDialog.value = false }
     // IPC is invoked before clearing the field; nothing is persisted locally.
     const operation = desktop.startWifiSetup(payload)
     password.value = ''; payload.password = ''
@@ -48,6 +54,12 @@ async function cancel() {
 // separately so an unchanged snapshot does not clear a form being edited.
 watch([() => props.identity?.hardware_id, () => props.selectedPort], () => {
   password.value = ''; ssid.value = ''; error.value = ''; network.value = null
+  editing.value = false; forgetDialog.value = false; showPassword.value = false
+})
+watch(() => wifi.value?.stage, stage => {
+  if (stage === 'connected' || stage === 'forgotten') {
+    editing.value = false; password.value = ''; ssid.value = ''; network.value = null
+  }
 })
 watch(auth, () => { password.value = '' })
 watch(password, value => { if (!value) showPassword.value = false })
@@ -59,10 +71,19 @@ onUnmounted(() => {
 
 <template>
   <v-sheet border rounded class="pa-4 mt-4">
-    <h3 class="text-subtitle-1 font-weight-bold mb-2">Wi-Fi setup over USB</h3>
+    <h3 class="text-subtitle-1 font-weight-bold mb-2">3. Wi-Fi setup over USB</h3>
     <v-alert v-if="!supported" type="info" variant="tonal">Install firmware 1.1.3 or later with USB Wi-Fi setup, then identify it. An updated desktop app is also required.</v-alert>
     <v-alert v-else-if="!matches" type="info" variant="tonal">Identify the selected USB port before configuring Wi-Fi.</v-alert>
     <template v-else>
+      <v-alert v-if="identity.wifi_configured && !editing" type="info" variant="tonal" class="mb-3">
+        {{ identity.wifi_connected ? 'Wi-Fi is already connected. Continue to the server check below.' : 'Wi-Fi settings are already saved. The board will retry automatically; refresh its USB identity to check the connection.' }}
+      </v-alert>
+      <div v-if="identity.wifi_configured" class="d-flex flex-wrap ga-2 mb-3">
+        <v-btn variant="tonal" :disabled="disabled" @click="editing = !editing; password = ''">{{ editing ? 'Keep current Wi-Fi' : 'Change Wi-Fi' }}</v-btn>
+        <v-btn variant="text" color="warning" :disabled="disabled || !canForget" @click="forgetDialog = true">Forget Wi-Fi…</v-btn>
+      </div>
+      <p v-if="identity.wifi_configured && !canForget" class="text-caption mb-3">Changing Wi-Fi works with this firmware. Upgrade to firmware 1.1.4 or later to forget it over USB.</p>
+      <template v-if="!identity.wifi_configured || editing">
       <p class="text-body-2 mb-3">Use a 2.4 GHz network with WPA2 Personal (including mixed WPA2/WPA3) or no password. Enterprise, WEP, WPA-only, and WPA3-only networks are not supported by this setup flow.</p>
       <p class="text-body-2 mb-3">Scanning briefly disconnects Wi-Fi. The board saves new credentials only after obtaining an IP address and restores previous settings if setup fails or is cancelled.</p>
       <v-btn variant="tonal" prepend-icon="mdi-wifi" :disabled="disabled" @click="start('scan')">Scan networks</v-btn>
@@ -79,10 +100,24 @@ onUnmounted(() => {
         <v-btn color="primary" :disabled="disabled || !ssid || (auth === 'personal' && !password)" @click="start('connect')">{{ wifi?.stage === 'failed' ? 'Retry connection' : 'Connect and save' }}</v-btn>
         <v-btn v-if="active" variant="text" @click="cancel">Cancel</v-btn>
       </div>
-      <div role="status" aria-live="polite">{{ label }}</div>
+      </template>
+      <div v-if="wifi" role="status" aria-live="polite">{{ label }}</div>
       <v-progress-linear v-if="active" indeterminate class="my-3" aria-label="Wi-Fi setup in progress" />
       <v-alert v-if="error || wifi?.error" type="error" variant="tonal" class="mt-3">{{ error || wifi?.error }}</v-alert>
       <v-alert v-if="wifi?.stage === 'connected'" type="success" variant="tonal" class="mt-3">Wi-Fi credentials saved on the board. IP address: {{ wifi.ip }}. The board will reconnect after reboot. Server discovery is separate from this USB confirmation.</v-alert>
     </template>
+    <v-dialog v-model="forgetDialog" max-width="480" :persistent="pending">
+      <v-card title="Forget Wi-Fi on this display?">
+        <v-card-text>
+          <p>{{ identity?.board_name }} · {{ selectedPort }}</p>
+          <p class="text-caption mb-3">Hardware ID {{ identity?.hardware_id }}</p>
+          <p>This disconnects this board and removes its saved Wi-Fi credentials. SD-card files and other display settings are preserved. You can set up a new network over USB afterward.</p>
+        </v-card-text>
+        <v-card-actions>
+          <v-btn :disabled="pending" @click="forgetDialog = false">Keep Wi-Fi</v-btn>
+          <v-btn color="warning" :disabled="disabled || !canForget" @click="start('forget')">Forget Wi-Fi</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-sheet>
 </template>

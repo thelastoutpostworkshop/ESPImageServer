@@ -123,9 +123,13 @@ failure/recovery checks remain open.
   errors, logs, analytics, or desktop persistent storage. Clear temporary app
   password state on completion/cancellation. With no credentials, show USB
   setup instructions on the display; do not automatically start a hotspot.
-- [ ] **Test:** Verify first setup, wrong password, missing/hidden/open networks,
+- [x] **First Wi-Fi setup (user confirmed on 2026-09-12):** Network selection
+  and password entry worked in the desktop app, and JC4827W543 connected to Wi-Fi.
+- [x] **Saved Wi-Fi persistence (user confirmed on 2026-09-12):** JC4827W543
+  running 1.1.3 reconnects after a power cycle without entering credentials again.
+- [ ] **Remaining tests:** Verify wrong password, missing/hidden/open networks,
   cancellation, network changes, rollback, storage failure, USB interruption,
-  and successful reconnection after power loss. Verify USB remains responsive
+  and interrupted credential replacement. Verify USB remains responsive
   during offline playback and server retries.
 
 **Advance when:** A user can configure Wi-Fi entirely over USB and the board
@@ -135,27 +139,29 @@ Implementation: firmware 1.1.3 and the desktop now implement USB Wi-Fi setup.
 Desktop automated tests cover validation, device binding, cancellation, disconnect,
 and storage-error responses (43 tests passed). The frontend build passed and a
 simulated browser preview verified scanning/connection states and password-field
-clearing. The live server at 127.0.0.1:8000 refused the connection. Firmware
-compilation and the real-board acceptance matrix remain manual and are NOT yet
-complete. See `scripts/usb-wifi-setup.md`.
+clearing. The live server at 127.0.0.1:8000 refused the connection during that
+initial check. The user subsequently compiled and flashed firmware 1.1.3;
+the remaining real-board acceptance checks are listed above.
+See `scripts/usb-wifi-setup.md`.
 
 Hardware follow-up (2026-09-12): user flashed JC4827W543 1.1.3 and confirmed
 the USB Wi-Fi setup screen. Diagnosed missing serial framing in that build;
 fixed firmware serialization and added desktop compatibility. Live identification
 on COM8 now verifies 1.1.3, hardware ID `a03e0997bacc`, and Wi-Fi capabilities.
-All 44 desktop tests pass. Actual Wi-Fi connection/save/reboot tests remain open;
-the installed desktop needs the updated decoder before continuing through its UI.
+All 44 desktop tests passed at that follow-up. The user subsequently confirmed
+successful Wi-Fi setup and power-cycle reconnection after the desktop fixes.
+Failure/recovery tests remain open.
 
 ### Step 4 - Complete the guided setup and recovery flow
 
-- [ ] **Wizard:** Join flashing, post-boot identification, and Wi-Fi setup into
+- [x] **Wizard:** Join flashing, post-boot identification, and Wi-Fi setup into
   one flow. Skip flashing when compatible firmware is already installed.
   Browser-only sessions should explain that USB setup uses the desktop app.
-- [ ] **Server handoff:** Distinguish **Wi-Fi connected** from **Server found**.
+- [x] **Server handoff:** Distinguish **Wi-Fi connected** from **Server found**.
   Match USB hardware ID to LAN registration before showing Ready. Save valid
   Wi-Fi credentials even when the server is unavailable; retain existing
   server retries and offer discovery troubleshooting without password re-entry.
-- [ ] **Change/reset Wi-Fi:** Keep USB setup accessible without working Wi-Fi,
+- [x] **Change/reset Wi-Fi:** Keep USB setup accessible without working Wi-Fi,
   touch input, or reflashing. Add confirmed `wifi_forget` behavior that clears
   only Wi-Fi settings, preserving SD content and other display settings.
 - [ ] **Test:** Walk through first installation to Ready, existing-firmware
@@ -165,6 +171,19 @@ the installed desktop needs the updated decoder before continuing through its UI
 
 **Advance when:** The full USB setup flow reaches the correct LAN-connected
 display and explains how to recover at each failed stage.
+
+Implementation (2026-09-12): the desktop Set up display page skips optional
+flashing for compatible firmware, matches fresh LAN contact to the USB hardware
+ID/version/dimensions, and clears identity when a selected port disappears or
+changes. Firmware 1.1.4 adds confirmed Wi-Fi-only reset; older 1.1.3 firmware
+supports the guided connection flow but cannot forget Wi-Fi over USB.
+Validation: 49 desktop tests and 9 frontend tests passed; frontend build passed.
+A simulated browser walkthrough verified compatible-firmware skip, matched
+Ready, reset confirmation/cancellation, and returning to setup after reset.
+The live browser check at 127.0.0.1:8000 returned connection refused.
+Automated tests use simulated devices and server responses. Firmware 1.1.4
+requires manual compilation, and the Step 4 real-board acceptance tests above
+remain outstanding. No installer has been rebuilt.
 
 ### Step 5 - Support all boards and package for distribution
 

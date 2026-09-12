@@ -199,7 +199,8 @@ function requireFirmwareSender(event) {
 }
 for (const [channel, handler] of Object.entries({
   'firmware-state': () => firmwareInstaller.snapshot(),
-  'firmware-ports': () => serialPorts(),
+  'firmware-ports': () => firmwareInstaller.refreshPorts(),
+  'firmware-select-port': ({ port } = {}) => firmwareInstaller.selectPort(port),
   'firmware-identify': ({ port } = {}) => firmwareInstaller.identifyFirmware(port),
   'firmware-wifi-start': request => wifiSetup.start(request),
   'firmware-wifi-cancel': () => wifiSetup.cancel(),

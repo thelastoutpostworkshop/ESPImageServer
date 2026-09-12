@@ -64,3 +64,35 @@ test('changing the COM port clears credentials even for the same hardware ID', a
   assert.equal(form.ssid, '')
   assert.equal(form.password, '')
 })
+
+test('forget requires a current confirmation and capability, and sends no credentials', async t => {
+  const { props, form } = mount(t)
+  const calls = []
+  window.espImageServerDesktop.startWifiSetup = async payload => {
+    calls.push(structuredClone(payload)); return { ok: true, value: {} }
+  }
+  await form.start('forget')
+  assert.equal(calls.length, 0)
+  props.identity.capabilities.push('wifi_forget')
+  await nextTick()
+  await form.start('forget')
+  assert.equal(calls.length, 0)
+  form.forgetDialog = true
+  await form.start('forget')
+  assert.deepEqual(calls, [{ action: 'forget', port: 'COM8', hardwareId: 'aabbccddeeff', confirm: true }])
+  assert.equal(form.password, '')
+  assert.equal(form.forgetDialog, false)
+})
+
+test('switching boards dismisses a pending forget confirmation', async t => {
+  const { props, form } = mount(t)
+  let called = false
+  window.espImageServerDesktop.startWifiSetup = () => { called = true }
+  props.identity.capabilities.push('wifi_forget')
+  form.forgetDialog = true
+  props.identity = { ...props.identity, hardware_id: '112233445566' }
+  await nextTick()
+  assert.equal(form.forgetDialog, false)
+  await form.start('forget')
+  assert.equal(called, false)
+})

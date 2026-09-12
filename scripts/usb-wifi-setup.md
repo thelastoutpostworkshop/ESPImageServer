@@ -1,9 +1,9 @@
-# USB Wi-Fi setup (firmware 1.1.3)
+# Guided USB setup (firmware 1.1.3; Wi-Fi reset in 1.1.4)
 
 Implementation is ready for manual firmware compilation and hardware testing.
 The installed desktop executable must be updated or replaced with the development
 checkout; rebuilding the frontend alone does not update Electron's preload API.
-Do not reuse the 1.1.2 package or change its manifest to claim it is 1.1.3.
+Export a fresh package from the compiled version; never relabel older binaries.
 
 ## Protocol
 
@@ -28,6 +28,14 @@ are 20 and 30 seconds. `wifi_cancel` stops pending work and restores previous
 credentials; it does not undo a completed save. Eight seconds without a Wi-Fi
 request cancels active work. Read-only `hello` does not extend that lease.
 
+Firmware 1.1.4 also advertises `wifi_forget`. It requires the matching hardware
+ID and boolean `confirm: true`; the desktop sends this only after confirmation.
+It rejects active scans/connections. Success returns `wifi_state: forgotten`,
+both Wi-Fi flags false, and an empty IP. Storage failure returns `forget_failed`.
+An empty versioned NVS record prevents old legacy credentials from being loaded
+again after a power cut; legacy Wi-Fi keys are then removed. Other settings and
+SD files are untouched. Firmware 1.1.3 supports Change Wi-Fi but not Forget Wi-Fi.
+
 The firmware USB task alone starts scans/connections. Other tasks read atomic
 configured/ready/busy snapshots. Saved-network retries wait five seconds after a
 failed attempt. Driver persistence is disabled before credentials are submitted.
@@ -43,7 +51,7 @@ whether saving already completed: identify again after reconnecting.
 
 ## Manual acceptance
 
-1. Manually compile JC4827W543 firmware 1.1.3 and export a new manifest package.
+1. Manually compile JC4827W543 firmware 1.1.4 and export a new manifest package.
    Build the frontend, close the older desktop instance, and run
    `npm --prefix desktop start` from the app repo. Flash the new package and
    verify the board/version/hardware ID. No installer rebuild is required.
@@ -68,6 +76,20 @@ whether saving already completed: identify again after reconnecting.
 8. Repeat with the server unavailable: valid Wi-Fi must still save. Test busy
    COM port, old firmware, and swapping boards on the same COM port; no
    credentials should be sent to a mismatched device.
+9. In **Set up display**, identify an already compatible board: flashing should
+   be optional. Ready requires fresh `/displays` contact with matching hardware
+   ID, version, and dimensions. Another online board or stale registration must
+   not satisfy this check. Unplug/replug and change ports; identify again before
+   setup. **Use this display** must open the matched board. Verify image delivery.
+10. Confirm Forget Wi-Fi on a designated test board. It must disconnect and show
+    USB setup guidance. Power-cycle: credentials must stay forgotten, including
+    when legacy keys existed. Verify SD files and other settings survived, then
+    provision again. Cancelling the confirmation must leave the board unchanged.
+    Test storage failures and interrupted reset separately on a controlled build.
+
+Hardware evidence: on 2026-09-12 the user confirmed JC4827W543 firmware 1.1.3
+connected through USB setup and reconnected after a power cycle. Step 4 reset,
+server handoff, and failure scenarios still require hardware acceptance.
 
 Automated tests use fake serial devices; they do not validate firmware execution,
 radio behavior, NVS fault recovery, or physical power interruption.

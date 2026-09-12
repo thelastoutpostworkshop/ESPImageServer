@@ -2860,7 +2860,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-image-text" title="Creation Library" :active="metadataPane" @click="openMetadataPane" />
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="navigate('models')" />
         <v-list-item prepend-icon="mdi-monitor-multiple" title="Displays" :active="page === 'displays'" @click="openDisplaysPage" />
-        <v-list-item prepend-icon="mdi-usb-flash-drive-outline" title="Install firmware" :active="page === 'firmware'" @click="navigate('firmware')" />
+        <v-list-item prepend-icon="mdi-usb-flash-drive-outline" title="Set up display" :active="page === 'firmware'" @click="navigate('firmware')" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
         <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="navigate('settings')" />
@@ -3362,7 +3362,7 @@ onUnmounted(() => {
             </v-list>
           </template>
         </v-card>
-        <FirmwareInstaller v-if="page === 'firmware'" />
+        <FirmwareInstaller v-if="page === 'firmware'" @open-display="selectActiveDisplay($event); navigate('displays')" />
         <v-card v-if="page === 'diagnostics'" class="mx-auto" max-width="960">
           <v-card-title class="page-card-title d-flex align-center text-h6">
             <div class="page-card-title__heading d-flex align-center">
