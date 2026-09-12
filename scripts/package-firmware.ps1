@@ -88,8 +88,12 @@ if ($boardOptions['FlashSize'] -ne ($flash['--flash-size'] -replace 'MB$', 'M'))
     throw 'Flash size differs between FQBN and flash_args.'
 }
 # FQBN FlashMode can name a build preset; only compare direct flash mode values.
-if ($boardOptions['FlashMode'] -in @('dio', 'dout', 'qio', 'qout') -and
-    $boardOptions['FlashMode'] -ne $flash['--flash-mode']) {
+$expectedFlashMode = $boardOptions['FlashMode']
+# Arduino-ESP32 3.3.11: esp32c6.menu.FlashMode.qio selects build.boot=qio
+# but build.flash_mode=dio. Preserve the generated flash_args value.
+if ($chip -eq 'esp32c6' -and $expectedFlashMode -eq 'qio') { $expectedFlashMode = 'dio' }
+if ($expectedFlashMode -in @('dio', 'dout', 'qio', 'qout') -and
+    $expectedFlashMode -ne $flash['--flash-mode']) {
     throw 'Flash mode differs between FQBN and flash_args.'
 }
 

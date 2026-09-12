@@ -31,6 +31,10 @@ offset, size, and SHA-256 hash. Offsets come from `flash_args`, not assumptions.
 Keep each board/version in its own folder. Paths in the manifest are relative
 filenames; absolute build paths and arbitrary compiler flags are not copied.
 
+For ESP32-C6, Arduino-ESP32's QIO menu preset exports `--flash-mode dio`.
+The packager accepts this preset mapping and preserves the exported DIO mode;
+do not edit `flash_args` or relabel the build options to make them match.
+
 Supported input is a flat Arduino export: explicit flash mode/frequency/size,
 one bootloader, one partition table, `boot_app0.bin`, and one `.ino.bin`
 application. Unsupported layouts fail rather than being guessed. Missing/empty

@@ -54,6 +54,18 @@ Assert-Rejected 'path traversal' ($flashArgs.Replace('Test.ino.bin', '../Test.in
 Assert-Rejected 'missing first-install component' ($flashArgs.Replace('0xe000 boot_app0.bin', ''))
 Assert-Rejected 'conflicting flash size' ($flashArgs.Replace('4MB', '8MB'))
 Assert-Rejected 'unrecognized flash command' ($flashArgs.Replace('--flash-mode dio', '--erase-all yes'))
+Assert-Rejected 'conflicting direct flash mode' ($flashArgs.Replace('--flash-mode dio', '--flash-mode qio'))
+[IO.File]::WriteAllText((Join-Path $fixture 'build.options.json'),
+    '{"fqbn":"esp32:esp32:esp32c6:FlashMode=qio,FlashSize=4M"}', $utf8)
+[IO.File]::WriteAllText((Join-Path $fixture 'flash_args'), $flashArgs, $utf8)
+$null = & $packager -PackageDirectory $fixture -BoardTarget ESP32_C6_LCD_147 -FirmwareVersion 1.1.4
+$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+if ($manifest.chip -ne 'esp32c6' -or $manifest.flash.mode -ne 'dio') {
+    throw 'C6 QIO preset did not preserve the exported DIO flash mode.'
+}
+Write-Output 'PASS: C6 QIO preset exports DIO flash mode'
+$manifestHash = (Get-FileHash -LiteralPath $manifestPath).Hash
+Assert-Rejected 'C6 QIO preset rejects conflicting flash mode' ($flashArgs.Replace('--flash-mode dio', '--flash-mode qout')) 'ESP32_C6_LCD_147'
 # Remove only this explicitly created, verified temporary directory.
 $resolvedFixture = [IO.Path]::GetFullPath($fixture)
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
