@@ -66,6 +66,19 @@ if ($manifest.chip -ne 'esp32c6' -or $manifest.flash.mode -ne 'dio') {
 Write-Output 'PASS: C6 QIO preset exports DIO flash mode'
 $manifestHash = (Get-FileHash -LiteralPath $manifestPath).Hash
 Assert-Rejected 'C6 QIO preset rejects conflicting flash mode' ($flashArgs.Replace('--flash-mode dio', '--flash-mode qout')) 'ESP32_C6_LCD_147'
+[IO.File]::WriteAllText((Join-Path $fixture 'build.options.json'),
+    '{"fqbn":"esp32:esp32:esp32s3:FlashMode=qio,FlashSize=16M"}', $utf8)
+$s3FlashArgs = $flashArgs.Replace('4MB', '16MB')
+[IO.File]::WriteAllText((Join-Path $fixture 'flash_args'), $s3FlashArgs, $utf8)
+$null = & $packager -PackageDirectory $fixture -BoardTarget ST7701_320X820 -FirmwareVersion 1.1.4
+$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+if ($manifest.chip -ne 'esp32s3' -or $manifest.board_target -ne 'ST7701_320X820' -or
+    $manifest.flash.mode -ne 'dio' -or $manifest.flash.size_bytes -ne 16MB) {
+    throw 'S3 QIO preset did not preserve the exported DIO flash settings.'
+}
+Write-Output 'PASS: S3 QIO preset exports DIO flash mode with 16 MB flash'
+$manifestHash = (Get-FileHash -LiteralPath $manifestPath).Hash
+Assert-Rejected 'S3 QIO preset rejects conflicting flash mode' ($s3FlashArgs.Replace('--flash-mode dio', '--flash-mode qout')) 'ST7701_320X820'
 # Remove only this explicitly created, verified temporary directory.
 $resolvedFixture = [IO.Path]::GetFullPath($fixture)
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
