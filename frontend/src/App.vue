@@ -2762,7 +2762,7 @@ onUnmounted(() => {
   <v-app class="app-root">
     <v-snackbar v-model="displayConnectedSnackbar" color="success" location="top" timeout="5000">
       <div class="d-flex align-center ga-2">
-        <v-icon icon="mdi-monitor-check" />
+        <v-icon icon="mdi-monitor" />
         <span>{{ displayConnectedMessage }}</span>
       </div>
       <template #actions>
@@ -2793,7 +2793,7 @@ onUnmounted(() => {
       </v-chip>
       <v-menu v-model="displayPickerOpen" location="bottom start" :close-on-content-click="true">
         <template #activator="{ props }">
-          <v-chip v-bind="props" class="app-bar__display-chip" :color="activeDisplayOnline ? 'info' : 'warning'" variant="tonal" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : display?.connected ? 'mdi-monitor-off' : 'mdi-monitor-dashboard'" :aria-label="`${displayTargetLabel}. Open display chooser.`" :title="`${displayTargetLabel}. Choose active display.`">
+          <v-chip v-bind="props" class="app-bar__display-chip" :color="activeDisplayOnline ? 'info' : 'warning'" variant="tonal" :prepend-icon="activeDisplayOnline ? 'mdi-monitor' : display?.connected ? 'mdi-monitor-off' : 'mdi-monitor-dashboard'" :aria-label="`${displayTargetLabel}. Open display chooser.`" :title="`${displayTargetLabel}. Choose active display.`">
             <span class="app-bar__display-label">{{ compact ? compactDisplayLabel : displayTargetLabel }}</span>
             <v-icon class="app-bar__display-chevron" size="18">{{ displayPickerOpen ? 'mdi-menu-up' : 'mdi-menu-down' }}</v-icon>
           </v-chip>
@@ -3528,7 +3528,7 @@ onUnmounted(() => {
               {{ resultPanelQueueStatus(activeImageQueueJob) }}
             </v-chip>
           </v-card-title>
-          <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mx-4 mb-3" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+          <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mx-4 mb-3" :prepend-icon="activeDisplayOnline ? 'mdi-monitor' : 'mdi-monitor-off'">
             <strong>Working with:</strong> {{ displayManagementLabel }}
             <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
           </v-alert>
@@ -3717,7 +3717,7 @@ onUnmounted(() => {
                       {{ resultPanelQueueStatus(activeVideoQueueJob) }}
                     </v-chip>
                   </v-card-title>
-                  <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mx-4 mb-3" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+                  <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mx-4 mb-3" :prepend-icon="activeDisplayOnline ? 'mdi-monitor' : 'mdi-monitor-off'">
                     <strong>Working with:</strong> {{ displayManagementLabel }}
                     <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
                   </v-alert>
@@ -3881,7 +3881,7 @@ onUnmounted(() => {
               <v-col v-for="target in displays" :key="target.id" cols="12" md="6">
                 <v-card variant="outlined" :class="{ 'border-primary': target.id === activeDisplayId }">
                   <v-card-title class="d-flex align-center ga-2 text-h6">
-                    <v-icon :color="target.online ? 'success' : 'warning'">{{ target.online ? 'mdi-monitor-check' : 'mdi-monitor-off' }}</v-icon>
+                    <v-icon :color="target.online ? 'success' : 'warning'">{{ target.online ? 'mdi-monitor' : 'mdi-monitor-off' }}</v-icon>
                     <span class="text-truncate">{{ target.name }}</span>
                     <v-spacer />
                     <v-chip v-if="target.id === activeDisplayId" color="primary" size="small" variant="tonal">Active</v-chip>
@@ -3932,7 +3932,7 @@ onUnmounted(() => {
         <v-card v-if="page === 'display-experience'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
           <v-card-text>
-            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor' : 'mdi-monitor-off'">
               <strong>Working with:</strong> {{ displayManagementLabel }}
               <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
             </v-alert>
@@ -3941,7 +3941,7 @@ onUnmounted(() => {
             </v-alert>
             <v-progress-linear v-if="displayExperienceLoading" indeterminate color="primary" class="mb-4" />
             <div class="d-flex flex-wrap ga-2 mb-5">
-              <v-chip :color="activeDisplayOnline ? 'success' : 'warning'" variant="tonal" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+              <v-chip :color="activeDisplayOnline ? 'success' : 'warning'" variant="tonal" :prepend-icon="activeDisplayOnline ? 'mdi-monitor' : 'mdi-monitor-off'">
                 {{ activeDisplayOnline ? 'Display online' : 'Display offline · last seen earlier' }}
               </v-chip>
               <v-chip :color="displayExperience.current_mode.startsWith('offline_') ? 'warning' : 'info'" variant="tonal" :prepend-icon="displayExperience.current_mode.startsWith('offline_') ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
@@ -3999,7 +3999,7 @@ onUnmounted(() => {
             </v-chip>
           </v-card-title>
           <v-card-text>
-            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor-check' : 'mdi-monitor-off'">
+            <v-alert :type="display?.connected ? 'info' : 'warning'" variant="tonal" density="compact" class="display-context-bar mb-4" :prepend-icon="activeDisplayOnline ? 'mdi-monitor' : 'mdi-monitor-off'">
               <strong>Working with:</strong> {{ displayManagementLabel }}
               <div class="text-caption mt-1">New display and SD-card actions use this active display.</div>
             </v-alert>
