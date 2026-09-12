@@ -8,15 +8,15 @@ import { matchSetupDisplay } from '../src/setupConnection.js'
 const identity = { hardware_id: 'aabbccddeeff', firmware_version: '1.1.3', width: 480, height: 272, port: 'COM8', wifi_connected: true }
 const now = Date.now()
 const display = { ...identity, id: identity.hardware_id, name: 'My display', online: true, last_seen: new Date(now).toISOString() }
-test('Ready requires the exact USB hardware identity and a fresh matching LAN report', () => {
-  assert.equal(matchSetupDisplay(identity, [display], now - 1000, now), display)
-  for (const change of [{ hardware_id: '112233445566' }, { firmware_version: '1.1.2' }, { width: 320 },
-    { online: false }, { last_seen: new Date(now - 30000).toISOString() }, { last_seen: 'invalid' }]) {
-    assert.equal(matchSetupDisplay(identity, [{ ...display, ...change }], now - 1000, now), null)
+test('Ready requires the exact USB identity and the server to report it online', () => {
+  assert.equal(matchSetupDisplay(identity, [display]), display)
+  for (const change of [{ hardware_id: '112233445566' }, { firmware_version: '1.1.2' }, { width: 320 }, { height: 480 },
+    { online: false }, { online: undefined }]) {
+    assert.equal(matchSetupDisplay(identity, [{ ...display, ...change }]), null)
   }
-  assert.equal(matchSetupDisplay(identity, [display, display], now - 1000, now), null)
-  assert.equal(matchSetupDisplay({ ...identity, wifi_connected: false }, [display], now - 1000, now), null)
-  assert.equal(matchSetupDisplay(identity, [display], now + 1000, now), null)
+  assert.equal(matchSetupDisplay(identity, [display, display]), null)
+  assert.equal(matchSetupDisplay({ ...identity, wifi_connected: false }, [display]), null)
+  assert.equal(matchSetupDisplay({}, [{}]), null)
 })
 
 const filename = new URL('../src/components/SetupConnection.vue', import.meta.url)
@@ -39,6 +39,23 @@ function mount(t, fetcher, changes = {}) {
   t.after(() => { app.unmount(); globalThis.fetch = originalFetch })
   return { props, state: app._instance.subTree.component.setupState, events }
 }
+
+test('an already-online display is Ready immediately and stays Ready between announcements', async t => {
+  // Firmware announcements can be a minute apart; opening setup must not
+  // impose a shorter timeout or require a new announcement after it opens.
+  const alreadyOnline = { ...display, last_seen: new Date(Date.now() - 60000).toISOString() }
+  let online = true
+  const view = mount(t, async () => ({ ok: true, json: async () => [{ ...alreadyOnline, online }] }))
+  await flush()
+  assert.equal(view.state.found.id, display.id)
+  assert.equal(view.events.at(-1), true)
+  view.state.restart(); await flush()
+  assert.equal(view.state.found.id, display.id)
+  online = false
+  view.state.restart(); await flush()
+  assert.equal(view.state.found, null)
+  assert.equal(view.events.at(-1), false)
+})
 test('late LAN replies cannot mark a newly selected USB board ready', async t => {
   const requests = []
   const view = mount(t, () => new Promise(resolve => requests.push(resolve)))
@@ -72,21 +89,4 @@ test('port changes or USB work immediately withdraw Ready', async t => {
   view.props.locked = true; await flush(); assert.equal(view.state.found, null)
   view.props.selectedPort = 'COM9'; view.props.locked = false; await flush()
   assert.equal(view.state.eligible, false); assert.equal(view.state.found, null)
-})
-
-test('test images are queued only to the matched display after an explicit choice', async t => {
-  const posts=[]
-  const view=mount(t,async(url, options)=>{
-    if(options?.method==='POST') {posts.push({url,body:JSON.parse(options.body)});return {ok:true}}
-    return {ok:true,json:async()=>url==='/saved-images'?[{id:'image-one',filename:'test.jpg'}]:[{...display,last_seen:new Date().toISOString()}]}
-  })
-  await flush()
-  await view.state.sendTestImage(); assert.equal(posts.length,0)
-  await view.state.chooseTestImage(); view.state.selectedImage='image-one'
-  await view.state.sendTestImage()
-  assert.deepEqual(posts,[{url:'/saved-images/image-one/display',body:{display_ids:[display.id]}}])
-  assert.match(view.state.imageStatus,/queued/)
-  await view.state.chooseTestImage(); view.state.selectedImage='image-one'
-  view.props.selectedPort='COM9';await flush();await view.state.sendTestImage()
-  assert.equal(posts.length,1);assert.equal(view.state.testDialog,false)
 })

@@ -79,6 +79,7 @@ const prompt = ref(savedGenerationSettings.prompt)
 const negativePrompt = ref(savedGenerationSettings.negativePrompt)
 const serverInfo = ref(null)
 const health = ref(null)
+const healthChecked = ref(false)
 const displays = ref([])
 const activeDisplayId = ref(window.localStorage.getItem(activeDisplaySettingsKey) || '')
 const displayPickerOpen = ref(false)
@@ -418,20 +419,21 @@ const appBarStatus = computed(() => {
       description: cancelling ? 'Cancelling image generation.' : `Image generation progress: ${Number.isFinite(progress) && progress > 0 ? `${progress}%` : activity}.`
     }
   }
-  if (health.value?.status === 'ready') {
-    const cuda = health.value?.device === 'cuda'
+  // /health's "loading" means the image model is not in memory. Models
+  // load on demand; a successful health response means the app is usable.
+  if (['ready', 'loading'].includes(health.value?.status)) {
     return {
-      color: cuda ? 'success' : 'warning',
-      icon: cuda ? 'mdi-expansion-card-variant' : 'mdi-cpu-64-bit',
+      color: 'success',
+      icon: 'mdi-check-circle-outline',
       page: '',
-      label: cuda ? 'CUDA ready' : 'CPU mode',
-      compactLabel: cuda ? 'CUDA' : 'CPU',
-      description: cuda
-        ? 'NVIDIA graphics card acceleration is ready for image and video generation.'
-        : 'CPU processing is active. Image generation works but may be slow; video generation requires NVIDIA CUDA acceleration.'
+      label: 'Ready',
+      compactLabel: 'Ready',
+      description: 'ESPImageServer is ready to use. AI models load when you start generation.'
     }
   }
-  return { color: 'warning', icon: 'mdi-server', page: '', label: 'Server loading', compactLabel: 'Loading', description: 'ESPImageServer is still starting.' }
+  return healthChecked.value
+    ? { color: 'warning', icon: 'mdi-server-off', page: '', label: 'Server unavailable', compactLabel: 'Offline', description: 'Cannot reach ESPImageServer. Keep the desktop app open; the connection is checked automatically.' }
+    : { color: 'secondary', icon: 'mdi-server', page: '', label: 'Checking connection', compactLabel: 'Checking', description: 'Checking the connection to ESPImageServer.' }
 })
 const modelOptions = computed(() => models.value.map(model => ({
   title: `${model.name} — ${model.speed} (${model.hardware})`,
@@ -1092,16 +1094,17 @@ async function removeVideoModel() {
 }
 
 async function loadServerStatus() {
-  try {
-    const [info, currentHealth] = await Promise.all([
-      fetch('/server-info').then(response => response.json()),
-      fetch('/health').then(response => response.json())
-    ])
-    serverInfo.value = info
-    health.value = currentHealth
-  } catch {
-    health.value = null
+  async function readStatus(url) {
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(4000) })
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    return response.json()
   }
+  await Promise.all([
+    readStatus('/server-info').then(info => { serverInfo.value = info }).catch(() => {}),
+    readStatus('/health').then(currentHealth => { health.value = currentHealth })
+      .catch(() => { health.value = null })
+      .finally(() => { healthChecked.value = true })
+  ])
 }
 
 async function loadGenerationQueue() {
