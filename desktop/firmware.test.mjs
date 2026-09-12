@@ -137,6 +137,26 @@ test('failed process releases the busy state and allows retry', async t => {
   await installer.select(f.directory)
   assert.equal(installer.state.stage, 'ready')
 })
+test('successful writes remain successful when old firmware cannot identify itself', async t => {
+  const f = await fixture(t)
+  const installer = new FirmwareInstaller('fake', { ports: async () => [{ port: 'COM8' }],
+    run: async (_, args) => args.includes('flash-id') ? probe : verified,
+    reconnect: async () => { throw new Error('No compatible firmware responded') } })
+  await installer.select(f.directory); installer.start('COM8', 'JC4827W543', 460800); await installer.completion
+  assert.equal(installer.state.stage, 'written')
+  assert.match(installer.state.identityError, /startup was not confirmed/)
+  assert.equal(installer.state.error, '')
+})
+test('identification shares the flash operation lock and releases it on errors', async t => {
+  const f = await fixture(t)
+  let finish
+  const installer = new FirmwareInstaller('fake', { identify: () => new Promise(resolve => { finish = resolve }) })
+  await installer.select(f.directory)
+  const checking = installer.identifyFirmware('COM8')
+  assert.throws(() => installer.start('COM8', 'JC4827W543', 460800), /one installation/)
+  finish({ hardware_id: 'aabbccddeeff', port: 'COM8' }); await checking
+  assert.equal(installer.state.busy, false)
+})
 test('process runner handles chunked output, errors and timeouts without hardware', async () => {
   const output = await runProcess(process.execPath, ['-e', 'process.stdout.write("one");process.stderr.write("two")'])
   assert.ok(output.includes('one') && output.includes('two'))

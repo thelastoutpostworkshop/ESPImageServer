@@ -125,11 +125,20 @@ export async function listPorts() {
 }
 
 export class FirmwareInstaller {
-  constructor(toolPath, { run = runProcess, ports = listPorts } = {}) {
+  constructor(toolPath, { run = runProcess, ports = listPorts, identify = null, reconnect = null } = {}) {
     this.toolPath = toolPath; this.run = run; this.ports = ports
+    this.identify = identify; this.reconnect = reconnect
     this.state = { busy: false, stage: 'idle', log: '', package: null, error: '' }
   }
   snapshot() { return structuredClone(this.state) }
+  async identifyFirmware(port) {
+    requireValue(!this.state.busy && this.identify && /^COM\d+$/.test(port), 'Select an available port and wait for the current operation.')
+    this.state.busy = true; this.state.identityError = ''; this.state.identity = null
+    try { this.state.identity = await this.identify(port) }
+    catch (error) { this.state.identityError = error.message }
+    finally { this.state.busy = false }
+    return this.snapshot()
+  }
   async select(directory) {
     requireValue(!this.state.busy, 'A firmware operation is already running.')
     this.state = { ...this.state, busy: true, package: null, error: '', stage: 'validating' }
@@ -147,7 +156,8 @@ export class FirmwareInstaller {
   start(port, board, baud) {
     requireValue(!this.state.busy && this.selected, 'Choose a valid package first; only one installation can run.')
     requireValue(/^COM\d+$/.test(port) && board === this.state.package.board && [115200, 460800].includes(baud), 'Confirm the matching physical board, port, and speed.')
-    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', port }
+    this.expectedHardwareId = this.state.identity?.port === port ? this.state.identity.hardware_id : undefined
+    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', port, identity: null, identityError: '' }
     this.completion = this.install(port, baud).catch(e => {
       this.state.stage = 'failed'; this.state.error = e.message
     }).finally(() => { this.state.busy = false; this.child = null })
@@ -158,7 +168,8 @@ export class FirmwareInstaller {
     try {
       const pkg = await validatePackage(this.selected.directory)
       requireValue(pkg.fingerprint === this.selected.fingerprint, 'Package changed since selection. Choose it again.')
-      requireValue((await this.ports()).some(p => p.port === port), 'USB port is no longer available. Refresh ports and reconnect.')
+      const originalPort = (await this.ports()).find(p => p.port === port)
+      requireValue(originalPort, 'USB port is no longer available. Refresh ports and reconnect.')
       // Flash an immutable snapshot of verified bytes, not mutable source paths.
       staged = await mkdtemp(path.join(os.tmpdir(), 'espimage-flash-'))
       for (const s of pkg.segments) await writeFile(path.join(staged, s.file), s.data)
@@ -174,6 +185,18 @@ export class FirmwareInstaller {
       const output = await this.run(this.toolPath, writeArguments(pkg.manifest, port, pkg.segments, baud), { ...options, timeout: 900000 })
       requireValue((output.match(/Hash of data verified/gi) || []).length >= pkg.segments.length, 'Write finished without all four verification results. Review the log before retrying.')
       this.state.stage = 'written'
+      if (this.reconnect) {
+        this.state.stage = 'identifying'
+        try {
+          this.state.identity = await this.reconnect(originalPort, {
+            board: pkg.manifest.board_target, version: pkg.manifest.firmware_version, hardwareId: this.expectedHardwareId
+          })
+          this.state.stage = 'boot_verified'
+        } catch (error) {
+          this.state.stage = 'written'
+          this.state.identityError = `Flash writes verified, but firmware startup was not confirmed: ${error.message}`
+        }
+      }
     } finally { if (staged) await rm(staged, { recursive: true, force: true }) }
   }
 }

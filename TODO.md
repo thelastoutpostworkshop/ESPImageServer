@@ -47,11 +47,11 @@ and online firmware downloads are not required for this milestone.
   report a successful write as proof the application booted. Avoid full-chip
   erase by default and explain any required settings loss before installation.
   Give retry/recovery instructions after an interrupted write.
-- [ ] **First hardware test:** From the running ESPImageServer desktop app,
+- [x] **First hardware test (flash and boot confirmed by user on 2026-09-12):** From the running ESPImageServer desktop app,
   install the supplied package over USB, verify the write, restart the board,
   and confirm expected display startup/version through existing screen or
   serial output. Record board, connector, package version, and reset method.
-  Also check wrong-chip/package rejection and a busy-port error.
+  User confirmed successful flashing and booting of JC4827W543 from the desktop app. Board-specific failure/recovery checks remain in the bootloader follow-up.
 
 **Advance when:** The user has successfully flashed and booted the selected
 board from ESPImageServer. No Wi-Fi provisioning implementation is required to
@@ -67,25 +67,37 @@ The built-in Browser was unavailable for the live UI check during implementation
 
 ### Step 2 - Identify the running firmware over USB
 
-- [ ] **Firmware:** Add a shared serial service using native USB CDC or the
+- [x] **Firmware:** Add a shared serial service using native USB CDC or the
   board's USB-to-UART connection. Start with versioned, newline-delimited JSON
   commands `hello` and `status`, request IDs, bounded message sizes, and
   structured responses/events. Separate protocol messages from diagnostic logs
   and tolerate partial/malformed input. Do not wait indefinitely for USB.
-- [ ] **Identity:** Return the stable hardware ID used for LAN registration,
+- [x] **Identity:** Return the stable hardware ID used for LAN registration,
   board target/name, firmware version, protocol version, and capabilities.
-- [ ] **Desktop:** Add serial communication through the validated preload API.
+- [x] **Desktop:** Add serial communication through the validated preload API.
   Close the provisioning connection before esptool runs, then reconnect after
   restart, including COM-port changes. Avoid deliberate reset toggles during
   normal provisioning; reserve bootloader reset sequences for flashing.
-- [ ] **Discovery:** Identify compatible devices by handshake/hardware ID,
+- [x] **Discovery:** Identify compatible devices by handshake/hardware ID,
   provide a picker for multiple devices, and offer flashing when firmware is
   missing or unsupported. Preserve the manual model choice for first installs.
-- [ ] **Test:** Flash a handshake-capable build, verify board/version afterward,
-  unplug/replug, and test unsupported firmware plus malformed/oversized input.
+- [x] **Hardware identification test (confirmed on 2026-09-12):** Flashed
+  JC4827W543 firmware 1.1.2; the desktop app reported startup verified over USB
+  on COM8 with hardware ID `a03e0997bacc` and dimensions 480 × 272. User also
+  confirmed the correct identification after the unplug/replug test.
+- [ ] **Failure/recovery tests:** Verify busy-port and disconnect-during-
+  identification recovery, unsupported firmware, and malformed/oversized input.
+  Board-specific bootloader and interrupted-write recovery remain in Step 1.
 
 **Advance when:** The app reliably reconnects after flashing and verifies the
 running firmware identity, with clear recovery when no handshake arrives.
+
+Implementation: firmware 1.1.2 now serves read-only hello/status requests on USB;
+the desktop can identify a selected port and check identity automatically after
+flashing. COM changes are followed only when USB serial identity is unique.
+Firmware compilation remains manual. The JC4827W543 flash, boot, post-flash
+USB identification, and unplug/replug identification have been confirmed;
+failure/recovery checks remain open.
 
 ### Step 3 - Connect to Wi-Fi and save credentials over USB
 

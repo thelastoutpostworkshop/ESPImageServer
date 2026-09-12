@@ -3,11 +3,13 @@ import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FirmwareInstaller, listPorts } from './firmware.mjs'
+import { FirmwareInstaller } from './firmware.mjs'
+import { identifyPort, identifyAfterFlash, serialPorts } from './identification.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
 const firmwareInstaller = new FirmwareInstaller(path.join(
-  app.isPackaged ? process.resourcesPath : desktopDirectory, 'tools', 'esptool', 'esptool-windows-amd64', 'esptool.exe'))
+  app.isPackaged ? process.resourcesPath : desktopDirectory, 'tools', 'esptool', 'esptool-windows-amd64', 'esptool.exe'),
+  { ports: serialPorts, identify: identifyPort, reconnect: identifyAfterFlash })
 const projectRoot = app.isPackaged
   ? path.resolve(process.resourcesPath, '..', '..')
   : path.resolve(desktopDirectory, '..')
@@ -195,7 +197,8 @@ function requireFirmwareSender(event) {
 }
 for (const [channel, handler] of Object.entries({
   'firmware-state': () => firmwareInstaller.snapshot(),
-  'firmware-ports': () => listPorts(),
+  'firmware-ports': () => serialPorts(),
+  'firmware-identify': ({ port } = {}) => firmwareInstaller.identifyFirmware(port),
   'firmware-package': async () => {
     if (firmwareInstaller.state.busy) throw new Error('Wait for the current firmware operation.')
     const result = await dialog.showOpenDialog(mainWindow, {

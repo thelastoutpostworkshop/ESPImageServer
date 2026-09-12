@@ -54,8 +54,19 @@ but does not bundle firmware packages or require a separate Python/Arduino insta
 for flashing. The existing image-generation server still uses its Python setup.
 No installer rebuild is needed to test the development checkout.
 
-See [firmware package instructions](scripts/firmware-packages.md) to prepare a
-package. Run `npm --prefix desktop test` for hardware-free installer tests.
+Firmware 1.1.2 adds read-only USB identification. Select a COM port and choose
+**Identify firmware** to read the hardware ID, model, version, dimensions, and
+Wi-Fi status without installing anything. After flashing, the app also attempts
+this check automatically. It follows a changed COM number only when the USB
+serial identity uniquely matches the selected device; otherwise refresh ports
+and identify it manually. Older firmware can still be flashed but cannot answer
+the identification request. Successful writes remain reported even when startup
+identification times out. USB Wi-Fi configuration is still a later milestone.
+
+See [the contributor guide](CONTRIBUTING.md#create-a-local-firmware-package-and-manifest)
+for the manifest script, required files, and packaging commands, or
+[firmware package details](scripts/firmware-packages.md) for validation rules.
+Run `npm --prefix desktop test` for hardware-free installer tests.
 
 ## Connect your display
 

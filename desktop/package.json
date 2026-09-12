@@ -3,14 +3,14 @@
   "description": "ESPImageServer desktop application",
   "author": "ESPImageServer",
   "private": true,
-  "version": "1.0.63",
+  "version": "1.0.64",
   "type": "module",
   "main": "main.mjs",
   "scripts": {
     "build": "npm run prepare:esptool && npm --prefix ../frontend run build && electron-builder --win --x64 --dir",
     "prepare:esptool": "powershell -NoProfile -ExecutionPolicy Bypass -File ./prepare-esptool.ps1",
     "start": "npm run prepare:esptool && electron .",
-    "test": "node --test firmware.test.mjs"
+    "test": "node --test firmware.test.mjs identification.test.mjs"
   },
   "devDependencies": {
     "electron": "^43.3.0",
@@ -27,7 +27,8 @@
       "preload.cjs",
       "splash.html",
       "package.json",
-      "firmware.mjs"
+      "firmware.mjs",
+      "identification.mjs"
     ],
     "win": {
       "target": "dir",
@@ -43,6 +44,13 @@
           "README.md"
         ]
       }
+    ],
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/@serialport/bindings-cpp/prebuilds/**/*"
     ]
+  },
+  "dependencies": {
+    "serialport": "13.0.0"
   }
 }

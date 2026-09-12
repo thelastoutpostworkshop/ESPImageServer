@@ -10,7 +10,7 @@ Thanks for helping improve ESPImageServer. This project creates locally generate
 - `installer/` — Windows installer sources.
 - `tests/` — backend API and image-processing tests.
 
-The ESP32 firmware lives in the separate `JC4827W543_ai` repository. Do not change it for server-only work, but consider it whenever changing an API or the JPEG format.
+The ESP32 firmware lives in the separate `ESPImageDisplay` repository. Do not change it for server-only work, but consider it whenever changing an API or the JPEG format.
 
 ## Development setup
 
@@ -38,6 +38,89 @@ Start the server during frontend development:
 ```
 
 The application is available at `http://127.0.0.1:8000`.
+
+## Create a local firmware package and manifest
+
+Use [scripts/package-firmware.ps1](scripts/package-firmware.ps1) to generate
+`manifest.json` for a manually compiled ESPImageDisplay build. It requires
+PowerShell 5.1 or newer. It does not compile firmware, flash a board, download
+firmware, or build the installer.
+
+### Prepare the version folder
+
+Compile the intended firmware target with its matching Arduino profile in the
+ESPImageDisplay repository. Use a fresh build without personal Wi-Fi credentials.
+Copy the four binaries referenced by the build's `flash_args`, plus `flash_args`
+and `build.options.json`, into a separate folder for that board and version.
+Keep the filenames unchanged and do not mix files from different builds.
+
+For example, the JC4827W543 package should look like this after generation:
+
+```text
+ESPImage Firmwares/
+  JC4827W543/
+    1.1.2/
+      ESPImageDisplay.ino.bin
+      ESPImageDisplay.ino.bootloader.bin
+      ESPImageDisplay.ino.partitions.bin
+      boot_app0.bin
+      flash_args
+      build.options.json
+      manifest.json
+```
+
+Copy the individual binaries named in `flash_args`; the `.merged.bin` and
+`_flashed.bin` files are not needed for this workflow. Keep firmware packages
+outside the application repository so binaries do not increase its size.
+
+### Generate or regenerate the manifest
+
+From the ESPImageServer repository, run:
+
+```powershell
+& .\scripts\package-firmware.ps1 `
+  -PackageDirectory 'C:\Users\charles\Desktop\ESPImage Firmwares\JC4827W543\1.1.2' `
+  -BoardTarget JC4827W543 `
+  -FirmwareVersion 1.1.2
+```
+
+Replace the example path with your own package folder. To run from another
+directory, replace `.\scripts\package-firmware.ps1` with the full path to the
+script in your checkout. Quote paths containing spaces.
+
+| Parameter | Value to supply |
+| --- | --- |
+| `-PackageDirectory` | The version folder containing the six exported files, not the parent board folder. |
+| `-BoardTarget` | `JC4827W543`, `ST7701_320X820`, `ESP32_C6_LCD_147`, or `CHEAP_YELLOW_DISPLAY`. |
+| `-FirmwareVersion` | The version actually compiled, such as `1.1.2`. Changing this value does not change the binary. |
+
+The script validates the package, reads the flash settings and offsets from
+`flash_args`, reads chip/build configuration from `build.options.json`, and
+calculates a SHA-256 checksum for each binary. It creates or replaces
+`manifest.json` beside those files; the binaries remain unchanged. Regenerate
+the manifest whenever you replace a binary. Use a new version folder for each
+firmware release so older packages remain intact.
+
+The manifest records schema version, package type, board, firmware version,
+chip, build configuration, flash settings, and each binary's role, filename,
+offset, size, and checksum. Board/version are publisher declarations; the script
+cannot prove that the binary implements the selected display target or contains
+no credentials. Checksums detect file changes, not publisher authenticity.
+
+After generation, open **Install firmware** in the ESPImageServer desktop app
+and select the version folder. The app validates the package again before
+flashing. Firmware 1.1.2 supports USB identification so the running board/version
+can be checked after installation. A normal browser tab cannot use the desktop
+USB interface.
+
+See [local firmware package details](scripts/firmware-packages.md) for validation
+rules and supported layouts, and [USB identification](scripts/usb-identification.md)
+for the protocol and manual hardware checks. Test the packaging script without
+hardware using:
+
+```powershell
+& .\scripts\test-package-firmware.ps1
+```
 
 ## Before submitting changes
 

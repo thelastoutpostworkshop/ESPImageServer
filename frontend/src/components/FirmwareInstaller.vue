@@ -24,7 +24,8 @@ const canInstall = computed(() => available && !locked.value && confirmed.value 
 const stageLabel = computed(() => ({
   idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Package validated',
   connecting: 'Connecting and checking the chip', writing_and_verifying: 'Writing and verifying firmware',
-  restarting: 'Restarting the board', written: 'Firmware written and verified', failed: 'Installation needs attention'
+  restarting: 'Restarting the board', identifying: 'Waiting for firmware identification over USB',
+  boot_verified: 'Firmware startup verified over USB', written: 'Firmware written and verified', failed: 'Installation needs attention'
 }[state.value.stage] || state.value.stage))
 async function call(method, payload) {
   const result = await desktop[method](payload)
@@ -52,6 +53,9 @@ async function install() {
     confirmed.value = false
   })
 }
+async function identify() {
+  await perform(async () => { state.value = await call('identifyFirmware', { port: port.value }) })
+}
 async function poll() {
   try { state.value = await call('firmwareState') } catch (e) { error.value = e.message }
   if (!disposed) timer = window.setTimeout(poll, 750)
@@ -76,8 +80,16 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         <v-col cols="12" md="6">
           <v-select v-model="port" :items="ports" item-title="label" item-value="port" label="2. USB / COM port" :disabled="!available || locked" hide-details="auto" no-data-text="No serial ports found. Check your cable and driver, then refresh." @update:model-value="confirmed = false" />
           <v-btn variant="text" size="small" prepend-icon="mdi-refresh" class="mt-2" :disabled="!available || locked" @click="refreshPorts">Refresh ports</v-btn>
+          <v-btn variant="text" size="small" prepend-icon="mdi-information-outline" class="mt-2" :disabled="!desktop?.identifyFirmware || locked || !port" @click="identify">Identify firmware</v-btn>
         </v-col>
       </v-row>
+      <v-alert v-if="state.identityError" type="warning" variant="tonal" class="mt-4">{{ state.identityError }}</v-alert>
+      <v-sheet v-if="state.identity" border rounded class="pa-4 mt-4" aria-live="polite">
+        <div class="font-weight-bold">{{ state.identity.board_name }} · Firmware {{ state.identity.firmware_version }}</div>
+        <div>{{ state.identity.port }} · Hardware ID {{ state.identity.hardware_id }} · {{ state.identity.width }} × {{ state.identity.height }}</div>
+        <div>{{ state.identity.wifi_connected ? 'Wi-Fi connected' : state.identity.wifi_configured ? 'Wi-Fi saved, currently disconnected' : 'No saved Wi-Fi' }}</div>
+        <div class="text-caption mt-2">Read directly from the running firmware over USB.</div>
+      </v-sheet>
       <v-btn class="my-4" variant="tonal" prepend-icon="mdi-folder-open-outline" :disabled="!available || locked" @click="choosePackage">3. Choose firmware folder</v-btn>
       <p class="text-body-2 text-medium-emphasis mb-4">Select the version folder containing manifest.json and the four binaries, for example JC4827W543 / 1.1.1.</p>
       <v-sheet v-if="state.package" rounded border class="pa-4 mb-4">
@@ -97,6 +109,9 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
       <v-progress-linear v-if="state.busy" indeterminate color="primary" rounded class="mb-4" aria-label="Firmware installation in progress" />
       <v-alert v-if="state.stage === 'written'" type="success" variant="tonal" class="mb-4">
         All four writes passed verification and a restart was requested. Check the physical screen for the expected board/version (and “No saved Wi-Fi” on an unconfigured board). Application startup has not been verified automatically.
+      </v-alert>
+      <v-alert v-if="state.stage === 'boot_verified'" type="success" variant="tonal" class="mb-4">
+        All four writes passed verification. The running firmware now reports the expected board and version over USB.
       </v-alert>
       <v-expansion-panels variant="accordion" class="mt-4">
         <v-expansion-panel title="Connection help and recovery">

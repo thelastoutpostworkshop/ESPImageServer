@@ -1,5 +1,8 @@
 # Local firmware packages
 
+Start with the [contributor guide](../CONTRIBUTING.md#create-a-local-firmware-package-and-manifest)
+for the folder layout, required files, and script parameters.
+
 After manually compiling the selected ESPImageDisplay target/profile, copy all
 four binaries referenced by `flash_args`, that file, and `build.options.json`
 into a separate folder. Use a fresh credential-free build. The packaging script
@@ -9,16 +12,17 @@ From the ESPImageServer repository, run:
 
 ```powershell
 & .\scripts\package-firmware.ps1 `
-  -PackageDirectory 'C:\Users\charles\Desktop\ESPImage Firmwares' `
+  -PackageDirectory 'C:\Users\charles\Desktop\ESPImage Firmwares\JC4827W543\1.1.2' `
   -BoardTarget JC4827W543 `
-  -FirmwareVersion 1.1.1
+  -FirmwareVersion 1.1.2
 ```
 
 Set the board/version to those actually compiled. Accepted board targets are
 `JC4827W543`, `ST7701_320X820`, `ESP32_C6_LCD_147`, and
 `CHEAP_YELLOW_DISPLAY`. The script checks the chip family against the board
 selection, but two boards can share a chip. Board and version remain explicit
-publisher declarations until post-flash identification is implemented.
+publisher declarations in the package; USB identification checks the running
+firmware's board/version after flashing when supported by that firmware.
 
 The script writes (or regenerates) `manifest.json` in the supplied folder after
 validation. It records schema version 1, first-install package type, declared
@@ -36,8 +40,9 @@ outside flash capacity are rejected before an existing manifest is replaced.
 Checksums detect changed files; they do not authenticate a publisher. This
 script prepares first-install packages, not a settings-preserving update plan.
 It does not validate partition-table contents or the chip encoded inside each
-binary. The future flashing service must revalidate the manifest and files,
-check the physical device and image compatibility, and verify the write/boot.
+binary. The desktop flashing service revalidates the manifest and files,
+checks the physical chip and image compatibility, and verifies writes. Firmware
+startup is reported separately through USB identification when available.
 Treat local packages as trusted publisher inputs, not as arbitrary commands.
 
 No compilation, flashing, firmware download, or installer build is performed.
