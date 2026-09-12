@@ -180,6 +180,7 @@ const displayExperienceStatus = ref('')
 const displayingSdCardFile = ref('')
 const sdCardSnackbar = ref(false)
 const sdCardSnackbarMessage = ref('')
+const sdCardSnackbarKind = ref('success')
 const metadataError = ref('')
 const savedImages = ref([])
 const savedImagesLoading = ref(false)
@@ -1415,9 +1416,15 @@ function formatGenerationTime(seconds) {
   return `${minutes}m ${remainingSeconds}s`
 }
 
-function showSDCardSnackbar(message) {
+function showSDCardSnackbar(message, kind = 'success') {
   sdCardSnackbarMessage.value = message
+  sdCardSnackbarKind.value = kind
   sdCardSnackbar.value = true
+}
+
+function showSDCardSaveStatus(message, kind = 'progress') {
+  status.value = message
+  showSDCardSnackbar(message, kind)
 }
 
 async function loadSavedImages() {
@@ -1518,7 +1525,7 @@ async function saveVideoToDisplaySdCard(videoId) {
   error.value = ''
   status.value = ''
   try {
-    status.value = 'Checking the display SD card for this video...'
+    showSDCardSaveStatus(`Checking ${display.value.name}'s SD card for this video…`)
     await refreshDisplaySdCardInventory()
     const response = await fetch(
       `${selectedDisplayEndpoint('/display-commands/save-saved-video')}/${encodeURIComponent(videoId)}`,
@@ -1530,25 +1537,27 @@ async function saveVideoToDisplaySdCard(videoId) {
     }
     const command = await response.json()
     if (command.status === 'already_saved') {
-      status.value = command.detail || 'This video is already on the display SD card.'
+      showSDCardSaveStatus(command.detail || 'This video is already on the display SD card.', 'success')
       return { filename: String(command.filename || ''), ready: true, reused: true }
     }
-    status.value = 'Copying video to the display SD card for offline playback. It will be converted to MJPEG first.'
+    showSDCardSaveStatus('Copying video to the display SD card for offline playback. It will be converted to MJPEG first.')
     for (let attempt = 0; attempt < 90; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
       const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
       if (result.status === 'complete') {
-        status.value = 'Video saved to the display SD card for offline playback.'
+        showSDCardSaveStatus('Video saved to the display SD card for offline playback.', 'success')
+        await loadDisplaySdCard()
         return { filename: String(command.filename || ''), ready: true }
       }
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not play this video')
     }
-    status.value = 'The display is still preparing the video for offline playback.'
+    showSDCardSaveStatus('Video save is still awaiting confirmation. Check the SD Card page before retrying.', 'warning')
     return { filename: String(command.filename || ''), ready: false }
   } catch (requestError) {
     error.value = `Could not save the video to the display SD card: ${requestError.message}`
+    showSDCardSnackbar(error.value, 'error')
     return null
   } finally {
     savingVideoToDisplaySdCard.value = false
@@ -2376,7 +2385,7 @@ async function saveImageToDisplaySdCard(savedImage = null) {
   error.value = ''
   status.value = ''
   try {
-    status.value = 'Checking the display SD card for this image...'
+    showSDCardSaveStatus(`Checking ${display.value.name}'s SD card for this image…`)
     await refreshDisplaySdCardInventory()
     const endpoint = savedImage
       ? `${selectedDisplayEndpoint('/display-commands/save-saved-image')}/${encodeURIComponent(savedImage.id)}`
@@ -2388,25 +2397,27 @@ async function saveImageToDisplaySdCard(savedImage = null) {
     }
     const command = await response.json()
     if (command.status === 'already_saved') {
-      status.value = command.detail || 'This image is already on the display SD card.'
+      showSDCardSaveStatus(command.detail || 'This image is already on the display SD card.', 'success')
       await loadDisplaySdCard()
       return
     }
-    status.value = 'Save request sent to the display. Waiting for its SD card...'
+    showSDCardSaveStatus('Save request sent to the display. Waiting for SD-card confirmation…')
     for (let attempt = 0; attempt < 15; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 1000))
       const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
       if (!commandResponse.ok) continue
       const currentCommand = await commandResponse.json()
       if (currentCommand.status === 'complete') {
-        status.value = `Saved to the display SD card: ${currentCommand.detail}`
+        showSDCardSaveStatus(`Saved to the display SD card: ${currentCommand.detail}`, 'success')
+        await loadDisplaySdCard()
         return
       }
       if (currentCommand.status === 'failed') throw new Error(currentCommand.detail || 'The display could not save the image')
     }
-    status.value = 'Save request is pending. The display will save the image when it next connects.'
+    showSDCardSaveStatus('Image save is still awaiting confirmation. Check the SD Card page before retrying.', 'warning')
   } catch (requestError) {
     error.value = `Could not save to the display SD card: ${requestError.message}`
+    showSDCardSnackbar(error.value, 'error')
   } finally {
     savingToDisplaySdCard.value = false
   }
@@ -2769,11 +2780,13 @@ onUnmounted(() => {
         <v-btn variant="text" @click="displayConnectedSnackbar = false">Close</v-btn>
       </template>
     </v-snackbar>
-    <v-snackbar v-model="sdCardSnackbar" color="success" location="bottom" timeout="3500">
-      <div class="d-flex align-center ga-2">
-        <v-icon icon="mdi-check-circle" />
+    <v-snackbar v-model="sdCardSnackbar" :color="sdCardSnackbarKind === 'progress' ? 'info' : sdCardSnackbarKind" location="bottom" :timeout="sdCardSnackbarKind === 'success' ? 6000 : -1">
+      <div class="d-flex align-center ga-2" role="status" aria-live="polite">
+        <v-progress-circular v-if="sdCardSnackbarKind === 'progress'" indeterminate size="20" width="2" />
+        <v-icon v-else :icon="sdCardSnackbarKind === 'success' ? 'mdi-check-circle' : 'mdi-alert-circle'" />
         <span>{{ sdCardSnackbarMessage }}</span>
       </div>
+      <template #actions><v-btn variant="text" @click="sdCardSnackbar = false">Close</v-btn></template>
     </v-snackbar>
     <v-snackbar v-model="generationQueueSnackbar" color="success" location="bottom" timeout="5000">
       <div class="d-flex align-center ga-2">
