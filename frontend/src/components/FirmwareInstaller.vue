@@ -2,64 +2,86 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UsbWifiSetup from './UsbWifiSetup.vue'
 import SetupConnection from './SetupConnection.vue'
-
+import { firmwareStatus } from '../firmwareStatus.js'
 const emit = defineEmits(['open-display'])
-
 const desktop = window.espImageServerDesktop
-const available = Boolean(desktop?.installFirmware && desktop?.selectFirmwarePort && desktop?.startWifiSetup)
+const available = Boolean(desktop?.firmwareLibrary && desktop?.refreshFirmwareIdentity)
 const state = ref({ busy: false, stage: 'idle', package: null, error: '', log: '' })
-const ports = ref([])
-const port = ref('')
-const board = ref('')
-const baud = ref(460800)
-const confirmed = ref(false)
-const error = ref('')
-const pending = ref(false)
-const showInstall = ref(false), serverReady = ref(false)
-let timer, disposed = false, selectionEpoch = 0, lastPortCheck = 0
-const boardItems = [
-  { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543' },
-  { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820' },
-  { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147' },
-  { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY' }
-]
+const ports = ref([]), port = ref(''), board = ref(''), baud = ref(460800)
+const pending = ref(false), error = ref(''), confirmed = ref(false)
+const library = ref({ packages: [], issues: [], directory: '', checkedAt: null })
+const libraryBusy = ref(false), libraryError = ref('')
+const reviewed = ref(false), showInstall = ref(false), manageWifi = ref(false), wifiEditing = ref(false)
+const serverReady = ref(false)
+const installationStarted = ref(false)
+let timer, disposed = false, epoch = 0, lastPorts = 0, lastIdentity = 0, autoAttempts = 0, wasBusy = false
 const locked = computed(() => pending.value || state.value.busy)
-const wifiActive = computed(() => state.value.busy && ['opening', 'scanning', 'connecting', 'obtaining_ip'].includes(state.value.wifi?.stage))
 const identity = computed(() => state.value.identity?.port === port.value ? state.value.identity : null)
 const compatible = computed(() => ['wifi_scan', 'wifi_connect', 'wifi_cancel', 'wifi_status'].every(c => identity.value?.capabilities?.includes(c)))
-const currentStep = computed(() => !identity.value ? 1 : !compatible.value ? 2 : !identity.value.wifi_connected ? 3 : 4)
-watch(compatible, value => { if (value) showInstall.value = false })
-const canInstall = computed(() => available && !locked.value && confirmed.value && port.value &&
-  state.value.package && board.value === state.value.package.board)
-const stageLabel = computed(() => ({
-  idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Package validated',
-  connecting: 'Connecting and checking the chip', writing_and_verifying: 'Writing and verifying firmware',
-  restarting: 'Restarting the board', identifying: 'Waiting for firmware identification over USB',
-  boot_verified: 'Firmware startup verified over USB', written: 'Firmware written and verified', failed: 'Installation needs attention'
-}[state.value.stage] || state.value.stage))
+const update = computed(() => firmwareStatus(identity.value, library.value))
+const panel = computed(() => showInstall.value ? 'install' : !identity.value ? 'connect' : !reviewed.value ? 'firmware' :
+  manageWifi.value || !identity.value.wifi_connected ? 'wifi' : 'connection')
+const step = computed(() => ({ connect: 1, install: 2, firmware: 2, wifi: 3, connection: 4 }[panel.value]))
+const canInstall = computed(() => available && !locked.value && confirmed.value && port.value && state.value.package && board.value === state.value.package.board)
+const boardItems = [
+  { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543' }, { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820' },
+  { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY' }
+]
+const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Ready to install',
+  connecting: 'Connecting to your display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
+  identifying: 'Checking firmware startup', boot_verified: 'Firmware installed and startup verified',
+  written: 'Write verified — startup still needs checking', failed: 'Installation needs attention' }[state.value.stage] || state.value.stage))
+const updateText = computed(() => ({ unknown: 'Updates haven’t been checked.', missing: 'No stable firmware package for this board was found in your library.',
+  current: `Firmware is up to date in your library: ${identity.value?.firmware_version}`,
+  newer: `Installed ${identity.value?.firmware_version} is newer than the stable packages in your library.`,
+  update: `Update available: ${identity.value?.firmware_version} → ${update.value.latest?.version}` }[update.value.kind]))
 async function call(method, payload) {
   const result = await desktop[method](payload)
   if (!result.ok) throw new Error(result.error)
   return result.value
 }
 async function perform(action) {
+  if (pending.value) return
   pending.value = true; error.value = ''
   try { await action() } catch (e) { error.value = e.message }
   finally { pending.value = false }
 }
+async function loadLibrary(method = 'checkFirmwareLibrary') {
+  if (libraryBusy.value) return
+  libraryBusy.value = true; libraryError.value = ''
+  try { library.value = await call(method) } catch (e) { libraryError.value = e.message; library.value.checkedAt = null }
+  finally { libraryBusy.value = false }
+}
+function resetFlow() {
+  reviewed.value = false; showInstall.value = false; manageWifi.value = false; wifiEditing.value = false
+  confirmed.value = false; serverReady.value = false; autoAttempts = 0; lastIdentity = Date.now()
+  installationStarted.value = false
+}
 async function checkPorts() {
   ports.value = await call('firmwarePorts')
-  if (port.value && !ports.value.some(p => p.port === port.value)) {
-    port.value = ''; selectionEpoch++; serverReady.value = false
-    if (!state.value.busy && desktop.selectFirmwarePort) state.value = await call('selectFirmwarePort', { port: '' })
+  if (port.value && !ports.value.some(p => p.port === port.value) && !state.value.busy) {
+    port.value = ''; epoch++; resetFlow(); state.value = await call('selectFirmwarePort', { port: '' })
   }
 }
-async function refreshPorts() { await perform(checkPorts) }
 async function selectPort() {
-  selectionEpoch++; confirmed.value = false; serverReady.value = false
+  epoch++; resetFlow()
+  await perform(async () => { state.value = await call('selectFirmwarePort', { port: port.value }) })
+}
+async function identify() {
   await perform(async () => {
-    if (desktop.selectFirmwarePort) state.value = await call('selectFirmwarePort', { port: port.value })
-    else { state.value.identity = null; state.value.wifi = null }
+    state.value = await call('identifyFirmware', { port: port.value })
+    if (identity.value) board.value = identity.value.board_target
+    lastIdentity = Date.now(); autoAttempts = 0
+  })
+}
+async function refreshConnection() {
+  lastIdentity = Date.now(); autoAttempts++
+  await perform(async () => { state.value = await call('refreshFirmwareIdentity', { port: port.value }) })
+}
+async function reviewUpdate() {
+  await perform(async () => {
+    state.value = await call('selectLibraryFirmware', { directory: update.value.latest.directory })
+    board.value = identity.value.board_target; confirmed.value = false; showInstall.value = true
   })
 }
 async function choosePackage() {
@@ -67,105 +89,118 @@ async function choosePackage() {
   await perform(async () => { state.value = await call('chooseFirmwarePackage') })
 }
 async function install() {
-  await perform(async () => {
-    state.value = await call('installFirmware', { port: port.value, board: board.value, baud: baud.value })
-    confirmed.value = false
-  })
+  await perform(async () => { state.value = await call('installFirmware', { port: port.value, board: board.value, baud: baud.value }); installationStarted.value = true; confirmed.value = false; autoAttempts = 0 })
 }
-async function identify() {
-  await perform(async () => {
-    state.value = await call('identifyFirmware', { port: port.value })
-    if (identity.value) board.value = identity.value.board_target
-    showInstall.value = !compatible.value
-  })
-}
+function continueSetup() { reviewed.value = true; manageWifi.value = false; lastIdentity = 0; autoAttempts = 0 }
+function wifiState(next) { state.value = next; lastIdentity = Date.now(); autoAttempts = 0 }
 async function poll() {
-  const epoch = selectionEpoch
+  const token = epoch
   try {
-    if (!pending.value && Date.now() - lastPortCheck > 3000) { lastPortCheck = Date.now(); await checkPorts() }
     const next = await call('firmwareState')
-    if (!pending.value && epoch === selectionEpoch) state.value = next
+    if (!pending.value && token === epoch) {
+      state.value = next
+      if (installationStarted.value && next.stage === 'boot_verified' && next.identity) port.value = next.identity.port
+      if (wasBusy && !next.busy) { lastIdentity = Date.now(); autoAttempts = 0 }
+      wasBusy = next.busy
+      if (installationStarted.value && next.stage === 'boot_verified' && compatible.value) {
+        showInstall.value = false; reviewed.value = true; lastIdentity = Date.now(); autoAttempts = 0
+        installationStarted.value = false
+      }
+    }
+    if (!pending.value && Date.now() - lastPorts > 3000) { lastPorts = Date.now(); await checkPorts() }
+    if (!locked.value && identity.value?.wifi_configured && !identity.value.wifi_connected && reviewed.value && !wifiEditing.value && !manageWifi.value && !showInstall.value && autoAttempts < 3 && Date.now() - lastIdentity > 10000) await refreshConnection()
   } catch (e) { error.value = e.message }
   if (!disposed) timer = window.setTimeout(poll, 750)
 }
-onMounted(() => { if (available) { void refreshPorts(); void poll() } })
+watch(() => identity.value?.hardware_id, (next, previous) => {
+  if (next && previous && next !== previous) resetFlow()
+  if (!next) { serverReady.value = false; reviewed.value = false; manageWifi.value = false; wifiEditing.value = false }
+})
+onMounted(async () => {
+  if (!available) return
+  void loadLibrary('firmwareLibrary')
+  await perform(async () => {
+    state.value = await call('firmwareState'); port.value = state.value.selectedPort || state.value.identity?.port || ''
+    if (state.value.identity) board.value = state.value.identity.board_target
+    await checkPorts()
+  })
+  if (!disposed) void poll()
+})
 onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 </script>
 
 <template>
-  <v-card class="mx-auto" max-width="960">
-    <v-card-title class="d-flex align-center ga-2"><v-icon icon="mdi-usb-flash-drive-outline" />Set up display</v-card-title>
-    <v-card-subtitle class="text-wrap">Connect a USB display, set up Wi-Fi, and confirm its connection to ESPImageServer.</v-card-subtitle>
-    <v-card-text>
-      <v-alert v-if="!available" type="info" variant="tonal" class="mb-5">
-        USB display setup requires the ESPImageServer desktop app. The browser can manage displays already connected over the network. If this is an older desktop window, restart it after updating the app.
-      </v-alert>
-      <p class="mb-5">Connect your display with a USB data cable. Close Arduino Serial Monitor and other apps using its COM port.</p>
-      <ol class="setup-steps mb-5" aria-label="Display setup progress">
-        <li v-for="(title, index) in ['USB display', 'Firmware', 'Wi-Fi', serverReady ? 'Ready' : 'Server connection']" :key="index" :aria-current="currentStep === index + 1 ? 'step' : undefined" :class="{ 'font-weight-bold': currentStep === index + 1 }">{{ index + 1 }}. {{ title }}</li>
+  <v-card class="mx-auto" max-width="800">
+    <v-card-text class="pa-6">
+      <div class="d-flex align-center ga-3 mb-2"><v-icon icon="mdi-monitor" size="28" /><h1 class="text-h5">Set up display</h1></div>
+      <p class="text-medium-emphasis mb-6">{{ identity ? identity.board_name : 'Connect your display. We’ll guide you through the rest.' }}</p>
+      <ol class="setup-steps mb-6" aria-label="Display setup progress">
+        <li v-for="(title, index) in ['Connect', 'Firmware', 'Wi-Fi', 'Ready']" :key="title" :aria-current="step === index + 1 ? 'step' : undefined" :class="{ current: step === index + 1, complete: step > index + 1 }"><span>{{ step > index + 1 ? '✓' : index + 1 }}</span>{{ title }}</li>
       </ol>
-      <h3 class="text-subtitle-1 font-weight-bold mb-3">1. Choose the USB display</h3>
-      <v-select v-model="port" :items="ports" item-title="label" item-value="port" label="USB / COM port" :disabled="!available || locked" hide-details="auto" no-data-text="No serial ports found. Check your cable and driver, then refresh." @update:model-value="selectPort" />
-      <div class="d-flex flex-wrap ga-2 mt-2 mb-4">
-        <v-btn variant="text" prepend-icon="mdi-refresh" :disabled="!available || locked" @click="refreshPorts">Refresh ports</v-btn>
-        <v-btn color="primary" variant="tonal" prepend-icon="mdi-information-outline" :disabled="!desktop?.identifyFirmware || locked || !port" @click="identify">{{ identity ? 'Refresh USB identity' : 'Identify and continue' }}</v-btn>
-      </div>
-      <v-alert v-if="state.identityError" type="warning" variant="tonal" class="mb-4">{{ state.identityError }} You can install a compatible firmware package below.</v-alert>
-      <v-alert v-if="state.identity && state.identity.port !== port && !locked" type="info" variant="tonal" class="mb-4">The board was identified on {{ state.identity.port }}. Select that port and identify it again to continue setup.</v-alert>
-      <v-sheet v-if="identity" border rounded class="pa-4 mb-4" aria-live="polite">
-        <div class="font-weight-bold">{{ identity.board_name }} · Firmware {{ identity.firmware_version }}</div>
-        <div>{{ identity.port }} · Hardware ID {{ identity.hardware_id }} · {{ identity.width }} × {{ identity.height }}</div>
-        <div>{{ identity.wifi_connected ? 'Wi-Fi connected' : identity.wifi_configured ? 'Wi-Fi saved, currently disconnected' : 'No saved Wi-Fi' }}</div>
-        <div class="text-caption mt-2">Read directly from the running firmware over USB. Other connected displays are not selected automatically.</div>
-      </v-sheet>
-      <h3 class="text-subtitle-1 font-weight-bold mb-2">2. Check firmware</h3>
-      <v-alert v-if="compatible" type="success" variant="tonal" class="mb-3">Compatible firmware is already running. Continue to Wi-Fi; no flashing is needed.</v-alert>
-      <p v-else class="mb-3">Identify the board first. If firmware is missing or incompatible, install a package for its physical display model.</p>
-      <v-btn variant="text" :disabled="locked" class="mb-3" @click="showInstall = !showInstall">{{ showInstall ? 'Hide firmware installation' : 'Install or update firmware' }}</v-btn>
-      <v-sheet v-if="showInstall" border rounded class="pa-4">
-      <v-select v-model="board" :items="boardItems" label="Physical display model" :disabled="!available || locked" hide-details="auto" @update:model-value="confirmed = false" />
-      <v-btn class="my-4" variant="tonal" prepend-icon="mdi-folder-open-outline" :disabled="!available || locked" @click="choosePackage">Choose firmware folder</v-btn>
-      <p class="text-body-2 text-medium-emphasis mb-4">Select the version folder containing manifest.json and the four binaries, for example JC4827W543 / 1.1.4.</p>
-      <v-sheet v-if="state.package" rounded border class="pa-4 mb-4">
-        <div class="text-subtitle-1 font-weight-bold">{{ state.package.board }} · Firmware {{ state.package.version }}</div>
-        <div>{{ state.package.chip.toUpperCase() }} · {{ state.package.flashBytes / 1048576 }} MB flash · {{ state.package.files.length }} verified binaries</div>
-        <div class="text-caption text-medium-emphasis mt-2 firmware-path">{{ state.package.directory }}</div>
-        <v-alert v-if="board && board !== state.package.board" type="error" variant="tonal" class="mt-3">This package does not match your selected display model.</v-alert>
-      </v-sheet>
-      <v-select v-model="baud" label="USB transfer speed" :items="[{ title: 'Standard (460800)', value: 460800 }, { title: 'Slower — try if transfers fail (115200)', value: 115200 }]" :disabled="!available || locked" hide-details class="mb-4" />
-      <v-alert type="warning" variant="tonal" class="mb-3">
-        This installs the bootloader, partition table, and application. It replaces existing firmware; settings may be lost if the old partition layout differs. SD-card files are not changed. Keep USB connected until installation finishes.
-      </v-alert>
-      <v-checkbox v-model="confirmed" label="I checked the physical display model and COM port, and want to replace its firmware." :disabled="!available || locked || !state.package" hide-details />
-      <v-btn class="my-4" color="primary" size="large" prepend-icon="mdi-download" :disabled="!canInstall" :loading="state.busy && !wifiActive" @click="install">Install firmware</v-btn>
-      <div role="status" aria-live="polite" class="font-weight-medium mb-2">{{ stageLabel }}</div>
-      <v-progress-linear v-if="state.busy && !wifiActive" indeterminate color="primary" rounded class="mb-4" aria-label="Firmware installation in progress" />
-      <v-alert v-if="state.stage === 'written'" type="success" variant="tonal" class="mb-4">
-        All four writes passed verification and a restart was requested. Check the physical screen for the expected board/version (and “No saved Wi-Fi” on an unconfigured board). Application startup has not been verified automatically.
-      </v-alert>
-      <v-alert v-if="state.stage === 'boot_verified'" type="success" variant="tonal" class="mb-4">
-        All four writes passed verification. The running firmware now reports the expected board and version over USB.
-      </v-alert>
-      </v-sheet>
-      <v-alert v-if="error || state.error" type="error" variant="tonal" class="my-4">{{ error || state.error }}</v-alert>
-      <UsbWifiSetup v-if="identity" :identity="identity" :selected-port="port" :state="state.wifi" :locked="locked" @state="state = $event" />
-      <SetupConnection v-if="identity && compatible" :identity="identity" :selected-port="port" :locked="locked" @ready="serverReady = $event" @open-display="emit('open-display', $event)" />
-      <v-expansion-panels variant="accordion" class="mt-4">
-        <v-expansion-panel title="Connection help and recovery">
-          <v-expansion-panel-text>
-            <p>Use the board's data/serial USB connector. A charge-only cable can power the display without creating a COM port. USB-to-UART boards may need their manufacturer's driver.</p>
-            <p class="mt-3">If connection fails, use the selected board's BOOT and RESET/EN controls: hold BOOT, press and release RESET, then release BOOT. If there is no RESET button, reconnect USB while holding BOOT. Refresh ports if Windows assigns a different COM number, then retry. Consult the board's instructions for button and connector locations.</p>
-            <p class="mt-3">After an interrupted write, reconnect in bootloader mode and install the complete package again. If transfer errors persist, select the slower speed. Automatic reset depends on your board's wiring; no full-chip erase is performed.</p>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-      </v-expansion-panels>
-      <details v-if="state.log" class="mt-4" open><summary>Installation log</summary><pre class="firmware-log mt-2">{{ state.log }}</pre></details>
+      <v-alert v-if="!available" type="info" variant="tonal">Open the updated ESPImageServer desktop app to set up a USB display. Your browser can manage displays already on the network.</v-alert>
+      <template v-else>
+        <div v-if="identity && panel !== 'connect'" class="setup-summary mb-5"><span>USB connected · {{ identity.board_name }}</span><v-btn variant="text" size="small" :disabled="locked" @click="port = ''; selectPort()">Change display</v-btn></div>
+        <v-alert v-if="error || state.error || state.identityError" type="error" variant="tonal" class="mb-4">{{ error || state.error || state.identityError }}</v-alert>
+        <section v-if="panel === 'connect'">
+          <h2 class="text-h6 mb-2">Connect your display with a USB data cable</h2><p class="mb-5">Select its USB port, then check the display. Close Arduino Serial Monitor first.</p>
+          <v-select v-model="port" :items="ports" item-title="label" item-value="port" label="USB display" :disabled="locked" no-data-text="No display found. Check the cable, then refresh." @update:model-value="selectPort" />
+          <div class="setup-actions"><v-btn color="primary" :disabled="locked || !port" :loading="pending" @click="identify">Check display</v-btn><v-btn variant="text" :disabled="locked" @click="perform(checkPorts)">Refresh ports</v-btn></div>
+          <v-btn v-if="state.identityError" class="mt-4" variant="tonal" :disabled="locked || !port" @click="showInstall = true">Install firmware on this display</v-btn>
+        </section>
+        <section v-if="panel === 'firmware'">
+          <h2 class="text-h6 mb-2">{{ compatible ? 'Check for firmware updates' : 'Install compatible firmware' }}</h2><p class="mb-4">Installed version: <strong>{{ identity.firmware_version }}</strong></p>
+          <v-alert :type="update.kind === 'current' ? 'success' : 'info'" variant="tonal" class="mb-4">{{ updateText }}</v-alert>
+          <p v-if="update.latest?.notes" class="mb-4 release-notes">{{ update.latest.notes }}</p><p v-else-if="update.kind === 'update'" class="mb-4">This package does not include release notes. Review its version and installation notice before updating.</p>
+          <p v-if="!library.directory" class="mb-4">Choose your firmware library once. We’ll find packages for this display inside its board and version folders.</p>
+          <div class="setup-actions mb-4">
+            <v-btn v-if="update.kind === 'update'" color="primary" :disabled="locked || libraryBusy" @click="reviewUpdate">Review update to {{ update.latest.version }}</v-btn>
+            <v-btn v-else-if="!library.directory" color="primary" :loading="libraryBusy" :disabled="locked" @click="loadLibrary('chooseFirmwareLibrary')">Choose firmware library</v-btn>
+            <v-btn v-else :variant="update.kind === 'current' && compatible ? 'text' : 'flat'" :loading="libraryBusy" :disabled="locked" @click="loadLibrary()">Check for updates</v-btn>
+            <v-btn v-if="compatible" :color="update.kind === 'current' ? 'primary' : undefined" :variant="update.kind === 'current' ? 'flat' : 'text'" :disabled="locked" @click="continueSetup">{{ update.kind === 'update' ? 'Continue with current version' : 'Continue' }}</v-btn>
+          </div>
+          <v-btn variant="text" :disabled="locked" @click="showInstall = true">{{ compatible ? 'Install a different package' : 'Choose firmware package' }}</v-btn>
+        </section>
+        <section v-if="panel === 'install'">
+          <h2 class="text-h6 mb-4">{{ state.busy ? stageLabel : 'Review firmware installation' }}</h2>
+          <v-select v-if="!identity" v-model="board" :items="boardItems" label="Physical display model" :disabled="locked" @update:model-value="confirmed = false" /><p v-else class="mb-3">{{ identity.board_name }} · Installed {{ identity.firmware_version }}</p>
+          <v-sheet v-if="state.package" border rounded class="pa-4 mb-4"><strong>{{ state.package.board }} · Version {{ state.package.version }}</strong><p class="mt-1">Package files checked and ready.</p></v-sheet>
+          <v-btn v-if="!state.busy" variant="tonal" class="mb-4" :disabled="locked" @click="choosePackage">{{ state.package ? 'Choose another package' : 'Choose firmware folder' }}</v-btn>
+          <v-alert v-if="state.package && board !== state.package.board" type="error" class="mb-4">This package does not match the display model.</v-alert>
+          <template v-if="state.package && !state.busy"><v-alert type="warning" variant="tonal" class="mb-3">This replaces the display’s firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert><v-checkbox v-model="confirmed" label="Install this firmware on the selected display." :disabled="locked" hide-details class="mb-4" /><v-btn color="primary" :disabled="!canInstall" @click="install">Install {{ state.package.version }}</v-btn></template>
+          <div v-if="state.busy || ['written', 'failed', 'boot_verified'].includes(state.stage)" role="status" class="my-4">{{ stageLabel }}</div><v-progress-linear v-if="state.busy" indeterminate class="my-4" />
+          <p v-if="state.stage === 'written'" class="mb-3">The write passed verification and restart was requested. Check the screen, then check the display again to verify startup.</p>
+          <v-btn v-if="state.stage === 'written'" class="mr-2" :disabled="locked" @click="showInstall = false; identify()">Check display after restart</v-btn><v-btn class="ml-2" variant="text" :disabled="locked" @click="showInstall = false">Back</v-btn>
+          <details class="mt-5"><summary>Advanced installation details</summary><v-select v-model="baud" class="mt-4" label="USB transfer speed" :items="[{title:'Standard (460800)', value:460800}, {title:'Slower — retry failed transfers (115200)',value:115200}]" :disabled="locked" /><p v-if="state.package" class="setup-path">{{ state.package.directory }} · {{ state.package.chip }} · {{ state.package.flashBytes / 1048576 }} MB · {{ state.package.files.length }} binaries</p></details>
+        </section>
+        <section v-if="panel === 'wifi'">
+          <UsbWifiSetup :identity="identity" :selected-port="port" :state="state.wifi" :locked="locked" @state="wifiState" @editing="wifiEditing = $event" />
+          <p v-if="identity.wifi_configured && !identity.wifi_connected && !wifiEditing && !manageWifi" class="mt-3 text-body-2">{{ autoAttempts < 3 ? 'We’ll check the connection automatically after the board restarts.' : 'The board has not reported a connection yet. Check it again or change the saved network.' }}</p>
+          <div class="setup-actions mt-4"><v-btn v-if="identity.wifi_connected" color="primary" :disabled="locked" @click="manageWifi = false">Continue</v-btn><v-btn v-else-if="identity.wifi_configured" variant="tonal" :disabled="locked || wifiEditing" @click="refreshConnection">Check connection</v-btn><v-btn variant="text" :disabled="locked" @click="reviewed = false">Back to firmware</v-btn></div>
+        </section>
+        <SetupConnection v-if="identity && compatible && reviewed" v-show="panel === 'connection'" :identity="identity" :selected-port="port" :locked="locked || panel !== 'connection'" @ready="serverReady = $event" @open-display="emit('open-display', $event)" />
+        <div v-if="panel === 'connection'" class="mt-4"><p class="mb-3">Firmware {{ identity.firmware_version }} <span v-if="update.kind === 'update'">· Update {{ update.latest.version }} available</span></p><div class="setup-actions"><v-btn variant="text" :disabled="locked" @click="manageWifi = true">Manage Wi-Fi</v-btn><v-btn variant="text" :disabled="locked" @click="reviewed = false; loadLibrary()">Firmware updates</v-btn></div></div>
+        <details v-if="panel === 'firmware'" class="mt-5"><summary>Firmware library settings</summary><p class="my-3 setup-path">{{ library.directory || 'No folder selected' }}</p><p class="mb-3 text-body-2">Updates are checked against stable packages in this local folder. No online release service is configured.</p><p v-if="library.checkedAt" class="mb-3 text-caption">Last checked: {{ new Date(library.checkedAt).toLocaleString() }}</p><v-btn variant="tonal" :disabled="locked || libraryBusy" @click="loadLibrary('chooseFirmwareLibrary')">{{ library.directory ? 'Change library folder' : 'Choose library folder' }}</v-btn></details>
+        <v-alert v-if="libraryError || library.error" type="warning" variant="tonal" class="mt-4">{{ libraryError || library.error }}</v-alert>
+        <details v-if="panel === 'firmware' && library.issues?.length" class="mt-3"><summary>{{ library.issues.length }} package(s) could not be used</summary><p v-for="issue in library.issues" :key="issue.folder" class="mt-2">{{ issue.folder }}: {{ issue.message }}</p></details>
+        <details v-if="identity" class="mt-5"><summary>Device details</summary><p class="mt-3">{{ identity.port }} · Hardware ID {{ identity.hardware_id }} · {{ identity.width }} × {{ identity.height }} · Firmware {{ identity.firmware_version }}</p><v-btn variant="text" :disabled="locked" @click="refreshConnection">Refresh device information</v-btn></details>
+        <details v-if="panel !== 'connection' || !serverReady" class="mt-5" :open="state.stage === 'failed' || Boolean(state.identityError)"><summary>Connection help and recovery</summary><p class="mt-3">Use the board’s data USB connector and a data cable. Close other apps using the COM port.</p><p class="mt-3">If flashing cannot connect: hold BOOT, press and release RESET/EN, then release BOOT. Without RESET, reconnect USB while holding BOOT. Refresh ports and check the display again if its COM number changes.</p><p class="mt-3">After an interrupted write, enter bootloader mode and reinstall the complete package. Try the slower USB speed if transfers fail. No full-chip erase is performed.</p></details>
+        <details v-if="state.log" class="mt-4"><summary>Installation log</summary><pre class="firmware-log mt-3">{{ state.log }}</pre></details>
+      </template>
     </v-card-text>
   </v-card>
 </template>
 
 <style scoped>
-.setup-steps { display: flex; flex-wrap: wrap; gap: 8px 24px; list-style: none; padding: 0; }
-.firmware-path { overflow-wrap: anywhere; }
-.firmware-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; font-size: 12px; padding: 12px; background: rgba(127,127,127,.08); border-radius: 6px; }
+.setup-steps { display: flex; gap: 12px; justify-content: space-between; list-style: none; padding: 0; }
+.setup-steps li { display: flex; align-items: center; gap: 8px; color: rgb(var(--v-theme-on-surface), .6); }
+.setup-steps span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgb(var(--v-theme-on-surface), .08); }
+.setup-steps .current { color: rgb(var(--v-theme-primary)); font-weight: 700; }
+.setup-steps .current span { background: rgb(var(--v-theme-primary), .15); }
+.setup-steps .complete { color: rgb(var(--v-theme-success)); }
+.setup-summary, .setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.setup-summary { justify-content: space-between; font-size: .875rem; border-bottom: 1px solid rgb(var(--v-theme-on-surface), .12); padding-bottom: 12px; }
+.setup-path, .release-notes { overflow-wrap: anywhere; white-space: pre-wrap; }
+summary { cursor: pointer; font-size: .875rem; }
+.firmware-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12px; }
+@media (max-width: 480px) { .setup-steps { gap: 6px; } .setup-steps li { flex-direction: column; font-size: .75rem; } }
 </style>

@@ -200,6 +200,19 @@ multiple-device tests remain pending.
 
 ### Step 5 - Support all boards and package for distribution
 
+Setup UX follow-up: one active setup stage, local firmware library with stable
+version comparison and optional release notes, explicit update/unknown/current
+states, automatic post-restart connection checks, compact Ready view, and a
+saved-image test targeting only the matched display. Wi-Fi management, device
+details, transfer speed, and logs are separated from the primary setup action.
+The user must update/restart the desktop shell to load the new library IPC API;
+no installer rebuild or firmware change is included in this follow-up.
+Validation: 53 desktop tests, 18 frontend tests, and 9 package-script checks
+passed. Frontend build passed. Browser preview verified update review, simulated
+installation through Ready, the test-image chooser, and separate Wi-Fi management.
+The actual local server refused the browser connection during this check; live
+desktop/hardware acceptance of this UX update remains pending.
+
 - [ ] **Board matrix:** Repeat flashing, boot verification, provisioning, and
   recovery tests for JC4827W543, ST7701 320x820, ESP32-C6 LCD 1.47, and Cheap
   Yellow Display. Document connectors, reset behavior, drivers, and build

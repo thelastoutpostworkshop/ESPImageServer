@@ -16,7 +16,8 @@ param(
     [string]$BoardTarget,
     [Parameter(Mandatory)]
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$')]
-    [string]$FirmwareVersion
+    [string]$FirmwareVersion,
+    [ValidateLength(0, 2000)][string]$ReleaseNotes = ''
 )
 
 Set-StrictMode -Version Latest
@@ -139,6 +140,7 @@ $manifest = [ordered]@{
     installation_type = 'first_install'
     board_target = $BoardTarget
     firmware_version = $FirmwareVersion
+    release_notes = $ReleaseNotes
     identity_source = 'publisher_declared'
     chip = $chip
     fqbn = $fqbn

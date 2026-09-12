@@ -34,6 +34,17 @@ async function fixture(t) {
 const probe = 'Chip type: ESP32-S3 (revision v0.2)\nDetected flash size: 4MB\n'
 const verified = 'Hash of data verified.\n'.repeat(4) + 'Hard resetting via RTS pin...\n'
 
+test('refreshing USB status preserves identity until completion and rejects a swapped board', async () => {
+  const original={port:'COM8',hardware_id:'aabbccddeeff',wifi_connected:false}
+  const installer=new FirmwareInstaller('unused',{identify:async()=>({...original,wifi_connected:true})})
+  installer.state.identity=original;installer.state.selectedPort='COM8'
+  assert.equal((await installer.refreshIdentity('COM8')).identity.wifi_connected,true)
+  installer.identify=async()=>({...original,hardware_id:'112233445566'})
+  const swapped=await installer.refreshIdentity('COM8')
+  assert.equal(swapped.identity,null);assert.match(swapped.identityError,/changed/)
+  await assert.rejects(installer.refreshIdentity('COM9'),/Identify/)
+})
+
 test('valid package keeps binary hashes and uses structured arguments without full erase', async t => {
   const f = await fixture(t), pkg = await validatePackage(f.directory)
   const args = writeArguments(pkg.manifest, 'COM8', pkg.segments)

@@ -2,9 +2,14 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('espImageServerDesktop', {
   firmwareState: () => ipcRenderer.invoke('firmware-state'),
+  firmwareLibrary: () => ipcRenderer.invoke('firmware-library'),
+  checkFirmwareLibrary: () => ipcRenderer.invoke('firmware-library-check'),
+  chooseFirmwareLibrary: () => ipcRenderer.invoke('firmware-library-choose'),
+  selectLibraryFirmware: request => ipcRenderer.invoke('firmware-library-select', request),
   firmwarePorts: () => ipcRenderer.invoke('firmware-ports'),
   selectFirmwarePort: request => ipcRenderer.invoke('firmware-select-port', request),
   identifyFirmware: request => ipcRenderer.invoke('firmware-identify', request),
+  refreshFirmwareIdentity: request => ipcRenderer.invoke('firmware-refresh-identity', request),
   startWifiSetup: request => ipcRenderer.invoke('firmware-wifi-start', request),
   cancelWifiSetup: () => ipcRenderer.invoke('firmware-wifi-cancel'),
   chooseFirmwarePackage: () => ipcRenderer.invoke('firmware-package'),

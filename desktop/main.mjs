@@ -6,12 +6,14 @@ import { fileURLToPath } from 'node:url'
 import { FirmwareInstaller } from './firmware.mjs'
 import { identifyPort, identifyAfterFlash, serialPorts } from './identification.mjs'
 import { WifiSetup } from './wifi.mjs'
+import { FirmwareLibrary } from './firmware-library.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
 const firmwareInstaller = new FirmwareInstaller(path.join(
   app.isPackaged ? process.resourcesPath : desktopDirectory, 'tools', 'esptool', 'esptool-windows-amd64', 'esptool.exe'),
   { ports: serialPorts, identify: identifyPort, reconnect: identifyAfterFlash })
 const wifiSetup = new WifiSetup(firmwareInstaller)
+const firmwareLibrary = new FirmwareLibrary(path.join(app.getPath('userData'), 'firmware-library.json'))
 const projectRoot = app.isPackaged
   ? path.resolve(process.resourcesPath, '..', '..')
   : path.resolve(desktopDirectory, '..')
@@ -199,9 +201,20 @@ function requireFirmwareSender(event) {
 }
 for (const [channel, handler] of Object.entries({
   'firmware-state': () => firmwareInstaller.snapshot(),
+  'firmware-library': () => firmwareLibrary.load(),
+  'firmware-library-check': () => firmwareLibrary.scan(),
+  'firmware-library-choose': async () => {
+    if (firmwareInstaller.state.busy) throw new Error('Wait for USB work to finish.')
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose your firmware library (contains board and version folders)', properties: ['openDirectory']
+    })
+    return result.canceled ? firmwareLibrary.snapshot() : firmwareLibrary.choose(result.filePaths[0])
+  },
+  'firmware-library-select': ({ directory } = {}) => firmwareLibrary.select(directory, firmwareInstaller),
   'firmware-ports': () => firmwareInstaller.refreshPorts(),
   'firmware-select-port': ({ port } = {}) => firmwareInstaller.selectPort(port),
   'firmware-identify': ({ port } = {}) => firmwareInstaller.identifyFirmware(port),
+  'firmware-refresh-identity': ({ port } = {}) => firmwareInstaller.refreshIdentity(port),
   'firmware-wifi-start': request => wifiSetup.start(request),
   'firmware-wifi-cancel': () => wifiSetup.cancel(),
   'firmware-package': async () => {

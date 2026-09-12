@@ -166,6 +166,20 @@ export class FirmwareInstaller {
     finally { this.state.busy = false }
     return this.snapshot()
   }
+  async refreshIdentity(port) {
+    requireValue(!this.state.busy && this.state.identity?.port === port && this.state.selectedPort === port,
+      'Identify the selected display first.')
+    const previous = this.state.identity
+    this.state.busy = true
+    try {
+      const identity = await this.identify(port)
+      requireValue(identity.hardware_id === previous.hardware_id, 'The USB display changed. Identify it again.')
+      this.state.identity = identity; this.state.identityError = ''
+    } catch (error) {
+      this.state.identity = null; this.state.wifi = null; this.state.identityError = error.message
+    } finally { this.state.busy = false }
+    return this.snapshot()
+  }
   async select(directory) {
     requireValue(!this.state.busy, 'A firmware operation is already running.')
     this.state = { ...this.state, busy: true, package: null, error: '', stage: 'validating' }
@@ -184,7 +198,7 @@ export class FirmwareInstaller {
     requireValue(!this.state.busy && this.selected, 'Choose a valid package first; only one installation can run.')
     requireValue(/^COM\d+$/.test(port) && board === this.state.package.board && [115200, 460800].includes(baud), 'Confirm the matching physical board, port, and speed.')
     this.expectedHardwareId = this.state.identity?.port === port ? this.state.identity.hardware_id : undefined
-    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', port, identity: null, identityError: '', wifi: null }
+    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', port, selectedPort: port, identity: null, identityError: '', wifi: null }
     this.completion = this.install(port, baud).catch(e => {
       this.state.stage = 'failed'; this.state.error = e.message
     }).finally(() => { this.state.busy = false; this.child = null })
@@ -218,6 +232,8 @@ export class FirmwareInstaller {
           this.state.identity = await this.reconnect(originalPort, {
             board: pkg.manifest.board_target, version: pkg.manifest.firmware_version, hardwareId: this.expectedHardwareId
           })
+          this.state.selectedPort = this.state.identity.port
+          this.identityPort = null
           this.state.stage = 'boot_verified'
         } catch (error) {
           this.state.stage = 'written'

@@ -1736,6 +1736,7 @@ function openDisplaysPage() {
 
 function navigate(nextPage) {
   page.value = nextPage
+  if (nextPage === 'firmware') metadataPane.value = false
   if (compact.value) drawer.value = false
 }
 

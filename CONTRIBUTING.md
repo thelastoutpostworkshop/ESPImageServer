@@ -107,8 +107,16 @@ offset, size, and checksum. Board/version are publisher declarations; the script
 cannot prove that the binary implements the selected display target or contains
 no credentials. Checksums detect file changes, not publisher authenticity.
 
-After generation, open **Install firmware** in the ESPImageServer desktop app
-and select the version folder. The app validates the package again before
+Supply optional `-ReleaseNotes 'Describe the changes for the display owner.'`
+when generating a package. It writes plain-text `release_notes` (up to 2000
+characters), shown with an available update. Do not put HTML or credentials in
+release notes. Existing manifests without this field continue to work.
+The desktop firmware library scans its selected root plus two folder levels,
+validates complete packages, and recommends stable releases for the exact board.
+Prereleases remain available through manual package selection.
+
+After generation, open **Set up display** in the ESPImageServer desktop app
+and check the firmware library, or select the version folder manually. The app validates the package again before
 flashing. Firmware 1.1.2 supports USB identification so the running board/version
 can be checked after installation. A normal browser tab cannot use the desktop
 USB interface.

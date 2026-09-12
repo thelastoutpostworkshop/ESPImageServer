@@ -2,11 +2,12 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps({ identity: Object, selectedPort: String, state: Object, locked: Boolean })
-const emit = defineEmits(['state'])
+const emit = defineEmits(['state', 'editing'])
 const desktop = window.espImageServerDesktop
 const ssid = ref(''), password = ref(''), auth = ref('personal'), error = ref('')
 const showPassword = ref(false)
 const editing = ref(false), forgetDialog = ref(false)
+watch(editing, value => emit('editing', value))
 const pending = ref(false)
 const supported = computed(() => desktop?.startWifiSetup && props.identity?.capabilities?.includes('wifi_connect'))
 const matches = computed(() => props.identity?.port === props.selectedPort)
@@ -71,12 +72,12 @@ onUnmounted(() => {
 
 <template>
   <v-sheet border rounded class="pa-4 mt-4">
-    <h3 class="text-subtitle-1 font-weight-bold mb-2">3. Wi-Fi setup over USB</h3>
+    <h2 class="text-h6 mb-2">{{ identity?.wifi_configured ? 'Manage Wi-Fi' : 'Connect to Wi-Fi' }}</h2>
     <v-alert v-if="!supported" type="info" variant="tonal">Install firmware 1.1.3 or later with USB Wi-Fi setup, then identify it. An updated desktop app is also required.</v-alert>
     <v-alert v-else-if="!matches" type="info" variant="tonal">Identify the selected USB port before configuring Wi-Fi.</v-alert>
     <template v-else>
       <v-alert v-if="identity.wifi_configured && !editing" type="info" variant="tonal" class="mb-3">
-        {{ identity.wifi_connected ? 'Wi-Fi is already connected. Continue to the server check below.' : 'Wi-Fi settings are already saved. The board will retry automatically; refresh its USB identity to check the connection.' }}
+        {{ identity.wifi_connected ? 'Wi-Fi is connected. You can keep this network or change it below.' : 'Your Wi-Fi settings are saved. Checking whether the board has reconnected…' }}
       </v-alert>
       <div v-if="identity.wifi_configured" class="d-flex flex-wrap ga-2 mb-3">
         <v-btn variant="tonal" :disabled="disabled" @click="editing = !editing; password = ''">{{ editing ? 'Keep current Wi-Fi' : 'Change Wi-Fi' }}</v-btn>
@@ -84,14 +85,14 @@ onUnmounted(() => {
       </div>
       <p v-if="identity.wifi_configured && !canForget" class="text-caption mb-3">Changing Wi-Fi works with this firmware. Upgrade to firmware 1.1.4 or later to forget it over USB.</p>
       <template v-if="!identity.wifi_configured || editing">
-      <p class="text-body-2 mb-3">Use a 2.4 GHz network with WPA2 Personal (including mixed WPA2/WPA3) or no password. Enterprise, WEP, WPA-only, and WPA3-only networks are not supported by this setup flow.</p>
+      <p class="text-body-2 mb-3">Choose your 2.4 GHz home network, or enter its name below.</p>
       <p class="text-body-2 mb-3">Scanning briefly disconnects Wi-Fi. The board saves new credentials only after obtaining an IP address and restores previous settings if setup fails or is cancelled.</p>
       <v-btn variant="tonal" prepend-icon="mdi-wifi" :disabled="disabled" @click="start('scan')">Scan networks</v-btn>
       <v-select v-if="networks.length" v-model="network" :items="networks" label="Available networks (up to 20)" class="mt-4" :disabled="disabled" @update:model-value="chooseNetwork" />
       <p v-if="wifi?.stage === 'scan_complete' && !networks.length" class="mt-3">No networks found. Retry nearby or enter a hidden network below.</p>
-      <v-text-field v-model="ssid" label="Network name (SSID)" hint="You can enter a hidden network manually. Maximum 32 UTF-8 bytes." persistent-hint :disabled="disabled" class="mt-4" autocomplete="off" />
+      <v-text-field v-model="ssid" label="Network name" hint="You can also enter a hidden network." :disabled="disabled" class="mt-4" autocomplete="off" />
       <v-select v-model="auth" label="Network security" :items="[{ title: 'WPA2 Personal', value: 'personal' }, { title: 'Open (no password)', value: 'open' }]" :disabled="disabled" />
-      <v-text-field v-if="auth === 'personal'" v-model="password" label="Wi-Fi password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" :disabled="disabled" hint="8–63 printable ASCII characters, or a 64-digit hexadecimal key. Sent only over USB; not saved by the desktop app." persistent-hint>
+      <v-text-field v-if="auth === 'personal'" v-model="password" label="Wi-Fi password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" :disabled="disabled" hint="Saved only on your display." persistent-hint>
         <template #append-inner>
           <v-btn variant="text" size="small" :prepend-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" :aria-label="showPassword ? 'Hide Wi-Fi password' : 'Show Wi-Fi password'" :aria-pressed="showPassword" :disabled="disabled" @click="showPassword = !showPassword">{{ showPassword ? 'Hide' : 'Show' }}</v-btn>
         </template>
