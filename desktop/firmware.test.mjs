@@ -93,6 +93,15 @@ test('probe checks actual chip and capacity', () => {
   assert.throws(() => parseProbe(probe, 'esp32s3', 16777216), /capacity/)
   assert.throws(() => parseProbe('unknown output', 'esp32s3', 4194304))
 })
+
+test('ESP32-C6FH4 probe is recognized as C6 while chip and capacity checks remain enforced', () => {
+  const output = 'Connected to ESP32-C6 on COM3:\nChip type: ESP32-C6FH4 (QFN32) (revision v0.1)\nDetected flash size: 4MB\n'
+  assert.deepEqual(parseProbe(output, 'esp32c6', 4194304), {chip:'esp32c6',flashBytes:4194304})
+  assert.throws(() => parseProbe(output, 'esp32s3', 4194304), /ESP32-C6FH4.*ESP32-S3/)
+  assert.throws(() => parseProbe(output, 'esp32c6', 8388608), /capacity/)
+  assert.throws(() => parseProbe(output.replace('Chip type: ESP32-C6FH4', 'Chip type: ESP32-C61'), 'esp32c6', 4194304), /chip/)
+  assert.throws(() => parseProbe(output.replace('Detected flash size: 4MB', ''), 'esp32c6', 4194304), /capacity/)
+})
 test('install stages immutable files, verifies four writes, and cleans up', async t => {
   const f = await fixture(t), calls = []
   const installer = new FirmwareInstaller('fake', {

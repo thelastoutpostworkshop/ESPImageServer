@@ -74,10 +74,11 @@ export async function validatePackage(directory) {
 export function parseProbe(output, expectedChip, requiredBytes) {
   const description = output.match(/(?:Chip (?:is|type:)\s*|Detecting chip type\.\.\.\s*)(ESP32[^\s(]*)/i)?.[1].toUpperCase()
   const chip = /^ESP32-S3(?:$|[-(])/.test(description) ? 'esp32s3'
-    : /^ESP32-C6(?:$|[-(])/.test(description) ? 'esp32c6'
+    : /^ESP32-C6(?:FH4)?(?:$|[-(])/.test(description) ? 'esp32c6'
       : /^ESP32(?:$|-(?:D0WD|U4WD|S0WD|PICO))/.test(description) ? 'esp32' : null
   const size = output.match(/Detected flash size:\s*(\d+)\s*MB/i)
-  requireValue(chip === expectedChip, 'Connected chip does not match this firmware package.')
+  const chipNames = { esp32: 'ESP32', esp32s3: 'ESP32-S3', esp32c6: 'ESP32-C6' }
+  requireValue(chip === expectedChip, `Detected chip ${description || 'unknown'} does not match this package (${chipNames[expectedChip] || expectedChip}). Check the USB port and firmware package.`)
   requireValue(size && Number(size[1]) * 1048576 >= requiredBytes, 'Could not verify sufficient flash capacity on this board.')
   return { chip, flashBytes: Number(size[1]) * 1048576 }
 }

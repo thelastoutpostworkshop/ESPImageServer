@@ -163,9 +163,10 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         <section v-if="panel === 'install'">
           <h2 class="text-h6 mb-4">{{ state.busy ? stageLabel : 'Review firmware installation' }}</h2>
           <v-select v-if="!identity" v-model="board" :items="boardItems" label="Physical display model" :disabled="locked" @update:model-value="confirmed = false" /><p v-else class="mb-3">{{ identity.board_name }} · Installed {{ identity.firmware_version }}</p>
+          <p v-if="!identity" class="mb-3">USB port: {{ port || 'Not selected' }}. Choose the physical display model above before installing.</p>
           <v-sheet v-if="state.package" border rounded class="pa-4 mb-4"><strong>{{ state.package.board }} · Version {{ state.package.version }}</strong><p class="mt-1">Package files checked and ready.</p></v-sheet>
           <v-btn v-if="!state.busy" variant="tonal" class="mb-4" :disabled="locked" @click="choosePackage">{{ state.package ? 'Choose another package' : 'Choose firmware folder' }}</v-btn>
-          <v-alert v-if="state.package && board !== state.package.board" type="error" class="mb-4">This package does not match the display model.</v-alert>
+          <v-alert v-if="state.package && board && board !== state.package.board" type="error" class="mb-4">This package does not match the display model.</v-alert>
           <template v-if="state.package && !state.busy"><v-alert type="warning" variant="tonal" class="mb-3">This replaces the display’s firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert><v-checkbox v-model="confirmed" label="Install this firmware on the selected display." :disabled="locked" hide-details class="mb-4" /><v-btn color="primary" :disabled="!canInstall" @click="install">Install {{ state.package.version }}</v-btn></template>
           <div v-if="state.busy || ['written', 'failed', 'boot_verified'].includes(state.stage)" role="status" class="my-4">{{ stageLabel }}</div><v-progress-linear v-if="state.busy" indeterminate class="my-4" />
           <p v-if="state.stage === 'written'" class="mb-3">The write passed verification and restart was requested. Check the screen, then check the display again to verify startup.</p>
