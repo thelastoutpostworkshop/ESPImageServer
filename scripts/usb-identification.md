@@ -43,7 +43,8 @@ Manual acceptance for the new firmware:
 5. Repeat identification during Wi-Fi connection retries and offline playback.
 
 The automated desktop suite uses fake serial devices; it does not compile or
-execute the Arduino firmware. Wi-Fi provisioning commands are not implemented.
+execute the Arduino firmware. Firmware 1.1.3 adds
+[USB Wi-Fi setup](usb-wifi-setup.md); 1.1.2 identification remains compatible.
 
 Desktop packaging uses the pinned serialport 13.0.0 package's Windows x64
 Node-API prebuild. `npmRebuild` is disabled and prebuild files are unpacked from

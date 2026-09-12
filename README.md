@@ -32,8 +32,8 @@ the physical display model and COM port, then choose the version folder holding
 check the confirmation box, and select **Install firmware**. The app checks the
 package, connected chip, and flash capacity before writing. It reports the write
 verification separately from application startup: check the board's screen for
-the expected firmware version afterward. USB Wi-Fi provisioning is not yet
-implemented. The connection-help panel covers manual bootloader entry and retries.
+the expected firmware version afterward. Firmware 1.1.3 adds USB Wi-Fi setup.
+The connection-help panel covers manual bootloader entry and retries.
 
 This is a first-install flow, not a guaranteed settings-preserving update. It
 does not erase the entire flash or change SD-card files, but a different old
@@ -61,7 +61,21 @@ this check automatically. It follows a changed COM number only when the USB
 serial identity uniquely matches the selected device; otherwise refresh ports
 and identify it manually. Older firmware can still be flashed but cannot answer
 the identification request. Successful writes remain reported even when startup
-identification times out. USB Wi-Fi configuration is still a later milestone.
+identification times out.
+
+With firmware 1.1.3 and the updated desktop shell, identify the board, then use
+**Wi-Fi setup over USB**. Scan networks or enter a hidden SSID, select WPA2
+Personal or Open, and choose **Connect and save**. This flow supports 2.4 GHz
+WPA2 Personal (including mixed WPA2/WPA3) and open networks. It does not support
+enterprise, WEP, WPA-only, or WPA3-only networks. Scanning briefly disconnects
+Wi-Fi. Passwords are sent over USB and are not saved by the desktop app.
+
+The board tests a new connection before saving credentials, including when
+replacing credentials for its current network. Failed/cancelled attempts restore
+previous settings. A successful save survives reboot even if ESPImageServer is
+unavailable. If USB is interrupted, reconnect and identify the board: a completed
+connection may already have saved; otherwise the abandoned attempt is cancelled
+after eight seconds. See [USB Wi-Fi tests](scripts/usb-wifi-setup.md) before release.
 
 See [the contributor guide](CONTRIBUTING.md#create-a-local-firmware-package-and-manifest)
 for the manifest script, required files, and packaging commands, or

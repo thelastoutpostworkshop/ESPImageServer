@@ -1,28 +1,30 @@
 import { randomUUID } from 'node:crypto'
 import { SerialPort } from 'serialport'
+import { StringDecoder } from 'node:string_decoder'
 
-export function responseDecoder(id, onResult) {
+export function responseDecoder(id, onResult, maxLength = 2048) {
   let line = '', overflow = false
+  const utf8 = new StringDecoder('utf8')
   return chunk => {
-    for (const character of chunk.toString('utf8')) {
+    for (const character of typeof chunk === 'string' ? chunk : utf8.write(chunk)) {
       if (character === '\n') {
         if (!overflow) {
           const start = line.indexOf('@ESPIMAGE ')
           if (start >= 0) {
             let message
             try { message = JSON.parse(line.slice(start + 10)) } catch { /* ignore damaged/log lines */ }
-            if (message?.id === id) onResult(message)
+            if (message && (id === null || message.id === id)) onResult(message)
           }
         }
         line = ''; overflow = false
-      } else if (line.length < 2048 && !overflow) line += character
+      } else if (line.length < maxLength && !overflow) line += character
       else overflow = true
     }
   }
 }
 
 export function validateIdentity(message) {
-  if (message.protocol !== 1 || !message.ok) throw new Error(message.error || 'Unsupported USB identification protocol.')
+  if (message.protocol !== 1 || !message.ok) throw new Error('Unsupported USB identification protocol.')
   const r = message.result
   if (!r || r.protocol_version !== 1 || !/^[a-f0-9]{12}$/.test(r.hardware_id) ||
       !['JC4827W543', 'ST7701_320X820', 'ESP32_C6_LCD_147', 'CHEAP_YELLOW_DISPLAY'].includes(r.board_target) ||
@@ -35,8 +37,9 @@ export function validateIdentity(message) {
     throw new Error('Invalid USB firmware identity response.')
   }
   // Whitelist fields; never forward arbitrary serial data/passwords to the UI.
-  return Object.fromEntries(['hardware_id', 'board_target', 'board_name', 'firmware_version',
-    'protocol_version', 'width', 'height', 'wifi_configured', 'wifi_connected'].map(key => [key, r[key]]))
+  return { ...Object.fromEntries(['hardware_id', 'board_target', 'board_name', 'firmware_version',
+    'protocol_version', 'width', 'height', 'wifi_configured', 'wifi_connected'].map(key => [key, r[key]])),
+    capabilities: r.capabilities.filter(c => ['hello', 'status', 'wifi_scan', 'wifi_connect', 'wifi_cancel', 'wifi_status'].includes(c)) }
 }
 
 export async function identifyPort(portName, { timeout = 5000, createPort = options => new SerialPort(options) } = {}) {

@@ -3,14 +3,14 @@
   "description": "ESPImageServer desktop application",
   "author": "ESPImageServer",
   "private": true,
-  "version": "1.0.64",
+  "version": "1.0.65",
   "type": "module",
   "main": "main.mjs",
   "scripts": {
     "build": "npm run prepare:esptool && npm --prefix ../frontend run build && electron-builder --win --x64 --dir",
     "prepare:esptool": "powershell -NoProfile -ExecutionPolicy Bypass -File ./prepare-esptool.ps1",
     "start": "npm run prepare:esptool && electron .",
-    "test": "node --test firmware.test.mjs identification.test.mjs"
+    "test": "node --test firmware.test.mjs identification.test.mjs wifi.test.mjs"
   },
   "devDependencies": {
     "electron": "^43.3.0",
@@ -28,7 +28,8 @@
       "splash.html",
       "package.json",
       "firmware.mjs",
-      "identification.mjs"
+      "identification.mjs",
+      "wifi.mjs"
     ],
     "win": {
       "target": "dir",

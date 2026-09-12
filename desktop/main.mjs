@@ -5,11 +5,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FirmwareInstaller } from './firmware.mjs'
 import { identifyPort, identifyAfterFlash, serialPorts } from './identification.mjs'
+import { WifiSetup } from './wifi.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
 const firmwareInstaller = new FirmwareInstaller(path.join(
   app.isPackaged ? process.resourcesPath : desktopDirectory, 'tools', 'esptool', 'esptool-windows-amd64', 'esptool.exe'),
   { ports: serialPorts, identify: identifyPort, reconnect: identifyAfterFlash })
+const wifiSetup = new WifiSetup(firmwareInstaller)
 const projectRoot = app.isPackaged
   ? path.resolve(process.resourcesPath, '..', '..')
   : path.resolve(desktopDirectory, '..')
@@ -199,6 +201,8 @@ for (const [channel, handler] of Object.entries({
   'firmware-state': () => firmwareInstaller.snapshot(),
   'firmware-ports': () => serialPorts(),
   'firmware-identify': ({ port } = {}) => firmwareInstaller.identifyFirmware(port),
+  'firmware-wifi-start': request => wifiSetup.start(request),
+  'firmware-wifi-cancel': () => wifiSetup.cancel(),
   'firmware-package': async () => {
     if (firmwareInstaller.state.busy) throw new Error('Wait for the current firmware operation.')
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -227,6 +231,11 @@ else {
   app.whenReady().then(createWindow)
   app.on('window-all-closed', () => app.quit())
   app.on('before-quit', event => {
+    if (wifiSetup.running) {
+      event.preventDefault(); wifiSetup.cancel()
+      void wifiSetup.completion.finally(() => app.quit())
+      return
+    }
     if (firmwareInstaller.state.busy) { event.preventDefault(); return }
     isQuitting = true
     clearTimeout(saveWindowStateTimer)

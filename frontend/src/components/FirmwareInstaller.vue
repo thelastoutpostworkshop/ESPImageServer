@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import UsbWifiSetup from './UsbWifiSetup.vue'
 
 const desktop = window.espImageServerDesktop
 const available = Boolean(desktop?.installFirmware)
@@ -19,6 +20,7 @@ const boardItems = [
   { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY' }
 ]
 const locked = computed(() => pending.value || state.value.busy)
+const wifiActive = computed(() => state.value.busy && ['opening', 'scanning', 'connecting', 'obtaining_ip'].includes(state.value.wifi?.stage))
 const canInstall = computed(() => available && !locked.value && confirmed.value && port.value &&
   state.value.package && board.value === state.value.package.board)
 const stageLabel = computed(() => ({
@@ -67,7 +69,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 <template>
   <v-card class="mx-auto" max-width="960">
     <v-card-title class="d-flex align-center ga-2"><v-icon icon="mdi-usb-flash-drive-outline" />Install firmware</v-card-title>
-    <v-card-subtitle class="text-wrap">Install a local firmware package over USB. Wi-Fi setup will follow in a later step.</v-card-subtitle>
+    <v-card-subtitle class="text-wrap">Install firmware, identify your display, and configure Wi-Fi over USB.</v-card-subtitle>
     <v-card-text>
       <v-alert v-if="!available" type="info" variant="tonal" class="mb-5">
         Open the ESPImageServer desktop app to install firmware over USB. If this is an older desktop window, restart it after updating the app.
@@ -90,6 +92,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         <div>{{ state.identity.wifi_connected ? 'Wi-Fi connected' : state.identity.wifi_configured ? 'Wi-Fi saved, currently disconnected' : 'No saved Wi-Fi' }}</div>
         <div class="text-caption mt-2">Read directly from the running firmware over USB.</div>
       </v-sheet>
+      <UsbWifiSetup v-if="state.identity" :identity="state.identity" :selected-port="port" :state="state.wifi" :locked="locked" @state="state = $event" />
       <v-btn class="my-4" variant="tonal" prepend-icon="mdi-folder-open-outline" :disabled="!available || locked" @click="choosePackage">3. Choose firmware folder</v-btn>
       <p class="text-body-2 text-medium-emphasis mb-4">Select the version folder containing manifest.json and the four binaries, for example JC4827W543 / 1.1.1.</p>
       <v-sheet v-if="state.package" rounded border class="pa-4 mb-4">
@@ -103,10 +106,10 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         This installs the bootloader, partition table, and application. It replaces existing firmware; settings may be lost if the old partition layout differs. SD-card files are not changed. Keep USB connected until installation finishes.
       </v-alert>
       <v-checkbox v-model="confirmed" label="I checked the physical display model and COM port, and want to replace its firmware." :disabled="!available || locked || !state.package" hide-details />
-      <v-btn class="my-4" color="primary" size="large" prepend-icon="mdi-download" :disabled="!canInstall" :loading="state.busy" @click="install">Install firmware</v-btn>
+      <v-btn class="my-4" color="primary" size="large" prepend-icon="mdi-download" :disabled="!canInstall" :loading="state.busy && !wifiActive" @click="install">Install firmware</v-btn>
       <v-alert v-if="error || state.error" type="error" variant="tonal" class="mb-4">{{ error || state.error }}</v-alert>
       <div role="status" aria-live="polite" class="font-weight-medium mb-2">{{ stageLabel }}</div>
-      <v-progress-linear v-if="state.busy" indeterminate color="primary" rounded class="mb-4" aria-label="Firmware installation in progress" />
+      <v-progress-linear v-if="state.busy && !wifiActive" indeterminate color="primary" rounded class="mb-4" aria-label="Firmware installation in progress" />
       <v-alert v-if="state.stage === 'written'" type="success" variant="tonal" class="mb-4">
         All four writes passed verification and a restart was requested. Check the physical screen for the expected board/version (and “No saved Wi-Fi” on an unconfigured board). Application startup has not been verified automatically.
       </v-alert>

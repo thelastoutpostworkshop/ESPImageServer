@@ -133,7 +133,7 @@ export class FirmwareInstaller {
   snapshot() { return structuredClone(this.state) }
   async identifyFirmware(port) {
     requireValue(!this.state.busy && this.identify && /^COM\d+$/.test(port), 'Select an available port and wait for the current operation.')
-    this.state.busy = true; this.state.identityError = ''; this.state.identity = null
+    this.state.busy = true; this.state.identityError = ''; this.state.identity = null; this.state.wifi = null
     try { this.state.identity = await this.identify(port) }
     catch (error) { this.state.identityError = error.message }
     finally { this.state.busy = false }
@@ -157,7 +157,7 @@ export class FirmwareInstaller {
     requireValue(!this.state.busy && this.selected, 'Choose a valid package first; only one installation can run.')
     requireValue(/^COM\d+$/.test(port) && board === this.state.package.board && [115200, 460800].includes(baud), 'Confirm the matching physical board, port, and speed.')
     this.expectedHardwareId = this.state.identity?.port === port ? this.state.identity.hardware_id : undefined
-    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', port, identity: null, identityError: '' }
+    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', port, identity: null, identityError: '', wifi: null }
     this.completion = this.install(port, baud).catch(e => {
       this.state.stage = 'failed'; this.state.error = e.message
     }).finally(() => { this.state.busy = false; this.child = null })

@@ -101,25 +101,25 @@ failure/recovery checks remain open.
 
 ### Step 3 - Connect to Wi-Fi and save credentials over USB
 
-- [ ] **Firmware:** Add `wifi_scan`, `wifi_connect`, and `wifi_cancel` commands.
+- [x] **Firmware:** Add `wifi_scan`, `wifi_connect`, and `wifi_cancel` commands.
   Scan asynchronously and return SSID, signal strength, and authentication
   type. Support hidden-network entry and validate supported credential formats.
-- [ ] **Connection state:** Replace blocking Wi-Fi connection attempts with a
+- [x] **Connection state:** Replace blocking Wi-Fi connection attempts with a
   state machine. Keep USB responsive during connection, server retries, and
   offline slideshow/video playback. Coordinate background tasks so they cannot
   initiate competing scans or connections.
-- [ ] **Credential storage:** Load `AppConfig::load()` at boot instead of always
+- [x] **Credential storage:** Load `AppConfig::load()` at boot instead of always
   assigning `WIFI_SSID`/`WIFI_PASSWORD`. Make `secrets.h` optional for development;
   distributed builds contain no personal credentials. Test candidates through
   an actual new connection, even if already connected. Save only after an IP
   address is obtained; preserve and restore previous working settings on
   failure/cancellation. Control Wi-Fi driver persistence, check storage errors,
   make replacement safe across power interruption, and avoid redundant writes.
-- [ ] **Desktop setup:** Show scanned networks, manual hidden SSID entry,
+- [x] **Desktop setup:** Show scanned networks, manual hidden SSID entry,
   password input, Connect, Cancel, and Retry. Explain supported Wi-Fi bands and
   authentication modes. Report scanning, connecting, obtaining an IP address,
   and connected states, with useful errors based on driver evidence.
-- [ ] **Privacy and first boot:** Never echo passwords in serial responses,
+- [x] **Privacy and first boot:** Never echo passwords in serial responses,
   errors, logs, analytics, or desktop persistent storage. Clear temporary app
   password state on completion/cancellation. With no credentials, show USB
   setup instructions on the display; do not automatically start a hotspot.
@@ -130,6 +130,14 @@ failure/recovery checks remain open.
 
 **Advance when:** A user can configure Wi-Fi entirely over USB and the board
 reconnects after reboot without reflashing or joining a setup hotspot.
+
+Implementation: firmware 1.1.3 and the desktop now implement USB Wi-Fi setup.
+Desktop automated tests cover validation, device binding, cancellation, disconnect,
+and storage-error responses (43 tests passed). The frontend build passed and a
+simulated browser preview verified scanning/connection states and password-field
+clearing. The live server at 127.0.0.1:8000 refused the connection. Firmware
+compilation and the real-board acceptance matrix remain manual and are NOT yet
+complete. See `scripts/usb-wifi-setup.md`.
 
 ### Step 4 - Complete the guided setup and recovery flow
 

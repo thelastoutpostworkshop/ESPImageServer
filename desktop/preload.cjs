@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('espImageServerDesktop', {
   firmwareState: () => ipcRenderer.invoke('firmware-state'),
   firmwarePorts: () => ipcRenderer.invoke('firmware-ports'),
   identifyFirmware: request => ipcRenderer.invoke('firmware-identify', request),
+  startWifiSetup: request => ipcRenderer.invoke('firmware-wifi-start', request),
+  cancelWifiSetup: () => ipcRenderer.invoke('firmware-wifi-cancel'),
   chooseFirmwarePackage: () => ipcRenderer.invoke('firmware-package'),
   installFirmware: request => ipcRenderer.invoke('firmware-install', request),
   chooseImageLibrary: () => ipcRenderer.invoke('choose-image-library'),
