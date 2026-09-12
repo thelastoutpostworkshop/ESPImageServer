@@ -5,6 +5,7 @@ const props = defineProps({ identity: Object, selectedPort: String, state: Objec
 const emit = defineEmits(['state'])
 const desktop = window.espImageServerDesktop
 const ssid = ref(''), password = ref(''), auth = ref('personal'), error = ref('')
+const showPassword = ref(false)
 const pending = ref(false)
 const supported = computed(() => desktop?.startWifiSetup && props.identity?.capabilities?.includes('wifi_connect'))
 const matches = computed(() => props.identity?.port === props.selectedPort)
@@ -49,6 +50,7 @@ watch([() => props.identity?.hardware_id, () => props.selectedPort], () => {
   password.value = ''; ssid.value = ''; error.value = ''; network.value = null
 })
 watch(auth, () => { password.value = '' })
+watch(password, value => { if (!value) showPassword.value = false })
 onUnmounted(() => {
   password.value = ''
   if (active.value || pending.value) void desktop?.cancelWifiSetup().catch(() => {})
@@ -68,7 +70,11 @@ onUnmounted(() => {
       <p v-if="wifi?.stage === 'scan_complete' && !networks.length" class="mt-3">No networks found. Retry nearby or enter a hidden network below.</p>
       <v-text-field v-model="ssid" label="Network name (SSID)" hint="You can enter a hidden network manually. Maximum 32 UTF-8 bytes." persistent-hint :disabled="disabled" class="mt-4" autocomplete="off" />
       <v-select v-model="auth" label="Network security" :items="[{ title: 'WPA2 Personal', value: 'personal' }, { title: 'Open (no password)', value: 'open' }]" :disabled="disabled" />
-      <v-text-field v-if="auth === 'personal'" v-model="password" label="Wi-Fi password" type="password" autocomplete="new-password" :disabled="disabled" hint="8–63 printable ASCII characters, or a 64-digit hexadecimal key. Sent only over USB; not saved by the desktop app." persistent-hint />
+      <v-text-field v-if="auth === 'personal'" v-model="password" label="Wi-Fi password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" :disabled="disabled" hint="8–63 printable ASCII characters, or a 64-digit hexadecimal key. Sent only over USB; not saved by the desktop app." persistent-hint>
+        <template #append-inner>
+          <v-btn variant="text" size="small" :prepend-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" :aria-label="showPassword ? 'Hide Wi-Fi password' : 'Show Wi-Fi password'" :aria-pressed="showPassword" :disabled="disabled" @click="showPassword = !showPassword">{{ showPassword ? 'Hide' : 'Show' }}</v-btn>
+        </template>
+      </v-text-field>
       <div class="d-flex ga-2 my-3">
         <v-btn color="primary" :disabled="disabled || !ssid || (auth === 'personal' && !password)" @click="start('connect')">{{ wifi?.stage === 'failed' ? 'Retry connection' : 'Connect and save' }}</v-btn>
         <v-btn v-if="active" variant="text" @click="cancel">Cancel</v-btn>
