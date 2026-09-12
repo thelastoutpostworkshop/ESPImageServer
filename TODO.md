@@ -164,10 +164,13 @@ Failure/recovery tests remain open.
 - [x] **Change/reset Wi-Fi:** Keep USB setup accessible without working Wi-Fi,
   touch input, or reflashing. Add confirmed `wifi_forget` behavior that clears
   only Wi-Fi settings, preserving SD content and other display settings.
-- [ ] **Test:** Walk through first installation to Ready, existing-firmware
-  setup, server-unavailable recovery, Wi-Fi reset, and normal LAN image
-  delivery. Ensure unplug/replug and multiple devices do not select the wrong
-  display or mix setup status between devices.
+- [x] **JC4827W543 reset and recovery (user confirmed on 2026-09-12):** On
+  firmware 1.1.4, Forget Wi-Fi removed the credentials; unplug/replug returned
+  to USB Wi-Fi setup without reconnecting. Provisioning again reached Ready.
+  SD content and other display settings remained intact.
+- [ ] **Remaining hardware tests:** Verify server-unavailable recovery and
+  normal LAN image delivery after setup. Test multiple connected devices and
+  swapping devices/ports so selection and setup status cannot mix between boards.
 
 **Advance when:** The full USB setup flow reaches the correct LAN-connected
 display and explains how to recover at each failed stage.
@@ -182,8 +185,18 @@ A simulated browser walkthrough verified compatible-firmware skip, matched
 Ready, reset confirmation/cancellation, and returning to setup after reset.
 The live browser check at 127.0.0.1:8000 returned connection refused.
 Automated tests use simulated devices and server responses. Firmware 1.1.4
-requires manual compilation, and the Step 4 real-board acceptance tests above
-remain outstanding. No installer has been rebuilt.
+was subsequently compiled and tested by the user as recorded below. Remaining
+real-board acceptance tests are listed above. No installer was rebuilt during
+that implementation.
+
+Hardware follow-up (2026-09-12): user compiled and installed JC4827W543
+firmware 1.1.4 and confirmed the display connected. Desktop USB identity reports
+1.1.4 on COM8, hardware ID `a03e0997bacc`; the installation log shows all four
+writes verified and a hard reset via RTS. The user subsequently confirmed the
+complete Forget Wi-Fi, power-cycle, and reprovisioning sequence worked as
+expected, reached Ready, and preserved SD content and other settings. This
+confirms the normal reset/recovery path on this board; fault-injection and
+multiple-device tests remain pending.
 
 ### Step 5 - Support all boards and package for distribution
 
