@@ -79,6 +79,21 @@ if ($manifest.chip -ne 'esp32s3' -or $manifest.board_target -ne 'ST7701_320X820'
 Write-Output 'PASS: S3 QIO preset exports DIO flash mode with 16 MB flash'
 $manifestHash = (Get-FileHash -LiteralPath $manifestPath).Hash
 Assert-Rejected 'S3 QIO preset rejects conflicting flash mode' ($s3FlashArgs.Replace('--flash-mode dio', '--flash-mode qout')) 'ST7701_320X820'
+[IO.File]::WriteAllText((Join-Path $fixture 'build.options.json'),
+    '{"fqbn":"esp32:esp32:esp32:FlashMode=qio,FlashSize=4M"}', $utf8)
+$esp32FlashArgs = $flashArgs.Replace('0x0 Test.ino.bootloader.bin', '0x1000 Test.ino.bootloader.bin')
+[IO.File]::WriteAllText((Join-Path $fixture 'flash_args'), $esp32FlashArgs, $utf8)
+$null = & $packager -PackageDirectory $fixture -BoardTarget CHEAP_YELLOW_DISPLAY -FirmwareVersion 1.1.5
+$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+$bootloader = $manifest.segments | Where-Object { $_.role -eq 'bootloader' }
+if ($manifest.chip -ne 'esp32' -or $manifest.board_target -ne 'CHEAP_YELLOW_DISPLAY' -or
+    $manifest.flash.mode -ne 'dio' -or $manifest.flash.size_bytes -ne 4MB -or
+    $bootloader.offset -ne '0x1000') {
+    throw 'ESP32 QIO preset did not preserve the exported flash settings and bootloader offset.'
+}
+Write-Output 'PASS: ESP32 QIO preset exports DIO with bootloader at 0x1000'
+$manifestHash = (Get-FileHash -LiteralPath $manifestPath).Hash
+Assert-Rejected 'ESP32 QIO preset rejects conflicting flash mode' ($esp32FlashArgs.Replace('--flash-mode dio', '--flash-mode qout')) 'CHEAP_YELLOW_DISPLAY'
 # Remove only this explicitly created, verified temporary directory.
 $resolvedFixture = [IO.Path]::GetFullPath($fixture)
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
