@@ -814,6 +814,11 @@ def create_app(
                 "content_key": content_key,
                 "detail": "This video is already on the display SD card for its current size and frame rate",
             }
+        if bundled_ffmpeg_executable() is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Video conversion is unavailable on this computer (FFmpeg is missing). Repair the app installation and restart it before saving videos to the display.",
+            )
         # The ESP32's SD filesystem does not expose a portable creation time.
         # Keep the stable content key for deduplication, but prefix it with the
         # UTC save time so the board can report a real Created value later.

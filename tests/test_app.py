@@ -1159,3 +1159,40 @@ def test_registered_media_save_progress_cancel_and_validation() -> None:
         report = client.get(report_path).json()
         assert report['verified_saves'] is True
         assert report['files'][0]['verified'] is True
+
+
+@pytest.mark.parametrize("registered", [False, True])
+def test_missing_ffmpeg_rejects_video_save_before_replacing_display_command(tmp_path, monkeypatch, registered):
+    library = ImageLibrary(tmp_path / 'images', tmp_path / 'index.json')
+    videos = VideoLibrary(library.path)
+    source = tmp_path / 'source.mp4'
+    source.write_bytes(b'fake video')
+    monkeypatch.setattr('esp_image_server.video_library.bundled_ffmpeg_executable', lambda: None)
+    monkeypatch.setattr('esp_image_server.app.bundled_ffmpeg_executable', lambda: None)
+    video = videos.save(source, {'fps': 12})
+    app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
+    with TestClient(app) as client:
+        if registered:
+            result = client.post('/displays/register', json={'hardware_id': 'test-screen', 'name': 'Test display', 'width': 480, 'height': 272, 'firmware_version': '1.1.6'})
+            assert result.status_code == 201
+            display_id = result.json()['id']
+            prefix = f'/displays/{display_id}'
+        else:
+            client.post('/display', json={'name': 'Test display', 'width': 480, 'height': 272, 'firmware_version': '1.1.6'})
+            display_id, prefix = '__legacy__', ''
+        store = app.state.display_command_store
+        previous = store.queue('set_mode', display_id=display_id, mode='live_images')
+        response = client.post(f"{prefix}/display-commands/save-saved-video/{video['id']}")
+        assert response.status_code == 503
+        assert 'FFmpeg is missing' in response.json()['detail']
+        assert store.next(display_id) == previous
+        assert store.get(previous['id'], display_id=display_id)['status'] == 'pending'
+        # Already committed media requires no converter on the computer.
+        store.report_sd_card({'available': True, 'verified_saves': True, 'files': [{
+            'name': 'existing.mjpeg', 'type': 'video', 'verified': True,
+            'content_key': f"v1-{video['id']}-480x272-fps12",
+        }]}, display_id=display_id)
+        reused = client.post(f"{prefix}/display-commands/save-saved-video/{video['id']}")
+        assert reused.status_code == 202
+        assert reused.json()['status'] == 'already_saved'
+        assert store.next(display_id) == previous
