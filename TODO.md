@@ -6,42 +6,51 @@
 
 Source review of the separate ESPImageDisplay repository. The three P1 source
 changes are implemented for firmware 1.1.6 and app 1.0.76, with transaction/parser
-assertions and app tests. Their physical acceptance checks remain below;
-automated checks do not establish recovery on a real card. Remaining source
-improvements are P2. Settings-preserving updates remain under Updates and distribution.
-- [ ] **P2 — Restore display content after network recovery:**
-  `noteServerContact()` clears `connectionProblemActive` before the
-  unchanged-image recovery branch checks it. Track connection state
-  separately from the content currently drawn, and restore the image after
-  recovery without overwriting a manual SD selection. Test a temporary server
-  outage followed by an unchanged-image response; an error screen must not
-  remain visible after reconnection.
-- [ ] **P2 — Verify offline settings persistence:** `saveDisplayMode()`
-  ignores Preferences write results, while its caller unconditionally
-  reports success. Check storage results and persist the related settings
-  together, following the versioned Wi-Fi record approach. Verify storage
-  failure and interrupted writes do not produce a false saved confirmation
-  or a mixture of old and new settings after reboot.
-- [ ] **P2 — Make slideshow order chronological:** The image and video
-  selection functions in `SDCard.cpp` compare filenames, but current
-  filenames contain content hashes rather than creation dates. Persist a
-  saved timestamp or sequence number, define ordering for older files, and
-  use it for newest-first/oldest-first playback. Verify order survives reboot
-  and does not depend on alphabetical hash order.
-- [ ] **P2 — Select the board through one build choice:**
-  `FirmwareTarget.h` currently explicitly selects Cheap Yellow Display
-  before the automatic-selection block. Make the build command/profile
-  select the target without editing shared source. Keep clear mismatch
-  errors and distinguish the two ESP32-S3 displays. The user compiles each
-  target manually; verify the resulting board identity and package manifest.
-- [ ] **P2 — Make timers safe across uptime rollover:** Replace absolute
-  `millis()` deadline comparisons in the main loop, SD remount checks, and
-  JPEG download timeout with rollover-safe elapsed-time comparisons. Add
-  focused tests around the approximately 50-day counter wrap, including a
-  deadline missed while another operation runs, so retries, polling,
-  slideshow timing, and downloads cannot stall or time out incorrectly.
+assertions and app tests. The four P2 reliability improvements are implemented for
+firmware 1.1.7: content restoration after recovery, checked atomic offline
+settings with legacy migration, persistent SD save ordering, and rollover-safe
+scheduling. Board selection remains manual in FirmwareTarget.h with the matching
+Arduino Maker Workshop profile, as requested by the user. Completed source items have
+been removed from this list. Their hardware acceptance checks remain below;
+automated checks do not establish recovery on a real board/card.
+Settings-preserving updates remain under Updates and distribution.
+
+Firmware 1.1.8 corrects the reported connected/offline experience behavior:
+startup waits for server contact, automatic fallback needs 30 seconds of failed
+contact, and command polling continues during SD playback. Successful contact
+returns to server control; media commands also stop explicit previews. Policy
+regression assertions and main-sketch syntax checks pass; the reported hardware
+failure must be retested with freshly compiled firmware.
 
 ### Hardware validation
+
+- [ ] **Connected experience regression (1.1.8):** Boot with an experience
+  saved and ESPImageServer running. Confirm the display waits for commands and
+  accepts image saves. Stop the server for over 30 seconds to start fallback;
+  restart it and save an image during playback. Confirm playback stops, the app
+  reports server-controlled mode and the save completes. Repeat saving during an
+  explicitly requested preview; that preview must stop and stay stopped.
+- [ ] **P2 firmware 1.1.8 acceptance:** Manually compile and flash using
+  the Arduino Maker Workshop extension after setting `FIRMWARE_TARGET` in
+  `FirmwareTarget.h` and choosing the matching compile profile. Confirm the physical display,
+  USB identity, dimensions, version and package target agree on all four boards.
+  Restart the server/router while showing an unchanged live image, then repeat
+  with a manually selected SD image/video; restore the selection rather than
+  leaving a connection message. A video may restart from its beginning.
+- [ ] **Offline settings storage:** On 1.1.7, verify legacy settings migration,
+  save/reboot, preview without saving, failed storage and power interruption
+  during replacement. Failure must not receive a saved confirmation or mix
+  settings. Confirm Wi-Fi and SD files survive. Software assertions cover the
+  storage-result boundary; physical NVS interruption remains unverified.
+- [ ] **Slideshow chronology:** Save images/videos in a different order from
+  their filenames; check newest-first/oldest-first and wrap before/after reboot,
+  retrying an existing save and thumbnail completion. Include legacy dated and
+  hash-only files and a damaged/missing `.order` record. Unknown legacy dates use
+  deterministic filename fallback; new saves use their persistent card sequence.
+- [ ] **Long uptime and interruption:** Exercise retries, SD remount, polling,
+  slideshow/video playback and stalled downloads across `millis()` rollover on
+  hardware or an instrumented build. Automated assertions cover wrap, expiry at
+  zero and a late loop; normal hardware timing remains to be verified.
 
 - [ ] **Adaptive status messages:** Manually compile and flash the new status
   layout on JC4827W543, ST7701 320x820, ESP32-C6 LCD 1.47, and Cheap Yellow
