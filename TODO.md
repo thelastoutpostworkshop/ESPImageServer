@@ -226,7 +226,7 @@ models.
 - Confirm model downloads still work on Windows without Developer Mode or
   administrator privileges.
 - Test image generation with DreamShaper, SSD-1B, SDXL, and SD-Turbo.
-- Test video generation with LTX, Wan, and Hunyuan, including the saved-image
+- Test video generation with LTX and Wan, including the saved-image
   first-frame path and model download/caching behavior.
 - Run the backend test suite, frontend build, and a manual GPU smoke test for
   each model family before releasing the dependency upgrade.

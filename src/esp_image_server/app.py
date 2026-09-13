@@ -1920,7 +1920,7 @@ def create_app(
                 f"{video_model['name']} supports {video_model['minimum_steps']} to {video_model['maximum_steps']} steps"
             ))
         if request.source_image_id and video_model["family"] == "wan":
-            raise HTTPException(status_code=422, detail="Wan 2.1 T2V is text-to-video only; choose an LTX or HunyuanVideo model to animate an image")
+            raise HTTPException(status_code=422, detail="Wan 2.1 T2V is text-to-video only; choose an LTX model to animate an image")
         source_image_path = image_library.find_path(request.source_image_id) if request.source_image_id else None
         if request.source_image_id and source_image_path is None:
             raise HTTPException(status_code=404, detail="The selected Creation Gallery image was not found")

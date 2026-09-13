@@ -654,6 +654,23 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
     assert any("crop=480:272" in argument for argument in ffmpeg_commands[0])
 
 
+def test_retired_video_model_is_not_listed_and_cannot_be_queued(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ESP_IMAGE_MODEL_CACHE", str(tmp_path / "models"))
+    generator = FakeGenerator()
+    generator.device = "cuda"
+    app = create_app(Settings(), generator, video_generator=FakeVideoGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        models = client.get("/video-models").json()
+        rejected = client.post("/video-generation-jobs", json={
+            "prompt": "a tiny robot", "model_id": "hunyuanvideo-1.5-480p", "steps": 30,
+        })
+    assert {model["id"] for model in models} == {
+        "ltx-2b-0.9.6-distilled", "ltx-2b-0.9.6-dev", "wan-2.1-t2v-1.3b",
+    }
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"] == "This video model is not available"
+
+
 def test_video_generation_metadata_records_the_active_display() -> None:
     generator = FakeGenerator()
     generator.device = "cuda"

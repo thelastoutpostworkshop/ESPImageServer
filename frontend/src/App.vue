@@ -18,7 +18,7 @@ const imageLibraryThumbnailSizeSettingsKey = 'esp-image-server.image-library-thu
 const sdCardItemsPerPageSettingsKey = 'esp-image-server.sd-card-items-per-page'
 const activeDisplaySettingsKey = 'esp-image-server.active-display-id'
 const mobileAccessPromptDismissedSettingsKey = 'esp-image-server.mobile-access-prompt-dismissed'
-const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b', 'hunyuanvideo-1.5-480p']
+const videoModelIds = ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev', 'wan-2.1-t2v-1.3b']
 
 function loadImageLibraryWidth() {
   const savedWidth = Number(window.localStorage.getItem(imageLibraryWidthSettingsKey))
@@ -57,7 +57,7 @@ function loadVideoGenerationSettings() {
     const modelId = videoModelIds.includes(saved.modelId) ? saved.modelId : 'ltx-2b-0.9.6-distilled'
     const validSteps = modelId === 'ltx-2b-0.9.6-dev'
       ? [10, 15, 20, 25, 30, 35, 40]
-      : modelId === 'wan-2.1-t2v-1.3b' || modelId === 'hunyuanvideo-1.5-480p'
+      : modelId === 'wan-2.1-t2v-1.3b'
         ? [20, 25, 30, 35, 40, 45, 50]
         : [4, 5, 6, 7, 8]
     return {
@@ -484,12 +484,11 @@ const videoModels = [
   { title: 'LTX-Video 2B distilled — fast', value: 'ltx-2b-0.9.6-distilled', description: 'Best for quick short animations. Uses less graphics-card memory.' },
   { title: 'LTX-Video 2B quality — detailed', value: 'ltx-2b-0.9.6-dev', description: 'Best when detail matters more than speed. Much slower and needs more graphics-card memory.' },
   { title: 'Wan 2.1 T2V 1.3B — text-to-video', value: 'wan-2.1-t2v-1.3b', description: 'A detailed text-to-video alternative. Slower and uses system memory to work with 8 GB graphics cards.' },
-  { title: 'HunyuanVideo 1.5 480p — quality', value: 'hunyuanvideo-1.5-480p', description: 'High-quality text-to-video and image animation. Slower and best on a capable NVIDIA graphics card.' }
 ]
 const selectedVideoModel = computed(() => videoModels.find(model => model.value === videoModelId.value) || videoModels[0])
 const videoStepOptions = computed(() => {
   if (videoModelId.value === 'ltx-2b-0.9.6-dev') return [10, 15, 20, 25, 30, 35, 40]
-  if (videoModelId.value === 'wan-2.1-t2v-1.3b' || videoModelId.value === 'hunyuanvideo-1.5-480p') return [20, 25, 30, 35, 40, 45, 50]
+  if (videoModelId.value === 'wan-2.1-t2v-1.3b') return [20, 25, 30, 35, 40, 45, 50]
   return [4, 5, 6, 7, 8]
 })
 const rotationOptions = [
@@ -735,7 +734,7 @@ watch([videoPrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed, 
 })
 
 watch(videoModelId, modelId => {
-  videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' || modelId === 'wan-2.1-t2v-1.3b' || modelId === 'hunyuanvideo-1.5-480p' ? 30 : 8
+  videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' || modelId === 'wan-2.1-t2v-1.3b' ? 30 : 8
   if (modelId === 'wan-2.1-t2v-1.3b') videoSourceImage.value = null
 })
 
@@ -1042,7 +1041,7 @@ async function loadModels() {
 async function loadVideoModels() {
   try {
     const response = await fetch('/video-models')
-    availableVideoModels.value = response.ok ? await response.json() : []
+    availableVideoModels.value = response.ok ? (await response.json()).filter(model => videoModelIds.includes(model.id)) : []
   } catch {
     availableVideoModels.value = []
   }
@@ -1516,17 +1515,21 @@ async function useSavedVideoSettings(metadata, setting) {
   if (setting === 'frames' || setting === 'fps' || setting === 'all') videoDurationPresetSeconds.value = null
   if (setting === 'frames' || setting === 'all') videoFrames.value = metadata.frames || videoFrames.value
   if (setting === 'fps' || setting === 'all') videoFps.value = metadata.fps || videoFps.value
+  let unavailableModel = false
   if (setting === 'model' || setting === 'all') {
     if (metadata.model?.id) {
-      videoModelId.value = metadata.model.id
+      unavailableModel = !videoModelIds.includes(metadata.model.id)
+      videoModelId.value = unavailableModel ? videoModelIds[0] : metadata.model.id
       await nextTick()
     }
   }
-  if (setting === 'steps' || setting === 'all') videoSteps.value = metadata.steps || videoSteps.value
+  if ((setting === 'steps' || setting === 'all') && videoStepOptions.value.includes(metadata.steps)) videoSteps.value = metadata.steps
   if (setting === 'seed' || setting === 'all') videoSeed.value = metadata.seed ?? createRandomSeed()
   if (setting === 'all') videoSourceImage.value = savedImages.value.find(image => image.id === metadata.source_image_id) || null
   page.value = 'video'
-  videoStage.value = setting === 'all' ? 'Saved video settings restored.' : `Saved video ${setting} restored.`
+  videoStage.value = unavailableModel
+    ? 'This video used a model that is no longer available. Using LTX-Video 2B distilled.'
+    : setting === 'all' ? 'Saved video settings restored.' : `Saved video ${setting} restored.`
   if (!metadataPanePinned.value) metadataPane.value = false
 }
 
@@ -3693,9 +3696,6 @@ onUnmounted(() => {
               <v-alert v-if="videoModelId === 'wan-2.1-t2v-1.3b'" type="info" variant="tonal" density="compact" class="mb-4">
                 Wan 2.1 uses text only. It generates at a larger 480p-class working size, then is resized for your display. The first download can take several minutes.
               </v-alert>
-              <v-alert v-else-if="videoModelId === 'hunyuanvideo-1.5-480p'" type="info" variant="tonal" density="compact" class="mb-4">
-                HunyuanVideo 1.5 can create a video from text or animate a selected Creation Gallery image. It uses a 480p-class working size, then is resized for your display. Its first download can take several minutes.
-              </v-alert>
               <v-alert v-if="videoSourceImage" type="success" variant="tonal" density="compact" class="mb-4">
                 <div class="d-flex align-center">
                       <v-avatar rounded size="72" class="mr-4"><v-img :src="`/saved-images/${encodeURIComponent(videoSourceImage.id)}/thumbnail`" /></v-avatar>
@@ -3750,7 +3750,7 @@ onUnmounted(() => {
                   </v-btn>
                   <v-text-field v-if="showAdvancedVideoFrames" v-model.number="videoFrames" label="Frames" type="number" min="9" max="249" step="8" variant="outlined" density="comfortable" hint="Valid values run from 9 to 249 in steps of 8." persistent-hint class="mt-2" />
                 </v-col>
-                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'hunyuanvideo-1.5-480p' ? '30 is recommended for HunyuanVideo 1.5.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
+                <v-col cols="12" sm="6"><v-select v-model="videoSteps" label="Generation steps" variant="outlined" density="comfortable" :hint="videoModelId === 'wan-2.1-t2v-1.3b' ? '30 is a good starting point for Wan 2.1.' : videoModelId === 'ltx-2b-0.9.6-dev' ? '30 is recommended for the quality model.' : '8 is recommended for the distilled model.'" persistent-hint :items="videoStepOptions" /></v-col>
                 <v-col cols="12" sm="6">
                   <v-text-field v-model="videoSeed" label="Seed" type="number" min="0" max="4294967295" variant="outlined" density="comfortable" append-inner-icon="mdi-dice-5" @click:append-inner="videoSeed = createRandomSeed()" />
                   <v-switch v-model="randomizeVideoSeed" color="primary" density="compact" hide-details label="Use a new random seed for every video" class="mt-2" />

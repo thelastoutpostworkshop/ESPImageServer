@@ -28,10 +28,7 @@ VIDEO_MODELS = {
         "name": "Wan 2.1 T2V 1.3B", "description": "Detailed text-to-video alternative. Slower, with CPU memory offload for 8 GB graphics cards.",
         "family": "wan", "repository": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30, "guidance_scale": 6.0,
     },
-    "hunyuanvideo-1.5-480p": {
-        "name": "HunyuanVideo 1.5 480p", "description": "High-quality text and image animation model for capable NVIDIA graphics cards.",
-        "family": "hunyuan", "repository": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v", "image_repository": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30,
-    },
+
 }
 
 
@@ -47,8 +44,6 @@ def video_model_is_cached(model_id: str) -> bool:
         checkpoint = model["checkpoint"]
         return any((cache_dir / "models--Lightricks--LTX-Video").glob(f"snapshots/**/{checkpoint}"))
     repositories = [model["repository"]]
-    if model["family"] == "hunyuan":
-        repositories.append(model["image_repository"])
     return any(
         (cache_dir / ("models--" + repository.replace("/", "--")) / "snapshots").is_dir()
         for repository in repositories
@@ -64,11 +59,6 @@ def remove_cached_video_model(model_id: str) -> bool:
             cache_dir / "models--Lightricks--LTX-Video",
             cache_dir / "ltx-video-0.9.5-config",
             cache_dir / "ltx-video-text-encoder",
-        ]
-    elif model["family"] == "hunyuan":
-        paths = [
-            cache_dir / ("models--" + model["repository"].replace("/", "--")),
-            cache_dir / ("models--" + model["image_repository"].replace("/", "--")),
         ]
     else:
         paths = [cache_dir / ("models--" + model["repository"].replace("/", "--"))]
@@ -109,11 +99,6 @@ def working_wan_video_size(width: int, height: int) -> tuple[int, int]:
     working_width = max(256, round(width * scale / 16) * 16)
     working_height = max(256, round(height * scale / 16) * 16)
     return working_width, working_height
-
-
-def working_hunyuan_video_size(width: int, height: int) -> tuple[int, int]:
-    """Use HunyuanVideo's 480p-class canvas while preserving the display aspect ratio."""
-    return working_wan_video_size(width, height)
 
 
 def frame_to_rgb_image(frame: Image.Image | object) -> Image.Image:
@@ -174,13 +159,11 @@ class LTXVideoGenerator:
 
     def _load(
         self, model_id: str, progress: Callable[[int, int, str], None] | None = None,
-        image_to_video: bool = False,
     ) -> None:
         if model_id not in VIDEO_MODELS:
             raise ValueError("Unsupported video model")
         model = VIDEO_MODELS[model_id]
-        loaded_model_id = f"{model_id}:i2v" if model["family"] == "hunyuan" and image_to_video else model_id
-        if self._pipeline is not None and self._loaded_model_id == loaded_model_id:
+        if self._pipeline is not None and self._loaded_model_id == model_id:
             return
         if self._pipeline is not None:
             self.unload()
@@ -192,28 +175,6 @@ class LTXVideoGenerator:
             raise RuntimeError("Video generation requires a compatible NVIDIA GPU. Video generation is not available in CPU mode.")
         cache_dir = video_model_cache_dir()
         cache_dir.mkdir(parents=True, exist_ok=True)
-        if model["family"] == "hunyuan":
-            try:
-                from diffusers import HunyuanVideo15ImageToVideoPipeline, HunyuanVideo15Pipeline
-                from huggingface_hub import snapshot_download
-            except ImportError as exc:
-                raise RuntimeError("Your installed Diffusers version does not support HunyuanVideo 1.5. Reinstall ESPImageServer.") from exc
-            repository = model["image_repository"] if image_to_video else model["repository"]
-            if progress is not None:
-                progress(0, 0, "Checking or downloading HunyuanVideo 1.5 (first download may take several minutes)")
-            model_path = snapshot_download(
-                repository, cache_dir=cache_dir,
-                tqdm_class=huggingface_progress("HunyuanVideo 1.5", progress) if progress else None,
-            )
-            pipeline_class = HunyuanVideo15ImageToVideoPipeline if image_to_video else HunyuanVideo15Pipeline
-            if progress is not None:
-                progress(0, 0, "Loading HunyuanVideo 1.5 with graphics-card memory offload")
-            pipeline = pipeline_class.from_pretrained(model_path, torch_dtype=torch.float16)
-            pipeline.enable_model_cpu_offload()
-            pipeline.vae.enable_tiling()
-            self._pipeline = pipeline
-            self._loaded_model_id = loaded_model_id
-            return
         if model["family"] == "wan":
             try:
                 from diffusers import AutoencoderKLWan, WanPipeline
@@ -244,7 +205,7 @@ class LTXVideoGenerator:
             pipeline.vae.enable_tiling()
             pipeline.vae.enable_slicing()
             self._pipeline = pipeline
-            self._loaded_model_id = loaded_model_id
+            self._loaded_model_id = model_id
             return
         try:
             from diffusers import LTXPipeline
@@ -311,7 +272,7 @@ class LTXVideoGenerator:
         # This keeps memory use manageable on supported NVIDIA GPUs.
         pipeline.vae.enable_tiling()
         self._pipeline = pipeline
-        self._loaded_model_id = loaded_model_id
+        self._loaded_model_id = model_id
 
     def generate(
         self, prompt: str, width: int, height: int, num_frames: int, fps: int, steps: int,
@@ -323,7 +284,7 @@ class LTXVideoGenerator:
             model = VIDEO_MODELS.get(model_id)
             if model is None:
                 raise ValueError("Unsupported video model")
-            self._load(model_id, progress, image_to_video=source_image_path is not None)
+            self._load(model_id, progress)
             import torch
             from diffusers.utils import export_to_video
             if cancelled():
@@ -339,7 +300,7 @@ class LTXVideoGenerator:
             generation_pipeline = self._pipeline
             generation_options: dict[str, object] = {}
             if model["family"] == "wan" and source_image_path is not None:
-                raise ValueError("Wan 2.1 T2V uses text only; choose an LTX or HunyuanVideo model to animate a Creation Gallery image")
+                raise ValueError("Wan 2.1 T2V uses text only; choose an LTX model to animate a Creation Gallery image")
             if source_image_path is not None:
                 progress(0, 0, "Preparing your Creation Gallery image for animation")
                 with Image.open(source_image_path) as source_image:
@@ -355,8 +316,6 @@ class LTXVideoGenerator:
                         transformer=self._pipeline.transformer,
                     )
                     generation_options = {"image": source_frame, "frame_rate": fps}
-                elif model["family"] == "hunyuan":
-                    generation_options = {"image": source_frame}
 
             if rotation not in {0, 90, 180, 270}:
                 raise ValueError("Video rotation must be 0, 90, 180, or 270 degrees")
@@ -370,32 +329,18 @@ class LTXVideoGenerator:
                 working_wan_video_size(artwork_width, artwork_height)
                 if model["family"] == "wan" else working_video_size(artwork_width, artwork_height)
             )
-            if model["family"] == "hunyuan":
-                generation_width, generation_height = working_hunyuan_video_size(artwork_width, artwork_height)
-                progress(0, 0, "Generating HunyuanVideo frames (progress is reported when encoding finishes)")
-                frames = generation_pipeline(
-                    prompt=prompt,
-                    negative_prompt="worst quality, blurry, jittery, distorted, flickering",
-                    width=generation_width,
-                    height=generation_height,
-                    num_frames=num_frames,
-                    num_inference_steps=steps,
-                    generator=generator,
-                    **generation_options,
-                ).frames[0]
-            else:
-                frames = generation_pipeline(
-                    prompt=prompt,
-                    negative_prompt="worst quality, blurry, jittery, distorted, flickering",
-                    width=generation_width,
-                    height=generation_height,
-                    num_frames=num_frames,
-                    num_inference_steps=steps,
-                    guidance_scale=model["guidance_scale"],
-                    generator=generator,
-                    callback_on_step_end=on_step_end,
-                    **generation_options,
-                ).frames[0]
+            frames = generation_pipeline(
+                prompt=prompt,
+                negative_prompt="worst quality, blurry, jittery, distorted, flickering",
+                width=generation_width,
+                height=generation_height,
+                num_frames=num_frames,
+                num_inference_steps=steps,
+                guidance_scale=model["guidance_scale"],
+                generator=generator,
+                callback_on_step_end=on_step_end,
+                **generation_options,
+            ).frames[0]
             if cancelled():
                 raise GenerationCancelled()
             progress(steps, steps, "Decoding generated video frames")
