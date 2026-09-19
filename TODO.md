@@ -15,93 +15,80 @@ been removed from this list. Their hardware acceptance checks remain below;
 automated checks do not establish recovery on a real board/card.
 Settings-preserving updates remain under Updates and distribution.
 
-Firmware 1.1.8 corrects the reported connected/offline experience behavior:
-startup waits for server contact, automatic fallback needs 30 seconds of failed
-contact, and command polling continues during SD playback. Successful contact
-returns to server control; media commands also stop explicit previews. Policy
-regression assertions and main-sketch syntax checks pass; the reported hardware
-failure must be retested with freshly compiled firmware.
+Current firmware waits for server contact at startup and activates a saved
+experience after a 30-second grace period following failed contact. Waveshare
+ST7701 320x820 logs confirm offline slideshow activation at about 30 seconds
+and return to server control on reconnection. Video playback during an outage,
+interrupted operations, and equivalent behavior on other boards still need
+hardware validation below.
 
-### Video playback performance
+### Video playback performance - remaining work
 
-Source-review findings in the separate ESPImageDisplay repository; hardware
-measurements are still needed. Implement in the order below, starting with
-measurement, background networking, and frame timing.
+The completed instrumentation, background HTTP/mDNS worker, buffered SD reads,
+inventory-report cache, independent offline timer, and frame-scheduling fix have
+been removed from the implementation checklist. On Waveshare ST7701 320x820,
+the same 15 FPS clip improved from roughly 3.2–3.4 FPS to 7.8 FPS, then 13.1 FPS
+in firmware 1.1.11. The latest capture contains one full five-second playback
+window: about 11 ms read/parser time and 62.4 ms decode/draw time per frame.
+This establishes improvement, not sustained 15 FPS or video performance during
+network failures.
 
-- [ ] **Measure playback bottlenecks:** Record actual FPS, late frames, SD read
-  time, JPEG decode/draw time, and the longest gap between playback ticks. Print
-  summaries every few seconds rather than per-frame logs. Compare healthy LAN,
-  unavailable server, server recovery, and large SD libraries on each board.
-  Firmware instrumentation is implemented: five-second `[Playback]` summaries
-  report active-time FPS, interval overruns, combined SD read/parser time,
-  decode/draw time, and maximum tick gap. Portable metric assertions cover
-  pauses and rollover. Hardware comparisons remain pending; follow
-  `ESPImageDisplay/tests/README.md`. Read/parser time is combined deliberately
-  to avoid per-byte measurement overhead.
-- [ ] **Move blocking server requests off the playback loop:** Run command
-  polling, registration, acknowledgements, SD report transmission, and server
-  discovery in a background worker with bounded queues. HTTP calls currently
-  have one-second connection/read timeouts and mDNS can wait 250 ms on the same
-  loop that advances playback. Preserve responsive stop/replacement commands,
-  the fixed five-second connection retry interval, and offline/server handoff.
-  Source implementation now uses one bounded HTTP/mDNS worker with owned
-  request snapshots and non-blocking result polling. Main-loop playback and
-  SD ownership are preserved. Offline eligibility is checked independently of
-  network retry completion. Hardware responsiveness/recovery checks remain open.
-- [ ] **Validate corrected frame timing:** `MjpegPlayer` now schedules draw
-  starts so reading/drawing count toward each interval. Fractional milliseconds
-  are carried; jitter up to 2 ms preserves cadence, while larger delays rebase
-  the clock without catch-up bursts or dropping media frames. Portable
-  assertions cover 1–24 FPS, slow drawing, long stalls, clip resets, and timer
-  rollover. Hardware verification remains: compare against the measured 7.8 FPS
-  baseline using the same 15 FPS clip, including offline Video Loop, server
-  recovery, and behavior when rendering cannot sustain the requested rate.
-- [ ] **Buffer SD reads:** Replace per-byte `Stream::read()` calls with bounded
-  block reads feeding the existing incremental parser. Consider preparing the
-  next compressed frame ahead of time on boards with enough memory. Preserve
-  malformed-file limits, cancellation, and card-removal handling; size buffers
-  per target, including boards without PSRAM.
-  Source implementation now uses a 2 KiB read-ahead buffer, with portable
-  assertions for frame/block boundaries, short reads, EOF, and replacement.
-  Hardware comparison is pending; next-frame prefetch is not implemented.
-- [ ] **Cache media inventory and ordering:** Avoid rescanning the directory
-  and opening ordering metadata between every video, and avoid rebuilding the
-  full inventory and verification-receipt report during playback. Invalidate
-  or update caches after saves, deletions, card changes, and explicit refreshes.
-  Preserve newest/oldest/random selection and bound cache memory usage.
-  Inventory reporting is now cached and rebuilt incrementally on the main
-  loop after mutations/card changes/refresh. Playlist selection still scans
-  ordering metadata; large-library memory and timing checks remain pending.
-- [ ] **Reuse playback buffers:** Keep a reusable compressed-frame buffer
-  across playlist entries instead of allocating/freeing it for each video.
-  Define when memory is released and measure transition pauses and heap
-  fragmentation during long playback sessions.
-- [ ] **Coordinate screen updates with playback:** Give one owner control of
-  drawing so routine connection/status updates do not overwrite active video.
-  Keep explicit user commands, playback errors, and necessary setup screens
-  visible through deliberate state transitions.
+- [ ] **Optimize JPEG decoding and display drawing:** This is now the largest
+  measured cost. Separate decode work from display-write time to identify where
+  the roughly 62 ms is spent, then optimize the relevant board implementation.
+  Preserve image dimensions, colors, and visual quality. Compare sustained FPS
+  with the same clip; 15 FPS requires an entire frame budget of about 66.7 ms.
+- [ ] **Validate sustained playback during network failures:** Save **Video
+  Loop**, rather than Slideshow, and capture longer runs with the server online,
+  unavailable, and recovering. Compare full `[Playback]` windows and correlate
+  them with `[Network]` timings. Confirm failed requests do not produce long
+  playback gaps, offline transitions remain correct, and recovery does not
+  cause catch-up bursts. The latest outage logs exercised a slideshow, not
+  video. Follow `ESPImageDisplay/tests/README.md` and repeat on all four boards.
+- [ ] **Cache playlist ordering:** Inventory reports are already cached, but
+  selecting the next video still scans the directory and ordering metadata.
+  Cache playlist selection with bounded memory, updating it after saves,
+  deletions, card changes, and explicit refreshes. Preserve newest-first,
+  oldest-first, and random order without immediate repeats when alternatives
+  exist. Measure pauses between clips with a large library.
+- [ ] **Validate the inventory cache under load:** Refresh a large SD library
+  during playback; save/delete files and remove or replace the card. Check
+  report freshness, memory use, out-of-memory handling, and command response
+  time. Normal periodic registration should not trigger another directory scan.
+- [ ] **Reuse playback buffers:** Retain a compressed-frame buffer across
+  playlist entries instead of allocating/freeing it for every video. Define
+  when memory is released and measure transition pauses and heap fragmentation
+  over long runs, especially on boards without PSRAM.
+- [ ] **Evaluate next-frame prefetch where memory allows:** The 2 KiB input
+  buffer is implemented; preparing another complete compressed frame ahead of
+  time is not. Assess this after profiling rendering, and retain coordinated
+  SD/display access on shared-SPI boards. Do not assume that another buffer
+  alone will overlap synchronous decoding/drawing.
+- [ ] **Finish screen-update coordination:** Routine connection errors no
+  longer overwrite an active video, but audit the remaining status/setup/error
+  paths. Ensure explicit commands and necessary errors take precedence without
+  incidental background updates replacing playback content.
 
-Keep SD access and drawing coordinated rather than moving every operation into
-independent tasks; some targets share an SPI bus. Validate smooth playback,
-command responsiveness, USB setup, SD removal, and server recovery together.
-The user builds and flashes firmware manually.
+Keep SD access and drawing coordinated; some targets share an SPI bus. The
+command interruption, USB setup, and card-removal checks below also apply during
+video playback. The user builds and flashes firmware manually.
 
 ### Hardware validation
 
-- [ ] **Connected experience regression (1.1.8):** Boot with an experience
+- [ ] **Connected experience and save interruption:** Boot with an experience
   saved and ESPImageServer running. Confirm the display waits for commands and
   accepts image saves. Stop the server for over 30 seconds to start fallback;
   restart it and save an image during playback. Confirm playback stops, the app
   reports server-controlled mode and the save completes. Repeat saving during an
   explicitly requested preview; that preview must stop and stay stopped.
-- [ ] **P2 firmware 1.1.8 acceptance:** Manually compile and flash using
+- [ ] **Current firmware board acceptance:** Manually compile and flash using
   the Arduino Maker Workshop extension after setting `FIRMWARE_TARGET` in
   `FirmwareTarget.h` and choosing the matching compile profile. Confirm the physical display,
   USB identity, dimensions, version and package target agree on all four boards.
   Restart the server/router while showing an unchanged live image, then repeat
   with a manually selected SD image/video; restore the selection rather than
   leaving a connection message. A video may restart from its beginning.
-- [ ] **Offline settings storage:** On 1.1.7, verify legacy settings migration,
+- [ ] **Offline settings storage:** Verify legacy settings migration,
   save/reboot, preview without saving, failed storage and power interruption
   during replacement. Failure must not receive a saved confirmation or mix
   settings. Confirm Wi-Fi and SD files survive. Software assertions cover the
@@ -149,7 +136,7 @@ The user builds and flashes firmware manually.
 - [ ] **SD-card delays and recovery:** Measure card-refresh, image download,
   card-write, verification/commit, thumbnail, acknowledgement, and file-list
   times using the new serial timings to explain the delayed Waveshare save.
-  Manually compile/flash 1.1.6 on all four targets. Test power cuts before/during
+  Manually compile/flash the current firmware on all four targets. Test power cuts before/during
   rename, removal/reinsertion during download/verification, no/full card, retry
   over a legacy partial file, and delayed reports. A partial file must never
   receive a saved confirmation. Verify the main acknowledgement precedes
