@@ -213,13 +213,13 @@ class DisplaySDCardReport(BaseModel):
     files: list[dict[str, object]] = Field(default_factory=list)
     offline_experience: str = Field(default="slideshow", pattern="^(slideshow|video_loop)$")
     slideshow_interval_ms: int = Field(default=15_000, ge=500, le=3_600_000)
-    slideshow_order: str = Field(default="newest_first", pattern="^(newest_first|oldest_first)$")
+    slideshow_order: str = Field(default="newest_first", pattern="^(newest_first|oldest_first|random)$")
 
 
 class DisplayExperienceRequest(BaseModel):
     offline_experience: str = Field(default="slideshow", pattern="^(slideshow|video_loop)$")
     slideshow_interval_ms: int = Field(ge=500, le=3_600_000)
-    slideshow_order: str = Field(pattern="^(newest_first|oldest_first)$")
+    slideshow_order: str = Field(pattern="^(newest_first|oldest_first|random)$")
 
 
 class VideoGenerateRequest(BaseModel):

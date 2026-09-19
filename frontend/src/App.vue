@@ -4023,7 +4023,7 @@ onUnmounted(() => {
               The display will not start an offline slideshow or video loop until you save an experience. Choose the settings below, then click Save. Previewing does not save them.
             </v-alert>
             <v-alert v-else-if="!displayExperienceLoading && reportedDisplayExperience?.offline_experience_saved === true" type="success" variant="tonal" class="mb-4" :title="activeDisplayOnline ? 'Display Experience saved on this display' : 'Display Experience saved — last reported by this display'">
-              Saved: {{ reportedDisplayExperience.offline_experience === 'video_loop' ? 'SD Card Video Loop' : `SD Card Slideshow · every ${reportedDisplayExperience.slideshow_interval_ms / 1000} seconds` }} · {{ reportedDisplayExperience.slideshow_order === 'oldest_first' ? 'Oldest first' : 'Newest first' }}.
+              Saved: {{ reportedDisplayExperience.offline_experience === 'video_loop' ? 'SD Card Video Loop' : `SD Card Slideshow · every ${reportedDisplayExperience.slideshow_interval_ms / 1000} seconds` }} · {{ reportedDisplayExperience.slideshow_order === 'random' ? 'Random' : reportedDisplayExperience.slideshow_order === 'oldest_first' ? 'Oldest first' : 'Newest first' }}.
             </v-alert>
             <v-alert v-else-if="!displayExperienceLoading" type="warning" variant="tonal" class="mb-4" title="Saved experience not confirmed">
               The app has not received a saved-status report from this display. Save an experience and wait for confirmation. Older firmware needs an update to report this status after reconnecting.
@@ -4059,7 +4059,7 @@ onUnmounted(() => {
               <v-select
                 v-model="displayExperience.slideshow_order"
                 label="Order"
-                :items="[{ title: 'Newest first', value: 'newest_first' }, { title: 'Oldest first', value: 'oldest_first' }]"
+                :items="[{ title: 'Newest first', value: 'newest_first' }, { title: 'Oldest first', value: 'oldest_first' }, { title: 'Random', value: 'random' }]"
                 :disabled="!activeDisplayOnline"
                 variant="outlined"
                 class="mb-3"

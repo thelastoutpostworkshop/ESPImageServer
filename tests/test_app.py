@@ -405,6 +405,27 @@ def test_display_experience_saved_status_requires_a_firmware_report() -> None:
         assert client.get("/display-experience").json()["offline_experience_saved"] is None
 
 
+def test_random_display_experience_order_for_images_and_videos() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        for experience in ("slideshow", "video_loop"):
+            settings = {"offline_experience": experience, "slideshow_interval_ms": 15000, "slideshow_order": "random"}
+            for method, endpoint in ((client.put, "/display-experience"), (client.post, "/display-experience/preview")):
+                response = method(endpoint, json=settings)
+                assert response.status_code == 202
+                command = client.get("/display-commands/next").json()
+                assert command["slideshow_order"] == "random"
+                assert command["offline_experience"] == experience
+            assert client.post("/display-sd-card/report", json={
+                **settings, "available": True, "mode": "server_controlled",
+                "total_bytes": 1024, "used_bytes": 0, "offline_experience_saved": True,
+            }).status_code == 204
+            reported = client.get("/display-experience").json()
+            assert reported["slideshow_order"] == "random"
+            assert reported["offline_experience_saved"] is True
+        assert client.put("/display-experience", json={**settings, "slideshow_order": "invalid"}).status_code == 422
+
+
 def test_sd_card_refresh_reports_the_inventory_version_it_requires() -> None:
     app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
