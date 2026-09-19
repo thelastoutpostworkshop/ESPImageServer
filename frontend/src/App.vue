@@ -178,6 +178,13 @@ const displayExperienceSaving = ref(false)
 const displayExperiencePreviewing = ref(false)
 const displayExperienceError = ref('')
 const displayExperienceStatus = ref('')
+const reportedDisplayExperience = ref(null)
+const displayExperienceHasChanges = computed(() => {
+  const saved = reportedDisplayExperience.value
+  return saved && (saved.offline_experience !== displayExperience.value.offline_experience
+    || saved.slideshow_interval_ms !== Math.round(Number(displayExperienceIntervalSeconds.value) * 1000)
+    || saved.slideshow_order !== displayExperience.value.slideshow_order)
+})
 const displayingSdCardFile = ref('')
 const sdCardSnackbar = ref(false)
 const sdCardSnackbarMessage = ref('')
@@ -1759,6 +1766,8 @@ function openSDCardPage() {
 }
 
 async function loadDisplayExperience() {
+  reportedDisplayExperience.value = null
+  displayExperienceStatus.value = ''
   if (!display.value?.connected) {
     displayExperience.value = { current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_ms: 15000, slideshow_order: 'newest_first' }
     return
@@ -1769,6 +1778,7 @@ async function loadDisplayExperience() {
     const response = await fetch(selectedDisplayEndpoint('/display-experience'))
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
     displayExperience.value = await response.json()
+    reportedDisplayExperience.value = { ...displayExperience.value }
     displayExperienceIntervalSeconds.value = Number(displayExperience.value.slideshow_interval_ms) / 1000
   } catch (requestError) {
     displayExperienceError.value = `Could not load display experience: ${requestError.message}`
@@ -1798,14 +1808,15 @@ async function saveDisplayExperience() {
   displayExperienceSaving.value = true
   displayExperienceError.value = ''
   displayExperienceStatus.value = ''
+  const settings = {
+    offline_experience: displayExperience.value.offline_experience,
+    slideshow_interval_ms: Math.round(Number(displayExperienceIntervalSeconds.value) * 1000),
+    slideshow_order: displayExperience.value.slideshow_order
+  }
   try {
     const response = await fetch(selectedDisplayEndpoint('/display-experience'), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        offline_experience: displayExperience.value.offline_experience,
-        slideshow_interval_ms: Math.round(Number(displayExperienceIntervalSeconds.value) * 1000),
-        slideshow_order: displayExperience.value.slideshow_order
-      })
+      body: JSON.stringify(settings)
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -1820,7 +1831,8 @@ async function saveDisplayExperience() {
       const result = await commandResponse.json()
       if (result.status === 'complete') {
         displayExperienceStatus.value = 'Display experience saved. The display will use it when ESPImageServer is unavailable.'
-        await loadDisplayExperience()
+        // The acknowledgement confirms persistence before the next SD report.
+        reportedDisplayExperience.value = { ...settings, offline_experience_saved: true }
         return
       }
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not save this experience')
@@ -4004,10 +4016,22 @@ onUnmounted(() => {
                 {{ activeDisplayOnline ? 'Display online' : 'Display offline · last seen earlier' }}
               </v-chip>
               <v-chip :color="displayExperience.current_mode.startsWith('offline_') ? 'warning' : 'info'" variant="tonal" :prepend-icon="displayExperience.current_mode.startsWith('offline_') ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
-                {{ activeDisplayOnline ? 'Experience: ' : 'Last reported experience: ' }}{{ displayExperience.current_mode === 'offline_video_loop' ? 'Offline video loop' : displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow' : 'Server controlled' }}
+                {{ activeDisplayOnline ? 'Current mode: ' : 'Last reported mode: ' }}{{ displayExperience.current_mode === 'offline_video_loop' ? 'Offline video loop' : displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow' : 'Server controlled' }}
               </v-chip>
             </div>
-            <p class="text-body-1 mb-5">When the display cannot reach ESPImageServer for a short time, it will use this saved experience. It returns to normal server control automatically when the connection is restored.</p>
+            <v-alert v-if="!displayExperienceLoading && reportedDisplayExperience?.offline_experience_saved === false" type="warning" variant="tonal" class="mb-4" title="No Display Experience saved on this display">
+              The display will not start an offline slideshow or video loop until you save an experience. Choose the settings below, then click Save. Previewing does not save them.
+            </v-alert>
+            <v-alert v-else-if="!displayExperienceLoading && reportedDisplayExperience?.offline_experience_saved === true" type="success" variant="tonal" class="mb-4" :title="activeDisplayOnline ? 'Display Experience saved on this display' : 'Display Experience saved — last reported by this display'">
+              Saved: {{ reportedDisplayExperience.offline_experience === 'video_loop' ? 'SD Card Video Loop' : `SD Card Slideshow · every ${reportedDisplayExperience.slideshow_interval_ms / 1000} seconds` }} · {{ reportedDisplayExperience.slideshow_order === 'oldest_first' ? 'Oldest first' : 'Newest first' }}.
+            </v-alert>
+            <v-alert v-else-if="!displayExperienceLoading" type="warning" variant="tonal" class="mb-4" title="Saved experience not confirmed">
+              The app has not received a saved-status report from this display. Save an experience and wait for confirmation. Older firmware needs an update to report this status after reconnecting.
+            </v-alert>
+            <v-alert v-if="displayExperienceHasChanges" type="warning" variant="tonal" density="compact" class="mb-4">
+              You have unsaved changes. Click Save to apply these settings to the display.
+            </v-alert>
+            <p class="text-body-1 mb-5">After you save, the display uses its SD card experience when it cannot reach ESPImageServer for about 30 seconds. Wi-Fi must be configured and the SD card must contain matching images or videos. It returns to server control when the connection is restored. Previewing does not save your settings.</p>
             <v-form @submit.prevent="saveDisplayExperience">
               <v-select
                 v-model="displayExperience.offline_experience"

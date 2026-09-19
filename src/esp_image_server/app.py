@@ -205,6 +205,7 @@ class DisplayCommandProgress(BaseModel):
 
 class DisplaySDCardReport(BaseModel):
     available: bool
+    offline_experience_saved: bool | None = None
     verified_saves: bool = False
     mode: str = Field(pattern="^(server_controlled|offline_slideshow|offline_video_loop|preview_slideshow|preview_video_loop|live_images|sd_card)$")
     total_bytes: int = Field(ge=0)
@@ -968,6 +969,7 @@ def create_app(
             "connected": bool(report.get("available", False)),
             "current_mode": report.get("mode", "server_controlled"),
             "offline_experience": report.get("offline_experience", "slideshow"),
+            "offline_experience_saved": report.get("offline_experience_saved"),
             "slideshow_interval_ms": report.get("slideshow_interval_ms", 15_000),
             "slideshow_order": report.get("slideshow_order", "newest_first"),
         }

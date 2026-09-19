@@ -390,6 +390,21 @@ def test_display_sd_card_routes_store_reports_and_queue_commands() -> None:
     assert stop_preview_command.json()["type"] == "stop_display_experience_preview"
 
 
+def test_display_experience_saved_status_requires_a_firmware_report() -> None:
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        assert client.get("/display-experience").json()["offline_experience_saved"] is None
+        report = {"available": True, "mode": "server_controlled", "total_bytes": 1024, "used_bytes": 0}
+        for saved in (False, True, False):
+            assert client.post("/display-sd-card/report", json={
+                **report, "offline_experience_saved": saved,
+            }).status_code == 204
+            assert client.get("/display-experience").json()["offline_experience_saved"] is saved
+        # Old firmware must not be mistaken for a confirmed saved experience.
+        assert client.post("/display-sd-card/report", json=report).status_code == 204
+        assert client.get("/display-experience").json()["offline_experience_saved"] is None
+
+
 def test_sd_card_refresh_reports_the_inventory_version_it_requires() -> None:
     app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
