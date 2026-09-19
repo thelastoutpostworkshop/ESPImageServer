@@ -22,6 +22,51 @@ returns to server control; media commands also stop explicit previews. Policy
 regression assertions and main-sketch syntax checks pass; the reported hardware
 failure must be retested with freshly compiled firmware.
 
+### Video playback performance
+
+Source-review findings in the separate ESPImageDisplay repository; hardware
+measurements are still needed. Implement in the order below, starting with
+measurement, background networking, and frame timing.
+
+- [ ] **Measure playback bottlenecks:** Record actual FPS, late frames, SD read
+  time, JPEG decode/draw time, and the longest gap between playback ticks. Print
+  summaries every few seconds rather than per-frame logs. Compare healthy LAN,
+  unavailable server, server recovery, and large SD libraries on each board.
+- [ ] **Move blocking server requests off the playback loop:** Run command
+  polling, registration, acknowledgements, SD report transmission, and server
+  discovery in a background worker with bounded queues. HTTP calls currently
+  have one-second connection/read timeouts and mDNS can wait 250 ms on the same
+  loop that advances playback. Preserve responsive stop/replacement commands,
+  the fixed five-second connection retry interval, and offline/server handoff.
+- [ ] **Correct frame timing:** `MjpegPlayer` currently starts the next frame's
+  wait after decoding and drawing the previous frame, adding rendering time to
+  each frame interval. Use a fixed playback timeline, define how late frames
+  are skipped or resynchronized, and retain rollover-safe timing. Verify actual
+  FPS and behavior when rendering cannot sustain the requested rate.
+- [ ] **Buffer SD reads:** Replace per-byte `Stream::read()` calls with bounded
+  block reads feeding the existing incremental parser. Consider preparing the
+  next compressed frame ahead of time on boards with enough memory. Preserve
+  malformed-file limits, cancellation, and card-removal handling; size buffers
+  per target, including boards without PSRAM.
+- [ ] **Cache media inventory and ordering:** Avoid rescanning the directory
+  and opening ordering metadata between every video, and avoid rebuilding the
+  full inventory and verification-receipt report during playback. Invalidate
+  or update caches after saves, deletions, card changes, and explicit refreshes.
+  Preserve newest/oldest/random selection and bound cache memory usage.
+- [ ] **Reuse playback buffers:** Keep a reusable compressed-frame buffer
+  across playlist entries instead of allocating/freeing it for each video.
+  Define when memory is released and measure transition pauses and heap
+  fragmentation during long playback sessions.
+- [ ] **Coordinate screen updates with playback:** Give one owner control of
+  drawing so routine connection/status updates do not overwrite active video.
+  Keep explicit user commands, playback errors, and necessary setup screens
+  visible through deliberate state transitions.
+
+Keep SD access and drawing coordinated rather than moving every operation into
+independent tasks; some targets share an SPI bus. Validate smooth playback,
+command responsiveness, USB setup, SD removal, and server recovery together.
+The user builds and flashes firmware manually.
+
 ### Hardware validation
 
 - [ ] **Connected experience regression (1.1.8):** Boot with an experience
