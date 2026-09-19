@@ -32,6 +32,12 @@ measurement, background networking, and frame timing.
   time, JPEG decode/draw time, and the longest gap between playback ticks. Print
   summaries every few seconds rather than per-frame logs. Compare healthy LAN,
   unavailable server, server recovery, and large SD libraries on each board.
+  Firmware instrumentation is implemented: five-second `[Playback]` summaries
+  report active-time FPS, interval overruns, combined SD read/parser time,
+  decode/draw time, and maximum tick gap. Portable metric assertions cover
+  pauses and rollover. Hardware comparisons remain pending; follow
+  `ESPImageDisplay/tests/README.md`. Read/parser time is combined deliberately
+  to avoid per-byte measurement overhead.
 - [ ] **Move blocking server requests off the playback loop:** Run command
   polling, registration, acknowledgements, SD report transmission, and server
   discovery in a background worker with bounded queues. HTTP calls currently
