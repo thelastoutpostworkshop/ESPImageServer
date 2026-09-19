@@ -98,31 +98,8 @@ class DisplayCommandStore:
     def find_sd_card_image(
         self, image_hash: str, *, display_id: str = LEGACY_DISPLAY_ID,
     ) -> str | None:
-        """Find a stored image by its stable content hash, including legacy names."""
-        with self._lock:
-            report = self._sd_card_reports.get(display_id, {})
-            if not report.get("available", False):
-                return None
-            files = report.get("files", [])
-            if not isinstance(files, list):
-                return None
-            content_key = f"v1-{image_hash}"
-            for item in files:
-                if not isinstance(item, dict):
-                    continue
-                if report.get("verified_saves") and item.get("verified") is not True:
-                    continue
-                name = str(item.get("name", ""))
-                if (
-                    item.get("type", "image") == "image"
-                    and (
-                        str(item.get("content_key", "")) == content_key
-                        or name.startswith(f"esp-image-{image_hash}")
-                        or name.endswith(f"-{image_hash}.jpg")
-                    )
-                ):
-                    return name
-            return None
+        """Find a verified image using its current content key."""
+        return self.find_sd_card_content(f"v1-{image_hash}", "image", display_id=display_id)
 
     def find_sd_card_content(
         self, content_key: str, media_type: str, *, display_id: str = LEGACY_DISPLAY_ID,
@@ -138,34 +115,11 @@ class DisplayCommandStore:
             for item in files:
                 if not isinstance(item, dict) or item.get("type") != media_type:
                     continue
-                if report.get("verified_saves") and item.get("verified") is not True:
+                if item.get("verified") is not True:
                     continue
                 name = str(item.get("name", ""))
-                extension = "mjpeg" if media_type == "video" else "jpg"
-                if str(item.get("content_key", "")) == content_key or name.endswith(f"-{content_key}.{extension}"):
+                if str(item.get("content_key", "")) == content_key:
                     return name
-            return None
-
-    def find_sd_card_video(
-        self, content_key: str, video_id: str, fps: int, *, display_id: str = LEGACY_DISPLAY_ID,
-    ) -> str | None:
-        """Find a video by its current key or the older short-ID filename."""
-        existing_filename = self.find_sd_card_content(content_key, "video", display_id=display_id)
-        if existing_filename is not None:
-            return existing_filename
-        legacy_suffix = f"-{video_id[:8]}-fps{fps}.mjpeg"
-        with self._lock:
-            report = self._sd_card_reports.get(display_id, {})
-            files = report.get("files", [])
-            if not report.get("available", False) or not isinstance(files, list):
-                return None
-            for item in files:
-                if report.get("verified_saves") and (not isinstance(item, dict) or item.get("verified") is not True):
-                    continue
-                if isinstance(item, dict) and item.get("type") == "video":
-                    name = str(item.get("name", ""))
-                    if name.startswith("esp-video-") and name.endswith(legacy_suffix):
-                        return name
             return None
 
     def next(self, display_id: str = LEGACY_DISPLAY_ID) -> dict[str, object] | None:

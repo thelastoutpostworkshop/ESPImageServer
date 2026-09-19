@@ -805,8 +805,8 @@ def create_app(
         except (TypeError, ValueError):
             fps = 15
         content_key = f"v1-{video_id}-{width}x{height}-fps{fps}"
-        existing_filename = display_command_store.find_sd_card_video(
-            content_key, video_id, fps, display_id=display_id,
+        existing_filename = display_command_store.find_sd_card_content(
+            content_key, "video", display_id=display_id,
         )
         if existing_filename is not None:
             return {

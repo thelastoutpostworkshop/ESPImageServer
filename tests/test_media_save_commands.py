@@ -60,8 +60,8 @@ def test_invalid_progress_rejected(stage, received, total):
         DisplayCommandStore().progress('id', stage, received, total, display_id='screen')
 
 
-@pytest.mark.parametrize('verified_saves,verified,expected', [(False, None, True), (True, None, False), (True, False, False), (True, True, True)])
-def test_partial_legacy_files_are_not_reused_by_verification_capable_firmware(verified_saves, verified, expected):
+@pytest.mark.parametrize('verified_saves,verified,expected', [(False, None, False), (True, None, False), (True, False, False), (True, True, True)])
+def test_reuse_always_requires_per_file_verification(verified_saves, verified, expected):
     store = DisplayCommandStore()
     store.report_sd_card({'available': True, 'verified_saves': verified_saves, 'files': [
         {'name': 'esp-image-hash.jpg', 'type': 'image', 'content_key': 'v1-hash', 'verified': verified},
@@ -70,4 +70,20 @@ def test_partial_legacy_files_are_not_reused_by_verification_capable_firmware(ve
     assert bool(store.find_sd_card_image('hash', display_id='screen')) == expected
     assert bool(store.find_sd_card_content('v1-hash', 'image', display_id='screen')) == expected
     assert bool(store.find_sd_card_content('v2-video', 'video', display_id='screen')) == expected
-    assert bool(store.find_sd_card_video('unknown-key', 'abcdefgh1234', 8, display_id='screen')) == expected
+    assert store.find_sd_card_content('unknown-key', 'video', display_id='screen') is None
+
+
+@pytest.mark.parametrize('name,media_type,key', [
+    ('esp-image-hash.jpg', 'image', 'v1-hash'),
+    ('esp-image-20260912-131013-v1-hash.jpg', 'image', 'v1-hash'),
+    ('esp-video-abcdefgh-fps8.mjpeg', 'video', 'v1-abcdefgh-320x820-fps8'),
+    ('esp-video-20260912-131013-v1-abcdefgh-320x820-fps8.mjpeg', 'video', 'v1-abcdefgh-320x820-fps8'),
+])
+def test_filenames_without_content_keys_never_allow_reuse(name, media_type, key):
+    store = DisplayCommandStore()
+    store.report_sd_card({'available': True, 'files': [
+        {'name': name, 'type': media_type, 'verified': True},
+    ]}, display_id='screen')
+    assert store.find_sd_card_content(key, media_type, display_id='screen') is None
+    if media_type == 'image':
+        assert store.find_sd_card_image('hash', display_id='screen') is None

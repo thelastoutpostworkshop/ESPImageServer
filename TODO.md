@@ -8,7 +8,7 @@ Source review of the separate ESPImageDisplay repository. The three P1 source
 changes are implemented for firmware 1.1.6 and app 1.0.76, with transaction/parser
 assertions and app tests. The four P2 reliability improvements are implemented for
 firmware 1.1.7: content restoration after recovery, checked atomic offline
-settings with legacy migration, persistent SD save ordering, and rollover-safe
+settings, persistent SD save ordering, and rollover-safe
 scheduling. Board selection remains manual in FirmwareTarget.h with the matching
 Arduino Maker Workshop profile, as requested by the user. Completed source items have
 been removed from this list. Their hardware acceptance checks remain below;
@@ -88,16 +88,16 @@ video playback. The user builds and flashes firmware manually.
   Restart the server/router while showing an unchanged live image, then repeat
   with a manually selected SD image/video; restore the selection rather than
   leaving a connection message. A video may restart from its beginning.
-- [ ] **Offline settings storage:** Verify legacy settings migration,
+- [ ] **Offline settings storage:** Verify unsupported settings records are rejected,
   save/reboot, preview without saving, failed storage and power interruption
   during replacement. Failure must not receive a saved confirmation or mix
   settings. Confirm Wi-Fi and SD files survive. Software assertions cover the
   storage-result boundary; physical NVS interruption remains unverified.
 - [ ] **Slideshow chronology:** Save images/videos in a different order from
   their filenames; check newest-first/oldest-first and wrap before/after reboot,
-  retrying an existing save and thumbnail completion. Include legacy dated and
-  hash-only files and a damaged/missing `.order` record. Unknown legacy dates use
-  deterministic filename fallback; new saves use their persistent card sequence.
+  retrying an existing save and thumbnail completion. Include a damaged/missing
+  `.order` record. Files without valid ordering metadata use deterministic
+  filename fallback; saved files use their persistent card sequence.
 - [ ] **Long uptime and interruption:** Exercise retries, SD remount, polling,
   slideshow/video playback and stalled downloads across `millis()` rollover on
   hardware or an instrumented build. Automated assertions cover wrap, expiry at

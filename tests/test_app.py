@@ -662,6 +662,7 @@ def test_saved_video_can_be_queued_for_sd_card_storage(tmp_path, monkeypatch) ->
                     "name": command.json()["filename"],
                     "type": "video",
                     "content_key": command.json()["content_key"],
+                    "verified": True,
                 }],
             },
         )
@@ -821,6 +822,7 @@ def test_display_can_save_a_specific_creation_library_image_to_sd_card(tmp_path)
                     "name": command.json()["filename"],
                     "type": "image",
                     "content_key": command.json()["content_key"],
+                    "verified": True,
                 }],
             },
         )
