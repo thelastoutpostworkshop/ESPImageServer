@@ -44,6 +44,10 @@ measurement, background networking, and frame timing.
   have one-second connection/read timeouts and mDNS can wait 250 ms on the same
   loop that advances playback. Preserve responsive stop/replacement commands,
   the fixed five-second connection retry interval, and offline/server handoff.
+  Source implementation now uses one bounded HTTP/mDNS worker with owned
+  request snapshots and non-blocking result polling. Main-loop playback and
+  SD ownership are preserved. Offline eligibility is checked independently of
+  network retry completion. Hardware responsiveness/recovery checks remain open.
 - [ ] **Correct frame timing:** `MjpegPlayer` currently starts the next frame's
   wait after decoding and drawing the previous frame, adding rendering time to
   each frame interval. Use a fixed playback timeline, define how late frames
@@ -54,11 +58,17 @@ measurement, background networking, and frame timing.
   next compressed frame ahead of time on boards with enough memory. Preserve
   malformed-file limits, cancellation, and card-removal handling; size buffers
   per target, including boards without PSRAM.
+  Source implementation now uses a 2 KiB read-ahead buffer, with portable
+  assertions for frame/block boundaries, short reads, EOF, and replacement.
+  Hardware comparison is pending; next-frame prefetch is not implemented.
 - [ ] **Cache media inventory and ordering:** Avoid rescanning the directory
   and opening ordering metadata between every video, and avoid rebuilding the
   full inventory and verification-receipt report during playback. Invalidate
   or update caches after saves, deletions, card changes, and explicit refreshes.
   Preserve newest/oldest/random selection and bound cache memory usage.
+  Inventory reporting is now cached and rebuilt incrementally on the main
+  loop after mutations/card changes/refresh. Playlist selection still scans
+  ordering metadata; large-library memory and timing checks remain pending.
 - [ ] **Reuse playback buffers:** Keep a reusable compressed-frame buffer
   across playlist entries instead of allocating/freeing it for each video.
   Define when memory is released and measure transition pauses and heap
