@@ -48,11 +48,14 @@ measurement, background networking, and frame timing.
   request snapshots and non-blocking result polling. Main-loop playback and
   SD ownership are preserved. Offline eligibility is checked independently of
   network retry completion. Hardware responsiveness/recovery checks remain open.
-- [ ] **Correct frame timing:** `MjpegPlayer` currently starts the next frame's
-  wait after decoding and drawing the previous frame, adding rendering time to
-  each frame interval. Use a fixed playback timeline, define how late frames
-  are skipped or resynchronized, and retain rollover-safe timing. Verify actual
-  FPS and behavior when rendering cannot sustain the requested rate.
+- [ ] **Validate corrected frame timing:** `MjpegPlayer` now schedules draw
+  starts so reading/drawing count toward each interval. Fractional milliseconds
+  are carried; jitter up to 2 ms preserves cadence, while larger delays rebase
+  the clock without catch-up bursts or dropping media frames. Portable
+  assertions cover 1–24 FPS, slow drawing, long stalls, clip resets, and timer
+  rollover. Hardware verification remains: compare against the measured 7.8 FPS
+  baseline using the same 15 FPS clip, including offline Video Loop, server
+  recovery, and behavior when rendering cannot sustain the requested rate.
 - [ ] **Buffer SD reads:** Replace per-byte `Stream::read()` calls with bounded
   block reads feeding the existing incremental parser. Consider preparing the
   next compressed frame ahead of time on boards with enough memory. Preserve
