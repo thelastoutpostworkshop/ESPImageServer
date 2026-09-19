@@ -16,9 +16,9 @@ automated checks do not establish recovery on a real board/card.
 Settings-preserving updates remain under Updates and distribution.
 
 Current firmware waits for server contact at startup and activates a saved
-experience after a 30-second grace period following failed contact. Waveshare
-ST7701 320x820 logs confirm offline slideshow activation at about 30 seconds
-and return to server control on reconnection. Video playback during an outage,
+experience after a 5-second grace period once failed contact is detected. Previous
+Waveshare ST7701 320x820 logs confirmed activation with the old 30-second delay
+and return to server control on reconnection. The shorter delay, video playback during an outage,
 interrupted operations, and equivalent behavior on other boards still need
 hardware validation below.
 
@@ -77,7 +77,7 @@ video playback. The user builds and flashes firmware manually.
 
 - [ ] **Connected experience and save interruption:** Boot with an experience
   saved and ESPImageServer running. Confirm the display waits for commands and
-  accepts image saves. Stop the server for over 30 seconds to start fallback;
+  accepts image saves. Stop the server for over 5 seconds to start fallback;
   restart it and save an image during playback. Confirm playback stops, the app
   reports server-controlled mode and the save completes. Repeat saving during an
   explicitly requested preview; that preview must stop and stay stopped.
