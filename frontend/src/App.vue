@@ -2933,14 +2933,19 @@ onUnmounted(() => {
       </v-list-item>
       <v-divider />
       <v-list nav density="comfortable">
+        <v-list-subheader>Create</v-list-subheader>
         <v-list-item prepend-icon="mdi-image-plus" title="Generate image" :active="page === 'generate'" @click="openGeneratePage" />
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="navigate('video')" />
         <v-list-item prepend-icon="mdi-image-text" title="Creation Library" :active="metadataPane" @click="openMetadataPane" />
-        <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="navigate('models')" />
-        <v-list-item prepend-icon="mdi-monitor-multiple" title="Displays" :active="page === 'displays'" @click="openDisplaysPage" />
+        <v-divider class="my-2" />
+        <v-list-subheader>Displays</v-list-subheader>
         <v-list-item prepend-icon="mdi-usb-flash-drive-outline" title="Set up display" :active="page === 'firmware'" @click="navigate('firmware')" />
+        <v-list-item prepend-icon="mdi-monitor-multiple" title="Displays" :active="page === 'displays'" @click="openDisplaysPage" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
         <v-list-item prepend-icon="mdi-sd" title="SD Card" :active="page === 'sd-card'" @click="openSDCardPage" />
+        <v-divider class="my-2" />
+        <v-list-subheader>Manage</v-list-subheader>
+        <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="navigate('models')" />
         <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="navigate('settings')" />
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="navigate('about')" />
       </v-list>
