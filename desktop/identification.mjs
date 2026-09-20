@@ -1,3 +1,5 @@
+import { isSerialPortPath, serialPorts } from './serial-ports.mjs'
+export { serialPorts } from './serial-ports.mjs'
 import { randomUUID } from 'node:crypto'
 import { SerialPort } from 'serialport'
 import { StringDecoder } from 'node:string_decoder'
@@ -48,7 +50,7 @@ export function validateIdentity(message) {
 }
 
 export async function identifyPort(portName, { timeout = 5000, createPort = options => new SerialPort(options) } = {}) {
-  if (!/^COM\d+$/.test(portName)) throw new Error('Select a valid COM port.')
+  if (!isSerialPortPath(portName)) throw new Error('Select a valid USB serial port.')
   const port = createPort({ path: portName, baudRate: 115200, autoOpen: false, lock: true, rtscts: false })
   const id = randomUUID()
   let timer, retry, settled = false, opening = true, finishOpen
@@ -79,13 +81,6 @@ export async function identifyPort(portName, { timeout = 5000, createPort = opti
       send(); if (!settled) retry = setInterval(send, 600)
     })
   })
-}
-
-export async function serialPorts() {
-  return (await SerialPort.list()).filter(p => /^COM\d+$/.test(p.path)).map(p => ({
-    port: p.path, label: `${p.path}${p.manufacturer ? ` — ${p.manufacturer}` : ''}`,
-    serialNumber: p.serialNumber || '', vendorId: p.vendorId || '', productId: p.productId || ''
-  }))
 }
 
 export function reconnectCandidate(original, ports) {

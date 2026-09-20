@@ -279,12 +279,20 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   unit coverage for all three platforms, XDG overrides, Unicode/spaces, and
   explicit library/model-cache paths. Still verify persistence on native
   case-sensitive filesystems and with a read-only installation directory.
-- [ ] **P1 - Remove COM-only USB assumptions:** `firmware.mjs`,
-  `identification.mjs`, and `wifi.mjs` reject non-COM device names, including
-  ports returned by SerialPort.list(). Centralize validation against enumerated
-  ports and support Linux/macOS serial paths throughout identification, flashing,
-  and Wi-Fi setup. Replace the PowerShell enumeration fallback and use neutral
-  serial-port wording in frontend help. Preserve board identity verification.
+- [ ] **P1 - Validate USB port handling on physical devices:** Shared
+  `desktop/serial-ports.mjs` now enumerates Windows, Linux, and macOS serial paths
+  through SerialPort.list(), replacing PowerShell enumeration. Selection checks
+  the detected list; identification, flashing, and Wi-Fi setup recheck presence
+  before opening. Automated tests cover native path formats, firmware release
+  selection, simulated flashing/setup, disappearance, and device identity checks.
+  Windows hardware checks passed through the shared desktop modules on COM26
+  (Waveshare 3.16inch, firmware 1.1.13): enumeration, physical unplug/replug,
+  identification, identity refresh, Wi-Fi scanning, and reopening after scanning.
+  Initial access denial cleared after releasing the port; identification then
+  timed out until a USB reconnect. The timeout cause remains unconfirmed.
+  Still verify the Electron UI flow (native UI automation was unavailable), and
+  Linux/macOS enumeration, permissions, unplug/replug, and setup on actual
+  hardware once native tooling is available.
 - [ ] **P1 - Separate native folder actions:** Browser folder endpoints in
   `app.py` directly use `os.startfile` and a PowerShell Windows Forms dialog.
   Introduce explicit platform capabilities/adapters; reuse Electron's native

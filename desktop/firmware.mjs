@@ -1,3 +1,4 @@
+import { isSerialPortPath, requireDetectedPort, serialPorts } from './serial-ports.mjs'
 import { createHash } from 'node:crypto'
 import { lstat, readFile, realpath, mkdtemp, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -119,11 +120,7 @@ export function runProcess(executable, args, { cwd, timeout = 120000, onOutput =
   })
 }
 
-export async function listPorts() {
-  const script = "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); $ports=@(Get-CimInstance Win32_PnPEntity -Filter \"Name LIKE '%(COM%'\" | ForEach-Object { if ($_.Name -match '\\((COM[0-9]+)\\)' -and $_.Present) { [pscustomobject]@{ port=$Matches[1]; label=$_.Name } } }); ConvertTo-Json -InputObject $ports -Compress"
-  const output = await runProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 20000 })
-  return JSON.parse(output || '[]').filter(p => /^COM\d+$/.test(p.port))
-}
+export const listPorts = serialPorts
 
 export class FirmwareInstaller {
   constructor(toolPath, { run = runProcess, ports = listPorts, identify = null, reconnect = null } = {}) {
@@ -133,7 +130,8 @@ export class FirmwareInstaller {
   }
   snapshot() { return structuredClone(this.state) }
   selectPort(port) {
-    requireValue(!this.state.busy && (port === '' || /^COM\d+$/.test(port)), 'Wait for USB work to finish and select a valid port.')
+    requireValue(!this.state.busy && (port === '' || isSerialPortPath(port)), 'Wait for USB work to finish and select a valid port.')
+    if (port !== '') requireDetectedPort(port, this.knownPorts)
     this.state.selectedPort = port
     this.state.identity = null; this.state.wifi = null; this.state.identityError = ''
     this.identityPort = null
@@ -156,12 +154,13 @@ export class FirmwareInstaller {
     return ports
   }
   async identifyFirmware(port) {
-    requireValue(!this.state.busy && this.identify && /^COM\d+$/.test(port), 'Select an available port and wait for the current operation.')
+    requireValue(!this.state.busy && this.identify && isSerialPortPath(port), 'Select an available port and wait for the current operation.')
     this.state.busy = true; this.state.identityError = ''; this.state.identity = null; this.state.wifi = null
     try {
+      const detected = requireDetectedPort(port, await this.ports())
       this.state.identity = await this.identify(port)
       this.state.selectedPort = port
-      this.identityPort = this.knownPorts?.find(p => p.port === port) || null
+      this.identityPort = { ...detected }
     }
     catch (error) { this.state.identityError = error.message }
     finally { this.state.busy = false }
@@ -173,6 +172,7 @@ export class FirmwareInstaller {
     const previous = this.state.identity
     this.state.busy = true
     try {
+      requireDetectedPort(port, await this.ports())
       const identity = await this.identify(port)
       requireValue(identity.hardware_id === previous.hardware_id, 'The USB display changed. Identify it again.')
       this.state.identity = identity; this.state.identityError = ''
@@ -197,7 +197,7 @@ export class FirmwareInstaller {
   }
   start(port, board, baud) {
     requireValue(!this.state.busy && this.selected, 'Choose a valid package first; only one installation can run.')
-    requireValue(/^COM\d+$/.test(port) && board === this.state.package.board && [115200, 460800].includes(baud), 'Confirm the matching physical board, port, and speed.')
+    requireValue(isSerialPortPath(port) && board === this.state.package.board && [115200, 460800].includes(baud), 'Confirm the matching physical board, port, and speed.')
     this.expectedHardwareId = this.state.identity?.port === port ? this.state.identity.hardware_id : undefined
     this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', port, selectedPort: port, identity: null, identityError: '', wifi: null }
     this.completion = this.install(port, baud).catch(e => {
@@ -210,8 +210,7 @@ export class FirmwareInstaller {
     try {
       const pkg = await validatePackage(this.selected.directory)
       requireValue(pkg.fingerprint === this.selected.fingerprint, 'Package changed since selection. Choose it again.')
-      const originalPort = (await this.ports()).find(p => p.port === port)
-      requireValue(originalPort, 'USB port is no longer available. Refresh ports and reconnect.')
+      const originalPort = requireDetectedPort(port, await this.ports())
       // Flash an immutable snapshot of verified bytes, not mutable source paths.
       staged = await mkdtemp(path.join(os.tmpdir(), 'espimage-flash-'))
       for (const s of pkg.segments) await writeFile(path.join(staged, s.file), s.data)

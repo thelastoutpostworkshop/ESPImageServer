@@ -1,3 +1,4 @@
+import { isSerialPortPath } from './serial-ports.mjs'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, writeFile, rm, realpath } from 'node:fs/promises'
 import path from 'node:path'
@@ -146,7 +147,7 @@ export class FirmwareReleases {
     const pkg = this.state.packages.find(p => p.id === id)
     requireValue(pkg && pkg.board === board && (!pkg.prerelease || allowPrerelease === true), 'Choose a matching firmware release.')
     const identity = installer.state.identity, hardware = identity?.hardware_id
-    const matchingBoard = () => installer.state.selectedPort === port && /^COM\d+$/.test(port) &&
+    const matchingBoard = () => installer.state.selectedPort === port && isSerialPortPath(port) &&
       (!installer.state.identity || (installer.state.identity.port === port && installer.state.identity.board_target === board)) &&
       (!hardware || installer.state.identity?.hardware_id === hardware)
     requireValue(matchingBoard(), 'The selected USB display changed. Check it again.')

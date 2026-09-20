@@ -36,7 +36,7 @@ const verified = 'Hash of data verified.\n'.repeat(4) + 'Hard resetting via RTS 
 
 test('refreshing USB status preserves identity until completion and rejects a swapped board', async () => {
   const original={port:'COM8',hardware_id:'aabbccddeeff',wifi_connected:false}
-  const installer=new FirmwareInstaller('unused',{identify:async()=>({...original,wifi_connected:true})})
+  const installer=new FirmwareInstaller('unused',{ports:async()=>[{port:'COM8'}],identify:async()=>({...original,wifi_connected:true})})
   installer.state.identity=original;installer.state.selectedPort='COM8'
   assert.equal((await installer.refreshIdentity('COM8')).identity.wifi_connected,true)
   installer.identify=async()=>({...original,hardware_id:'112233445566'})
@@ -102,11 +102,12 @@ test('ESP32-C6FH4 probe is recognized as C6 while chip and capacity checks remai
   assert.throws(() => parseProbe(output.replace('Chip type: ESP32-C6FH4', 'Chip type: ESP32-C61'), 'esp32c6', 4194304), /chip/)
   assert.throws(() => parseProbe(output.replace('Detected flash size: 4MB', ''), 'esp32c6', 4194304), /capacity/)
 })
-test('install stages immutable files, verifies four writes, and cleans up', async t => {
+for (const portName of ['COM8', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/cu.usbmodem1101']) test(`${portName}: install stages immutable files, verifies four writes, and cleans up`, async t => {
   const f = await fixture(t), calls = []
   const installer = new FirmwareInstaller('fake', {
-    ports: async () => [{ port: 'COM8' }],
+    ports: async () => [{ port: portName }],
     run: async (_, args, options) => {
+      assert.equal(args[args.indexOf('--port') + 1], portName)
       calls.push({ args, cwd: options.cwd })
       if (args.includes('flash-id')) {
         await writeFile(path.join(f.directory, 'app.bin'), 'changed after validation')
@@ -118,8 +119,8 @@ test('install stages immutable files, verifies four writes, and cleans up', asyn
     }
   })
   await installer.select(f.directory)
-  installer.start('COM8', 'JC4827W543', 460800)
-  assert.throws(() => installer.start('COM8', 'JC4827W543', 460800), /one installation/)
+  installer.start(portName, 'JC4827W543', 460800)
+  assert.throws(() => installer.start(portName, 'JC4827W543', 460800), /one installation/)
   await installer.completion
   assert.equal(installer.state.stage, 'written'); assert.equal(installer.state.busy, false)
   assert.equal(calls.length, 2)
@@ -170,10 +171,11 @@ test('successful writes remain successful when old firmware cannot identify itse
 test('identification shares the flash operation lock and releases it on errors', async t => {
   const f = await fixture(t)
   let finish
-  const installer = new FirmwareInstaller('fake', { identify: () => new Promise(resolve => { finish = resolve }) })
+  const installer = new FirmwareInstaller('fake', { ports: async () => [{ port: 'COM8' }], identify: () => new Promise(resolve => { finish = resolve }) })
   await installer.select(f.directory)
   const checking = installer.identifyFirmware('COM8')
   assert.throws(() => installer.start('COM8', 'JC4827W543', 460800), /one installation/)
+  await Promise.resolve()
   finish({ hardware_id: 'aabbccddeeff', port: 'COM8' }); await checking
   assert.equal(installer.state.busy, false)
 })
@@ -202,6 +204,7 @@ test('USB port disappearance or replacement invalidates identity and Wi-Fi state
 test('selecting another USB port clears setup state and cannot interrupt a flash', () => {
   const installer = new FirmwareInstaller('fake')
   installer.state.identity = { port: 'COM8' }; installer.state.wifi = { stage: 'connected' }
+  installer.knownPorts = [{ port: 'COM8' }, { port: 'COM9' }]
   installer.selectPort('COM9')
   assert.equal(installer.state.identity, null); assert.equal(installer.state.wifi, null)
   installer.state.busy = true

@@ -43,9 +43,10 @@ class FakePort extends EventEmitter {
   }
   close(callback) { this.isOpen = false; this.closed = true; this.emit('close'); callback() }
 }
-test('read-only identification closes the port after success without resetting', async () => {
+for (const portName of ['COM8', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/cu.usbmodem1101']) test(`${portName}: read-only identification closes the port after success without resetting`, async () => {
   const port = new FakePort()
-  const identity = await identifyPort('COM8', { createPort: options => {
+  const identity = await identifyPort(portName, { createPort: options => {
+    assert.equal(options.path, portName)
     assert.equal(options.autoOpen, false); assert.equal(options.lock, true); return port
   } })
   assert.equal(identity.firmware_version, '1.1.2'); assert.ok(port.closed)

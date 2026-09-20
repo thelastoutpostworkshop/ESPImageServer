@@ -10,7 +10,7 @@
     "build": "npm run prepare:esptool && npm --prefix ../frontend run build && electron-builder --win --x64 --dir",
     "prepare:esptool": "node ./prepare-esptool.mjs",
     "start": "npm run prepare:esptool && electron .",
-    "test": "node --test runtime.test.mjs firmware.test.mjs identification.test.mjs wifi.test.mjs firmware-library.test.mjs firmware-releases.test.mjs"
+    "test": "node --test serial-ports.test.mjs runtime.test.mjs firmware.test.mjs identification.test.mjs wifi.test.mjs firmware-library.test.mjs firmware-releases.test.mjs"
   },
   "devDependencies": {
     "electron": "^43.3.0",
@@ -25,6 +25,7 @@
     "files": [
       "main.mjs",
       "runtime.mjs",
+      "serial-ports.mjs",
       "preload.cjs",
       "splash.html",
       "package.json",

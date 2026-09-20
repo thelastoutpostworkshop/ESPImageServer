@@ -1,3 +1,4 @@
+import { isSerialPortPath, requireDetectedPort } from './serial-ports.mjs'
 import { randomUUID } from 'node:crypto'
 import { SerialPort } from 'serialport'
 import { responseDecoder, validateIdentity } from './identification.mjs'
@@ -55,7 +56,7 @@ export function validateWifi(message) {
 // logs, snapshots, exceptions, or disk. Never toggle DTR/RTS for setup.
 export class WifiSerialSession {
   constructor(port, { createPort = options => new SerialPort(options), timeout = 5000 } = {}) {
-    if (!/^COM\d+$/.test(port)) throw new Error('Select a valid COM port.')
+    if (!isSerialPortPath(port)) throw new Error('Select a valid USB serial port.')
     this.port = createPort({ path: port, baudRate: 115200, autoOpen: false, lock: true, rtscts: false })
     this.timeout = timeout; this.pending = new Map(); this.closed = false
     this.port.on('error', () => this.fail('USB communication failed. Check the cable and close other programs using the port.'))
@@ -117,7 +118,7 @@ export class WifiSetup {
     const { port, hardwareId, action } = request
     if (this.installer.state.busy) throw new Error('Wait for the current USB operation.')
     const identity = this.installer.state.identity
-    if (!identity || identity.port !== port || identity.hardware_id !== hardwareId || !/^COM\d+$/.test(port)) {
+    if (!identity || identity.port !== port || identity.hardware_id !== hardwareId || !isSerialPortPath(port)) {
       throw new Error('Identify the selected board before Wi-Fi setup.')
     }
     if (!['scan', 'connect', 'forget'].includes(action)) throw new Error('Invalid Wi-Fi setup action.')
@@ -133,6 +134,7 @@ export class WifiSetup {
   }
   cancel() { if (this.running) this.cancelled = true; return this.installer.snapshot() }
   async run(port, hardwareId, action, credentials) {
+    requireDetectedPort(port, await this.installer.ports())
     const session = this.session(port)
     let commandStarted = false
     try {

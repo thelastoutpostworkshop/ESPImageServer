@@ -66,6 +66,7 @@ async function setup(t, overrides = {}) {
   }
   const service = new FirmwareReleases(root,{download})
   const installer = new FirmwareInstaller('unused')
+  installer.knownPorts = [{ port: 'COM3' }, { port: 'COM4' }]
   installer.selectPort('COM3')
   const request = {id:'1',board:'CHEAP_YELLOW_DISPLAY',port:'COM3'}
   await service.check()
@@ -80,8 +81,11 @@ test('catalog excludes drafts, wrong repository URLs and incomplete releases; pr
   assert.deepEqual(releasePackages([{...r,assets:r.assets.slice(0,1)}]),[])
   assert.deepEqual(releasePackages([{...r,assets:r.assets.map(a=>({...a,browser_download_url:a.browser_download_url.replace(REPOSITORY,'attacker/repo')}))}]),[])
 })
-test('download validates real package, caches verified ZIP and never starts flashing',async t=> {
+for (const port of ['COM3', '/dev/ttyACM0', '/dev/cu.usbmodem1101']) test(`${port}: download validates real package, caches verified ZIP and never starts flashing`,async t=> {
   const {service,installer,request,calls,root,f} = await setup(t)
+  installer.knownPorts = [{ port }]
+  installer.selectPort(port)
+  request.port = port
   const state = await service.select(request,installer)
   assert.equal(state.package.version,'1.1.5'); assert.equal(state.busy,false); assert.equal(state.stage,'ready')
   assert.equal(installer.completion,undefined)

@@ -64,6 +64,21 @@ and owned server running after the last window closes and recreates the window
 on Dock activation; explicit Quit stops the owned server. Windows/Linux quit
 when the last window closes. Native lifecycle verification remains in TODO.md.
 
+## USB port handling
+
+`desktop/serial-ports.mjs` owns serial-device enumeration and path validation.
+Use exact enumerated paths, including Windows `COM26`, Linux `/dev/ttyUSB0` or
+`/dev/ttyACM0`, and macOS `/dev/cu.usbmodem1101`. Do not normalize paths or assume
+that a port name identifies a particular board. Selection requires a detected
+port; USB operations re-enumerate before opening, then retain the existing
+firmware hardware-ID checks. Low-level serial transports validate path syntax;
+their callers are responsible for checking current enumeration.
+
+The shared enumerator preserves serial number/vendor/product metadata for
+reconnection checks. Native permissions, drivers, and esptool packaging still
+require platform-specific validation. Automated serial tests use simulated
+devices and do not flash boards or change Wi-Fi credentials.
+
 ## Development setup
 
 Use Python 3.10 or newer and a recent Node.js LTS release.

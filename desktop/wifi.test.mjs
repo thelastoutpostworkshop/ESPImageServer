@@ -11,7 +11,7 @@ const response = result => ({ protocol: 1, ok: true, result })
 const status = (stage, extra = {}) => response({ wifi_state: stage, wifi_error: '', wifi_configured: stage === 'connected',
   wifi_connected: stage === 'connected', ip: stage === 'connected' ? '192.168.1.10' : '', networks: [], ...extra })
 const request = { action: 'connect', port: 'COM8', hardwareId: identity.hardware_id, ssid: 'Test network', password: 'test-password', auth: 'personal' }
-const installer = () => ({ state: { busy: false, identity: { ...identity } }, snapshot() { return structuredClone(this.state) } })
+const installer = () => ({ ports: async () => [{ port: 'COM8' }], state: { busy: false, identity: { ...identity } }, snapshot() { return structuredClone(this.state) } })
 function fakeSession(overrides = {}) {
   return { commands: [], async open() {}, async close() { this.closed = true },
     async request(command, payload) {
@@ -21,6 +21,25 @@ function fakeSession(overrides = {}) {
       if (command === 'wifi_connect') return status('connecting')
       return status('connected')
     }, ...overrides }
+}
+
+for (const port of ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/cu.usbmodem1101']) {
+  test(`${port}: Wi-Fi setup preserves hardware binding and checks enumeration`, async () => {
+    const inst = installer(), session = fakeSession()
+    inst.state.identity.port = port
+    inst.ports = async () => [{ port }]
+    const setup = new WifiSetup(inst, { session: selected => { assert.equal(selected, port); return session }, pause: async () => {} })
+    setup.start({ ...request, port })
+    await setup.completion
+    assert.equal(inst.state.wifi.stage, 'connected')
+    assert.equal(session.commands.find(c => c.command === 'wifi_connect').payload.hardware_id, identity.hardware_id)
+    inst.ports = async () => []
+    setup.session = () => { assert.fail('Disconnected port must not be opened') }
+    setup.start({ ...request, port })
+    await setup.completion
+    assert.equal(inst.state.wifi.stage, 'failed')
+    assert.match(inst.state.wifi.error, /no longer available/)
+  })
 }
 
 test('credentials validate UTF-8 SSID lengths, open networks, ASCII passphrases and raw keys', () => {
