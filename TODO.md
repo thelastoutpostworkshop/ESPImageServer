@@ -281,17 +281,19 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   run logged an mDNS advertisement timeout but completed startup; this does not
   establish LAN discovery behavior.
   Non-Windows runtime/tool bundles and installers remain a later milestone.
-- [ ] **P1 - Validate writable paths on native Linux/macOS:** Shared path
+- [x] **P1 - Validate writable paths on native Linux/macOS:** Shared path
   resolution is implemented in `paths.py`, with Windows locations preserved and
   unit coverage for all three platforms, XDG overrides, Unicode/spaces, and
-  explicit library/model-cache paths. Still verify persistence on native
-  case-sensitive filesystems and with a read-only installation directory.
+  explicit library/model-cache paths. Hosted checks verified persistence using
+  native filesystem behavior and a read-only installation directory on Linux/macOS.
   A native-storage CI check now saves settings and a fixture image, then verifies
   them in a fresh backend process using actual host path rules, spaces/Unicode,
   and isolated user storage. Linux also exercises custom XDG directories.
   Linux/macOS enforce read-only permissions on a copied source installation;
   all platforms guard Python file writes and verify the installation is unchanged.
-  Windows persistence passed locally; Linux/macOS hosted results are pending.
+  Windows persistence passed locally. The user confirmed the hosted action passed
+  on Windows, Ubuntu, and macOS after correcting the test's null-device handling.
+  Packaged installation and real model downloads remain separate acceptance checks.
 - [ ] **P1 - Validate USB port handling on physical devices:** Shared
   `desktop/serial-ports.mjs` now enumerates Windows, Linux, and macOS serial paths
   through SerialPort.list(), replacing PowerShell enumeration. Selection checks
