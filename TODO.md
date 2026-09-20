@@ -271,13 +271,13 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   and macOS window reopening. Automated tests cover these behaviors. User-confirmed
   Windows desktop checks passed: startup with saved content, owned-server shutdown
   and restart, preserving an independently started server, and focusing the
-  existing window on a second launch. Still test actual startup/quit,
-  child-process cleanup, and macOS Dock reopening on native Linux/macOS hosts.
-  A real Electron/Python smoke test is now added to the CI matrix, covering Vue
+  existing window on a second launch. Real Electron/Python smoke tests passed
+  on Windows 2025, Ubuntu 24.04, and macOS 15 hosted runners, confirmed by the
+  user for commit `069b500`. These cover actual startup/quit, Vue
   rendering, preload IPC, owned-server exit/port release, external-server
   preservation, and macOS activation after closing the window. Both server
-  ownership scenarios passed locally on Windows. Hosted results are pending;
-  a physical Dock click and packaged startup remain manual checks. The local
+  ownership scenarios also passed locally on Windows. A physical macOS Dock
+  click and packaged startup remain manual checks. The local
   run logged an mDNS advertisement timeout but completed startup; this does not
   establish LAN discovery behavior.
   Non-Windows runtime/tool bundles and installers remain a later milestone.
