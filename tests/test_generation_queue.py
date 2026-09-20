@@ -83,11 +83,14 @@ def test_clear_finished_keeps_active_jobs() -> None:
         queue.close()
 
 
-def test_retention_keeps_active_jobs_and_leased_video_results(tmp_path) -> None:
+def test_retention_keeps_active_jobs_and_leased_video_results(tmp_path, monkeypatch) -> None:
+    # Advance expiration explicitly, after the completed result has been leased.
+    now = time.time()
+    monkeypatch.setattr("esp_image_server.generation_queue.time", lambda: now)
     temporary_results = tmp_path / "temporary-results"
     temporary_results.mkdir()
     queue = GenerationQueue(
-        RetentionPolicy(max_items=5, max_age_seconds=0, max_bytes=1024),
+        RetentionPolicy(max_items=5, max_age_seconds=60, max_bytes=1024),
         video_result_root=temporary_results,
     )
     started = Event()
@@ -107,7 +110,8 @@ def test_retention_keeps_active_jobs_and_leased_video_results(tmp_path) -> None:
         finished_at = queue.get(finished.job_id).finished_at
         assert finished_at is not None
 
-        assert queue.prune_completed(now=finished_at + 1) == 0
+        now = finished_at + 61
+        assert queue.prune_completed() == 0
         assert queue.get(active.job_id) is not None
         assert queue.get(finished.job_id) is not None
         assert video_path.is_file()

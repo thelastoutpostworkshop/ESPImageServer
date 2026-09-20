@@ -30,14 +30,17 @@ test('invalid packages and unavailable libraries cannot appear as checked update
   assert.equal(missing.checkedAt,null); assert.match(missing.error,/Could not check/)
 })
 test('reviewing a library update binds the board and revalidates its version', async t => {
-  const f=await fixture(t);await f.library.choose(f.libraryRoot)
+  const f=await fixture(t)
+  const { packages }=await f.library.choose(f.libraryRoot)
+  // The UI submits the scanned path, which realpath may canonicalize on Windows.
+  const directory=packages[0].directory
   const installer={state:{identity:{port:'COM8',board_target:'OTHER'},selectedPort:'COM8'},select:async()=>{throw new Error('must not select')}}
-  await assert.rejects(f.library.select(f.directory,installer),/matching/)
+  await assert.rejects(f.library.select(directory,installer),/matching/)
   installer.state.identity.board_target='JC4827W543'
   installer.select=async()=>{installer.state.package={board:'JC4827W543',version:'1.1.5'};installer.selected={}}
-  await assert.rejects(f.library.select(f.directory,installer),/changed/)
+  await assert.rejects(f.library.select(directory,installer),/changed/)
   assert.equal(installer.selected,null);assert.equal(installer.state.package,null)
   installer.select=async()=>{installer.state.package={board:'JC4827W543',version:'1.1.4'}}
   installer.snapshot=()=>structuredClone(installer.state)
-  assert.equal((await f.library.select(f.directory,installer)).package.version,'1.1.4')
+  assert.equal((await f.library.select(directory,installer)).package.version,'1.1.4')
 })
