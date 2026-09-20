@@ -55,7 +55,9 @@ jobs:
       - name: Build frontend
         run: npm --prefix frontend run build
       - name: Backend tests and management-only startup
-        run: python -m pytest -q
+        run: python -m pytest -q --ignore=tests/test_native_storage.py
+      - name: Native storage persistence and read-only installation
+        run: python -m pytest tests/test_native_storage.py -v
       - name: Desktop module tests
         run: npm --prefix desktop test
       - name: Check desktop entry-point syntax

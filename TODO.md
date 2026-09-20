@@ -286,6 +286,12 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   unit coverage for all three platforms, XDG overrides, Unicode/spaces, and
   explicit library/model-cache paths. Still verify persistence on native
   case-sensitive filesystems and with a read-only installation directory.
+  A native-storage CI check now saves settings and a fixture image, then verifies
+  them in a fresh backend process using actual host path rules, spaces/Unicode,
+  and isolated user storage. Linux also exercises custom XDG directories.
+  Linux/macOS enforce read-only permissions on a copied source installation;
+  all platforms guard Python file writes and verify the installation is unchanged.
+  Windows persistence passed locally; Linux/macOS hosted results are pending.
 - [ ] **P1 - Validate USB port handling on physical devices:** Shared
   `desktop/serial-ports.mjs` now enumerates Windows, Linux, and macOS serial paths
   through SerialPort.list(), replacing PowerShell enumeration. Selection checks

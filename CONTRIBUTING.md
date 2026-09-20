@@ -266,6 +266,18 @@ model downloads, and runs the source through `PYTHONPATH=src`. GPU pipeline test
 use mocks; an additional management-only startup test uses the real device
 detection with Torch unavailable. A tiny MP4 test exercises bundled FFmpeg.
 
+The separate native-storage step runs `tests/test_native_storage.py`. Two fresh
+Python processes start and stop the real FastAPI lifespan through TestClient,
+save settings and a tiny fixture image, and check persistence using the host's
+actual path rules. No HTTP listener, generation, or model download is required.
+Linux also tests custom XDG directories. The copied source installation is made
+read-only on Linux/macOS, with an explicit failed-write probe; Windows does not
+claim POSIX permission coverage. All platforms check that installation files
+stay unchanged and guard Python writes outside isolated user storage. Cache
+location checks include a small model-cache marker, not real model loading.
+Run this check as a normal user; privileged POSIX execution fails the read-only
+probe rather than silently skipping it.
+
 `tests/conftest.py` redirects writable user paths before test collection imports
 the global FastAPI app. Tests must not read or write the developer's library or
 model cache. Native dialogs, real GPU output/cancellation, physical USB behavior,
