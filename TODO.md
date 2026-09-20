@@ -354,8 +354,10 @@ Windows behavior as platform delivery progresses.
   Linux CUDA backend construction and a separate no-GPU CI job are now implemented
   with pinned PyTorch/torchvision and Linux CUDA libraries. The job checks native
   imports, pip consistency, relocated startup, and generation rejection without
-  a GPU, and uploads a CUDA backend artifact. Hosted CUDA results are pending;
-  integration into a separately named Linux CUDA desktop bundle remains.
+  a GPU, and uploads a CUDA backend artifact. The user confirmed the hosted CUDA
+  job passed; actual GPU generation was not exercised. A separately named Linux
+  CUDA desktop bundle and packaged no-GPU checks are now implemented. Hosted
+  results for the CUDA desktop integration are pending.
 - [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
   serial permissions/udev setup and macOS driver requirements where applicable.

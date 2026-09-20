@@ -63,7 +63,7 @@ plus `installer/constraints-linux-cuda.txt` for Linux CUDA libraries, Triton,
 and additional dependencies. It rejects CUDA builds on macOS and other targets.
 Management-only builds and the Windows installer are unchanged.
 
-The separate `Linux CUDA backend (x64)` CI job installs binary wheels, runs
+The separate `Linux CUDA desktop (x64)` CI job installs binary wheels, runs
 `pip check`, relocates the runtime, imports the actual image/LTX/Wan pipelines,
 and checks a native torchvision operation. It then verifies FFmpeg, HTTP/web
 startup, and rejection of generation with CUDA devices hidden. No model weights
@@ -73,11 +73,22 @@ compatibility and no-GPU behavior, not NVIDIA GPU computation.
 Successful jobs upload `backend-linux-x64-cuda`, retained for three days because
 CUDA libraries make it substantially larger than the management bundle.
 The manifest records `mode: cuda` and the resolved dependency list is included.
-First hosted CUDA results are pending. This artifact is a backend component;
-the existing desktop artifacts still contain the management-only backend.
-CUDA desktop integration and final distribution remain separate work. The host
+The user confirmed the backend checks passed. This artifact is a backend component.
+The job now also builds a separate `desktop-linux-x64-cuda` artifact, retained for
+three days, using the CUDA backend and the same Electron/esptool resources.
+The original `desktop-linux-x64` and macOS artifacts remain management-only.
+The CUDA desktop build uses `release/native-cuda`, and rejects CUDA on macOS.
+Its first hosted packaged results are pending. The host
 still needs a compatible NVIDIA driver; runtime capability detection controls
 whether generation is enabled.
+
+Before upload, CI verifies the backend again inside the relocated desktop bundle,
+then launches the packaged app with GPU access disabled. It checks actual pipeline
+imports, disabled generation without a GPU, interface/preload/serialport, and
+server shutdown/port release. This does not perform GPU generation.
+To limit runner disk use, CI removes the already-uploaded backend archive and
+uses `--consume-backend` to move the staging backend into the desktop resources
+instead of duplicating its CUDA libraries.
 
 ## Native desktop bundles
 
@@ -99,7 +110,7 @@ archives for seven days. Linux contains an `espimageserver` executable; macOS
 contains `ESPImageServer.app`. These are unsigned management-only development
 bundles, not final installers. The user confirmed that native builds and packaged
 smoke checks passed on Linux x64 and macOS ARM64.
-CUDA desktop integration, signing/notarization, and installer/update formats remain unfinished.
+Signing/notarization and installer/update formats remain unfinished.
 
 - Preserve the current Windows installer and runtime layout.
 - Prepare Linux x64 and macOS ARM64 Python 3.12 runtimes without requiring a

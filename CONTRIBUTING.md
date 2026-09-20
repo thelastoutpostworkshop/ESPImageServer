@@ -305,7 +305,7 @@ This uses application requirements from pyproject.toml with Linux CUDA constrain
 the management requirements are kept separate. The dedicated CUDA job imports
 actual generation pipeline classes and tests startup with CUDA devices hidden.
 Its binary-wheel installation uses no pip download cache to reduce disk use.
-It uploads a large backend archive, not a CUDA desktop installer. See PLATFORMS.md
+It uploads large backend and desktop archives, not a final installer. See PLATFORMS.md
 for exact scope; hosted GPU computation is not part of this job.
 
 After preparing the backend, `python installer/prepare-native-esptool.py` downloads
@@ -319,6 +319,14 @@ Xvfb on Linux. Playwright is a development dependency and no extra browser is
 downloaded. The test is restricted to Linux/macOS CI, isolates backend storage,
 and checks the bundled esptool version and serial binding without sending device
 commands. Successful jobs upload tar archives to preserve permissions and symlinks.
+
+For a CUDA backend, `build:native` selects `release/native-cuda` automatically.
+The optional `--consume-backend` flag is limited to Linux CUDA builds and moves
+the input backend into the desktop resources after packaging, so the original
+staging directory no longer exists. CI uses it to avoid duplicate CUDA libraries.
+Pass `cuda` after the app directory to `test:packaged` to assert the CUDA manifest,
+pipeline imports, and no-GPU generation rejection. The normal smoke test defaults
+to management mode. No CUDA build option is supported on macOS.
 
 ## Windows folder action acceptance
 
