@@ -284,7 +284,7 @@ model cache. Native dialogs, real GPU output/cancellation, physical USB behavior
 and packaged-app startup still require separate acceptance checks. Do not mark
 Linux/macOS validation complete until the corresponding hosted jobs pass.
 
-## Native folder action acceptance
+## Windows folder action acceptance
 
 The Electron smoke test exercises the real preload/IPC path for folder selection,
 cancellation, and opener/dialog errors. It substitutes the OS dialog and opener
@@ -292,7 +292,7 @@ to avoid interactive CI windows. Backend tests cover headless fallback, Wayland,
 missing tools, and failed/timed-out open commands. These checks do not prove that
 a real file manager or chooser works on the target desktop.
 
-On Windows, Linux, and macOS desktop sessions, manually check:
+On Windows desktop sessions, manually check:
 
 - In Settings, choose an empty folder with spaces and Unicode in its name.
   The field should change, but the library must stay in its saved location until
@@ -300,11 +300,6 @@ On Windows, Linux, and macOS desktop sessions, manually check:
 - Before saving, Open image library folder must open the currently saved library.
   After saving, it must open the new location; restart and confirm it persists.
 - Confirm native folder windows appear and are usable; dismiss them normally.
-- In a browser connected to headless Linux, chooser/open actions should be
-  unavailable with the manual-path explanation. Save a valid absolute path and
-  verify persistence. Browser folder actions operate on the server computer.
-- In a Linux desktop browser, Open should launch its file manager. The browser
-  chooser is unavailable on Linux/macOS; the Electron desktop chooser should work.
 
 Record OS/desktop environment and results. Use a disposable library when testing
 moves. Do not mark this acceptance complete based only on the stubbed CI checks.

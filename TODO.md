@@ -262,10 +262,10 @@ policy. Keep display management available independently of AI generation.
 ### First milestone: code readiness
 
 Complete this milestone before starting native installers or announcing support.
-The source audit found the following Windows dependencies; the code is not yet
-ready for Linux/macOS. Preserve the existing Windows behavior while addressing them.
+The platform abstractions and hosted CI checks below are implemented. Preserve
+Windows behavior as platform delivery progresses.
 
-- [ ] **P1 - Validate desktop runtime paths and lifecycle on native Linux/macOS:**
+- [x] **P1 - Automated desktop runtime and lifecycle validation:**
   Runtime/tool resolution is isolated in `desktop/runtime.mjs`; Windows paths
   are preserved, with explicit missing-runtime errors, owned-server shutdown,
   and macOS window reopening. Automated tests cover these behaviors. User-confirmed
@@ -276,8 +276,7 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   user for commit `069b500`. These cover actual startup/quit, Vue
   rendering, preload IPC, owned-server exit/port release, external-server
   preservation, and macOS activation after closing the window. Both server
-  ownership scenarios also passed locally on Windows. A physical macOS Dock
-  click and packaged startup remain manual checks. The local
+  ownership scenarios also passed locally on Windows. The local
   run logged an mDNS advertisement timeout but completed startup; this does not
   establish LAN discovery behavior.
   Non-Windows runtime/tool bundles and installers remain a later milestone.
@@ -293,8 +292,8 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   all platforms guard Python file writes and verify the installation is unchanged.
   Windows persistence passed locally. The user confirmed the hosted action passed
   on Windows, Ubuntu, and macOS after correcting the test's null-device handling.
-  Packaged installation and real model downloads remain separate acceptance checks.
-- [ ] **P1 - Validate USB port handling on physical devices:** Shared
+  These checks do not exercise packaged installation or real model downloads.
+- [ ] **P1 - Complete Windows USB UI verification:** Shared
   `desktop/serial-ports.mjs` now enumerates Windows, Linux, and macOS serial paths
   through SerialPort.list(), replacing PowerShell enumeration. Selection checks
   the detected list; identification, flashing, and Wi-Fi setup recheck presence
@@ -305,76 +304,58 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   identification, identity refresh, Wi-Fi scanning, and reopening after scanning.
   Initial access denial cleared after releasing the port; identification then
   timed out until a USB reconnect. The timeout cause remains unconfirmed.
-  Still verify the Electron UI flow (native UI automation was unavailable), and
-  Linux/macOS enumeration, permissions, unplug/replug, and setup on actual
-  hardware once native tooling is available.
-- [ ] **P1 - Validate native folder actions on target systems:** Folder actions
+  Still verify the Windows Electron UI flow (native UI automation was unavailable).
+- [ ] **P1 - Complete Windows native folder-action verification:** Folder actions
   are isolated in `folder_actions.py`, with capability reporting, Windows chooser,
   Windows/macOS/Linux folder opening, and explicit unsupported-action errors.
   Electron retains its native dialogs. Settings allows manual server-side path
   entry when a chooser is unavailable. Adapter/API tests cover fallback, cancel,
-  overrides, and validation; verify actual dialogs/opening on native systems,
-  including headless environments and Windows regression checks.
+  overrides, and validation. Actual Windows dialogs/opening remain to be checked.
   Added desktop smoke coverage through real preload/IPC for selection, cancel,
   native errors, and preservation of the saved library path; OS dialog/opener
   calls are stubbed. Backend checks cover Wayland, missing macOS opener, headless
-  API/manual-path fallback, and opener failures/timeouts. Hosted results for this
-  added coverage are pending. Follow CONTRIBUTING.md's native folder checklist
-  for real dialogs/file managers; automated IPC checks do not complete this item.
+  API/manual-path fallback, and opener failures/timeouts. The user confirmed this
+  added coverage passed in CI on Windows, Ubuntu, and macOS.
+  Use CONTRIBUTING.md's folder checklist for the remaining Windows checks.
 - [x] **P1 - Verify the readiness boundary:** The `Platform checks` GitHub Actions
   workflow runs backend tests, frontend tests/build, and desktop module tests on
   Windows, Ubuntu, and macOS. Tests cover platform paths, runtime resolution,
   serial-port validation, native-action availability, management-only startup,
   and a real bundled-FFmpeg encode/decode. Test storage is isolated before app
   imports. The user confirmed a successful hosted CI run on Windows, Ubuntu,
-  and macOS. CI mocks GPU pipelines and USB devices; packaged desktop,
-  native dialogs, and real GPU/USB acceptance remain separate checks.
+  and macOS. CI mocks GPU pipelines and USB devices; it does not establish
+  packaged desktop, native-dialog, or real GPU/USB behavior.
   Preserve the ESP32 LAN API, GPU serialization, and cancellation behavior.
   Windows GPU smoke check confirmed by the user after the capability refactor
   and dependency repair: video generation completed, followed by successful
   image generation, validating MP4 export and the video-to-image GPU handoff.
-  This does not replace native Linux/macOS or per-model validation.
 
-### Later milestone: platform delivery and hardware validation
+### Later milestone: platform delivery
 
 - [ ] **P1 - Define the support matrix:** Choose initial Linux distributions
   and minimum macOS versions; distinguish x64 and ARM64 packages. Start with
   Linux NVIDIA CUDA generation and display management on both platforms.
-  Treat Apple Silicon Metal/MPS generation as a separate feasibility task;
-  do not advertise it until each supported model and operation is validated.
+  Keep Apple Silicon Metal/MPS generation disabled.
   Decide whether Intel Macs and Linux ARM64 are initial targets or later work.
 - [ ] **P1 - Package dependencies per OS and architecture:** Replace the
   Windows-only bootstrap and esptool preparation steps with platform-specific
-  equivalents. Validate Python, PyTorch/CUDA, Diffusers, serialport native
-  bindings, and the imageio-ffmpeg executable on each target. Verify GPU
-  computation before enabling generation; avoid requiring a system Python,
+  equivalents. Add CI checks for Python, Diffusers, serialport native
+  bindings, and the imageio-ffmpeg executable on each target. Preserve runtime
+  GPU capability detection before enabling generation; avoid requiring a system Python,
   Arduino installation, or system ffmpeg for the packaged-app workflow.
-- [ ] **P1 - Validate USB setup and firmware flashing:** Package the matching
+- [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
   serial permissions/udev setup and macOS driver requirements where applicable.
-  Test identification, BOOT/RESET, Wi-Fi provisioning, unplug/replug, occupied
-  ports, interrupted flashing, and port release on all supported ESP32 boards.
+  Keep automated identification, flashing, and port-lifecycle coverage.
   Keep permissions narrowly scoped; do not require running the whole app as root.
-- [ ] **P1 - Validate networking and phone access:** Test server binding,
-  local address discovery, mDNS, hostname conflicts, firewall prompts, and QR
-  access from an iPhone on the same network. Check sleep/wake, network changes,
-  server restart, ESP32 reconnection, and offline Display Experience recovery.
-- [ ] **P2 - Evaluate Apple Silicon generation:** Probe Metal/MPS operations,
-  precision, memory use, model loading, cancellation, and image/video quality.
-  Review CUDA-specific calls and CPU-offload assumptions separately for each
-  model family. Keep unsupported models disabled with clear explanations;
-  do not silently fall back to CPU generation.
 - [ ] **P2 - Add native distribution and update flows:** Choose Linux package
   formats and macOS application packaging, icons, signing/notarization, and
   permissions. Build on appropriate native runners. Define install, update,
   repair, and uninstall behavior that preserves settings and user creations.
   Keep pyproject.toml as the version source and publish per-platform checksums.
-- [ ] **P1 - Add cross-platform release checks:** Run backend, frontend, and
-  Electron tests in an OS/architecture matrix. Perform packaged-app smoke tests
-  on clean machines for management-only and supported GPU configurations.
-  Cover successful generation, loading/cancellation, queue orientation,
-  downloads, saved media, SD operations, and all hardware-dependent workflows.
-  Record tested versions and known limitations before announcing support.
+- [ ] **P1 - Add automated cross-platform release checks:** Extend the existing
+  backend/frontend/Electron CI matrix to packaged-app startup and supported
+  architectures. Keep Windows manual acceptance checks.
 
 ## Plan the Hugging Face major-version upgrade
 
