@@ -373,6 +373,11 @@ Windows behavior as platform delivery progresses.
   permissions. Build on appropriate native runners. Define install, update,
   repair, and uninstall behavior that preserves settings and user creations.
   Keep pyproject.toml as the version source and publish per-platform checksums.
+  Versioned desktop tar archives and adjacent SHA-256 files are implemented for
+  Linux management/CUDA and macOS management bundles. CI verifies archived
+  contents, permissions, and symlinks before upload; focused tests cover archive
+  extraction and reject version mismatches. Hosted validation is pending.
+  Final package formats, signing/notarization, and update flows remain open.
 - [x] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported
   architectures. Keep Windows manual acceptance checks.

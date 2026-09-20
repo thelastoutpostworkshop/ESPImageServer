@@ -79,12 +79,12 @@ jobs:
       - name: Packaged CUDA desktop smoke test
         run: xvfb-run --auto-servernum npm --prefix desktop run test:packaged -- "../dist/CUDA desktop é/app" cuda
       - name: Archive CUDA desktop bundle
-        run: tar -czf dist/desktop-linux-x64-cuda.tar.gz -C 'dist/CUDA desktop é/app' .
+        run: python installer/archive-native-desktop.py 'dist/CUDA desktop é/app' dist/distribution-cuda linux-x64 cuda
       - name: Upload CUDA desktop bundle
         uses: actions/upload-artifact@v6
         with:
           name: desktop-linux-x64-cuda
-          path: dist/desktop-linux-x64-cuda.tar.gz
+          path: dist/distribution-cuda/*
           compression-level: 0
           retention-days: 3
           if-no-files-found: error
@@ -201,12 +201,12 @@ jobs:
         run: npm --prefix desktop run test:packaged -- "../dist/Desktop bundles é/app"
       - name: Archive native desktop bundle
         if: runner.os != 'Windows'
-        run: tar -czf dist/desktop-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz -C 'dist/Desktop bundles é/app' .
+        run: python installer/archive-native-desktop.py 'dist/Desktop bundles é/app' dist/distribution ${{ matrix.platform }}-${{ matrix.arch }} management
       - name: Upload native desktop bundle
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v6
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/desktop-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+          path: dist/distribution/*
           if-no-files-found: error
           retention-days: 7

@@ -115,6 +115,34 @@ bundles, not final installers. The user confirmed that native builds and package
 smoke checks passed on Linux x64 and macOS ARM64.
 Signing/notarization and installer/update formats remain unfinished.
 
+### Versioned downloads and checksums
+
+Desktop artifact uploads now contain an archive named
+`ESPImageServer-<version>-<target>-<mode>.tar.gz` and its matching `.sha256` file.
+Targets are `linux-x64` and `darwin-arm64`; modes are `management` and, on Linux,
+`cuda`. The version is read from `pyproject.toml` and must match the bundled
+runtime manifest. Artifact names in GitHub remain unchanged.
+
+The archive builder reads every archived file back and compares its contents,
+permissions, directories, and symbolic links with the tested desktop bundle
+before producing a checksum. Native CI also tests extraction of executable files
+and symbolic links. These checks are implemented; their hosted run is pending.
+
+Download and unzip the GitHub artifact first. In the directory containing the
+archive and checksum, verify the exact downloaded filename:
+
+```sh
+# Ubuntu (replace the filename with the downloaded .sha256 filename)
+sha256sum -c ESPImageServer-<version>-linux-x64-cuda.tar.gz.sha256
+# macOS
+shasum -a 256 -c ESPImageServer-<version>-darwin-arm64-management.tar.gz.sha256
+```
+
+Substitute the version and mode before running these commands. A checksum detects
+damaged or changed downloads; it does not replace release signing. Extract into
+a new directory, preserving the complete bundle. These remain unsigned development
+archives; automatic updates and an install/uninstall integration are not included.
+
 - Preserve the current Windows installer and runtime layout.
 - Prepare Linux x64 and macOS ARM64 Python 3.12 runtimes without requiring a
   system Python. Keep management dependencies separate from the Linux CUDA stack;
