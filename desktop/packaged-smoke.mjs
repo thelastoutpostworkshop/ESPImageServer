@@ -1,6 +1,6 @@
 import { _electron } from 'playwright-core'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readdir } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readdir, symlink } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import os from 'node:os'
@@ -24,7 +24,16 @@ async function portFree() {
 await portFree()
 const storage = await mkdtemp(path.join(os.tmpdir(), 'esp-packaged-'))
 await mkdir(path.join(storage, 'electron'))
-const env = { ...process.env, PATH: '', ESP_DESKTOP_SMOKE_STORAGE: storage,
+// Linux serialport invokes udevadm. Expose only that OS utility, keeping system
+// Python/FFmpeg unavailable instead of restoring the runner's entire PATH.
+const toolsPath = path.join(storage, 'system-tools')
+await mkdir(toolsPath)
+if (!mac) {
+  const udevadm = '/usr/bin/udevadm'
+  await access(udevadm)
+  await symlink(udevadm, path.join(toolsPath, 'udevadm'))
+}
+const env = { ...process.env, PATH: toolsPath, ESP_DESKTOP_SMOKE_STORAGE: storage,
   // Only the isolation/PID hook is supplied; app source must come from the bundle.
   PYTHONPATH: path.resolve(desktop, '../ci/smoke-python'), PYTHONDONTWRITEBYTECODE: '1',
   ESP_IMAGE_HOST: '127.0.0.1', ESP_IMAGE_PORT: '8000', ESP_IMAGE_OPEN_BROWSER: '0',
@@ -57,10 +66,15 @@ try {
     'import esp_image_server; print(esp_image_server.__file__)'], { env, encoding: 'utf8' }).trim()
   assert.ok(imported.startsWith(backend + path.sep), imported)
   if (mac) {
-    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
-    const reopened = application.waitForEvent('window')
-    await application.evaluate(({ app }) => app.emit('activate'))
-    window = await reopened
+    await application.evaluate(async ({ BrowserWindow }) => {
+      const current = BrowserWindow.getAllWindows()[0]
+      await new Promise(resolve => { current.once('closed', resolve); current.close() })
+    })
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0)
+    ;[window] = await Promise.all([
+      application.waitForEvent('window'),
+      application.evaluate(({ app }) => app.emit('activate'))
+    ])
     await check(window)
   }
   if (mac) await application.close()

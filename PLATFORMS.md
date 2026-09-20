@@ -66,7 +66,8 @@ Electron driver. It checks `app.isPackaged`, backend import location, rendered
 workspace, preload IPC, serial-port enumeration, esptool version, owned-server
 shutdown, and port release. macOS also exercises window reopening. The backend
 receives only a test isolation hook through PYTHONPATH, never checkout app source;
-the test process PATH is empty. No flashing or generation is performed.
+the test process PATH contains only Linux's `udevadm` when needed by serialport,
+with no system Python or FFmpeg. No flashing or generation is performed.
 
 After checks pass, CI uploads `desktop-linux-x64` and `desktop-darwin-arm64` tar
 archives for seven days. Linux contains an `espimageserver` executable; macOS
