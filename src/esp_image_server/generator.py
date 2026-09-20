@@ -33,8 +33,12 @@ class DiffusersGenerator:
     def _detect_device() -> str:
         try:
             import torch
-            return "cuda" if torch.cuda.is_available() else "cpu"
-        except ImportError:
+            if torch.cuda.is_available():
+                torch.empty(1, device="cuda")
+                torch.cuda.synchronize()
+                return "cuda"
+            return "cpu"
+        except (ImportError, RuntimeError, OSError):
             return "cpu"
 
     @property
@@ -49,6 +53,9 @@ class DiffusersGenerator:
         """Load the model once. Imports stay here so setup errors are actionable."""
         if self._pipeline is not None:
             return
+        self._device = self._detect_device()
+        if self._device != "cuda":
+            raise RuntimeError("Image generation requires a working NVIDIA GPU with CUDA; CPU generation is not supported.")
         try:
             import torch
             from diffusers import AutoPipelineForText2Image
@@ -58,8 +65,7 @@ class DiffusersGenerator:
                 "Image dependencies are missing. Install the project dependencies and PyTorch."
             ) from exc
 
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        dtype = torch.float16 if self._device == "cuda" else torch.float32
+        dtype = torch.float16
         logger.info("Loading model '%s' on %s", self.settings.model_id, self._device)
         options = {"torch_dtype": dtype}
         model_cache_dir = Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
@@ -86,8 +92,6 @@ class DiffusersGenerator:
             destination = "NVIDIA graphics card (CUDA)" if self._device == "cuda" else "CPU"
             progress(0, 0, f"Moving {self.settings.model_id} to {destination}")
         pipeline = pipeline.to(self._device)
-        if self._device == "cpu":
-            pipeline.enable_attention_slicing()
         self._pipeline = pipeline
 
     def activate_model(self, settings: Settings, progress: DownloadProgress | None = None) -> None:

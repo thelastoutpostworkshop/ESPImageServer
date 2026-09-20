@@ -2562,6 +2562,10 @@ function showQueueAddedFeedback(kind, queuePosition) {
 }
 
 async function generate() {
+  if (health.value?.device !== 'cuda') {
+    error.value = 'Generation requires a working NVIDIA GPU with CUDA.'
+    return
+  }
   const alreadyShowingImageProgress = generating.value
   generating.value = true
   error.value = ''
@@ -3527,6 +3531,9 @@ onUnmounted(() => {
               Video generation is using the graphics card. You can add an image to the queue; it will start when the video finishes.
               <template #append><v-btn size="small" variant="text" @click="page = 'queue'">View queue</v-btn></template>
             </v-alert>
+            <v-alert v-if="health && health.device !== 'cuda'" type="info" variant="tonal" class="mb-4">
+              Image and video generation require a working NVIDIA GPU with CUDA. Install NVIDIA CUDA acceleration and a compatible NVIDIA driver, then restart the app. Display setup, saved creations, and SD-card tools remain available.
+            </v-alert>
             <v-form @submit.prevent="generate">
               <v-select
                 :model-value="activeModelId"
@@ -3535,7 +3542,7 @@ onUnmounted(() => {
                 variant="outlined"
                 density="comfortable"
                 :disabled="models.length === 0"
-                hint="Choose a model for this computer. Models not yet downloaded will download before they are used."
+                :hint="models.find(model => model.id === activeModelId)?.recommendation || 'Generation requires NVIDIA CUDA. Models download before first use.'"
                 persistent-hint
                 class="mb-4"
                 @update:model-value="selectModelById"
@@ -3597,7 +3604,7 @@ onUnmounted(() => {
                 </v-col>
               </v-row>
               <div class="generation-form-actions">
-                <v-btn type="submit" color="primary" :disabled="models.length === 0 || Boolean(displays.length && !hasDisplayTargets)" prepend-icon="mdi-image-plus">
+                <v-btn type="submit" color="primary" :disabled="health?.device !== 'cuda' || models.length === 0 || Boolean(displays.length && !hasDisplayTargets)" prepend-icon="mdi-image-plus">
                   {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
                 </v-btn>
                 <v-btn v-if="generating" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
@@ -3706,8 +3713,8 @@ onUnmounted(() => {
         <v-card v-if="page === 'video'" class="mx-auto" max-width="1400">
           <v-card-title class="text-h5 pt-5">Generate video</v-card-title>
           <v-card-text>
-            <v-alert v-if="health?.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
-              Video generation cannot run in CPU mode. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, then restart ESPImageServer.
+            <v-alert v-if="health && health.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
+              Generation requires a working NVIDIA GPU with CUDA. Re-run the installer and choose <strong>NVIDIA CUDA acceleration</strong>, with a compatible NVIDIA driver, then restart ESPImageServer. Display setup, saved creations, and SD-card tools remain available.
             </v-alert>
             <v-alert v-if="imageGenerationActive" type="info" variant="tonal" density="compact" class="compact-stack-alert-actions mb-4">
               Image generation is using the graphics card. You can add a video to the queue; it will start when the image finishes.
@@ -3878,6 +3885,7 @@ onUnmounted(() => {
           <v-card-title class="text-h5 pt-5">Image models</v-card-title>
           <v-card-text class="text-body-1">
             Compare the available models. Choose the model to use from the Generate image page; it downloads once and stays on this computer.
+            All models require NVIDIA CUDA. Available graphics-card memory also matters: SD-Turbo and DreamShaper use smaller 512-pixel working images; SSD-1B and SDXL use 1024-pixel working images and need more memory. CUDA availability alone does not guarantee that every model will fit.
           </v-card-text>
           <v-table v-if="!compact" class="model-table" hover density="comfortable">
             <thead>
@@ -3933,7 +3941,7 @@ onUnmounted(() => {
             </v-list-item>
           </v-list>
           <v-card-text class="text-caption text-medium-emphasis pt-3">
-            NVIDIA models can still run without a compatible GPU, but generation may be impractically slow.
+            Generation requires a working NVIDIA GPU with CUDA. Without one, display setup, saved creations, and SD-card management remain available.
           </v-card-text>
           <v-divider class="mt-3" />
           <v-card-title class="text-h5 pt-5">Video models</v-card-title>

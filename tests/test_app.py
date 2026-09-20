@@ -32,7 +32,7 @@ def isolate_app_data(tmp_path, monkeypatch) -> None:
 
 
 class FakeGenerator:
-    device = "test"
+    device = "cuda"
     ready = False
 
     def __init__(self) -> None:
@@ -88,6 +88,27 @@ class FakeVideoGenerator:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"video")
         return output_path
+
+
+@pytest.mark.parametrize('endpoint,payload', [
+    ('/generate', {'prompt': 'a tiny robot'}),
+    ('/generation-jobs', {'prompt': 'a tiny robot'}),
+    ('/video-generation-jobs', {'prompt': 'a tiny robot'}),
+    ('/models/stabilityai/sd-turbo/select', {}),
+])
+def test_cpu_rejects_generation_before_loading_and_keeps_management_available(endpoint, payload):
+    generator = FakeGenerator()
+    generator.device = 'cpu'
+    app = create_app(Settings(), generator, enable_mdns=False)
+    with TestClient(app) as client:
+        response = client.post(endpoint, json=payload)
+        assert response.status_code == 400
+        assert 'NVIDIA GPU with CUDA' in response.json()['detail']
+        assert generator.ready is False
+        assert generator.generate_calls == 0
+        assert client.get('/generation-queue').json() == []
+        for path in ['/displays', '/saved-images', '/models', '/display-sd-card']:
+            assert client.get(path).status_code == 200
 
 
 def test_generate_returns_jpeg_binary() -> None:

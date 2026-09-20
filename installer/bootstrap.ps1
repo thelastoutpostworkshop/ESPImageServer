@@ -150,7 +150,7 @@ try {
         # This also gives a clear failure when the selected PC's NVIDIA driver
         # cannot make CUDA available to PyTorch.
         if ((Invoke-LoggedExternal $venvPython @('-c', 'import torch; assert torch.version.cuda, "CPU-only PyTorch was installed"; assert torch.cuda.is_available(), "PyTorch cannot access a compatible NVIDIA GPU"; print(f"CUDA PyTorch {torch.__version__} is ready on {torch.cuda.get_device_name(0)}")')) -ne 0) {
-            throw 'CUDA was selected, but PyTorch could not use a compatible NVIDIA GPU. Update the NVIDIA driver or choose CPU compatibility mode.'
+            throw 'CUDA was selected, but PyTorch could not use a compatible NVIDIA GPU. Update the NVIDIA driver or choose display management only (no AI generation).'
         }
     }
 

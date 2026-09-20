@@ -87,9 +87,9 @@ begin
   ComputePage := CreateInputOptionPage(wpSelectDir,
     'Choose image and video generation hardware',
     'Select the hardware this computer should use.',
-    'NVIDIA CUDA is much faster, but requires a compatible NVIDIA driver. CPU mode works on any PC but is slow.',
+    'Generation requires NVIDIA CUDA and a compatible NVIDIA driver. Display management mode supports setup, saved creations and SD cards without generation.',
     True, True);
-  ComputePage.Add('CPU compatibility mode');
+  ComputePage.Add('Display management only (no AI generation)');
   ComputePage.Add('NVIDIA CUDA acceleration');
   if NvidiaDetected then
     ComputePage.SelectedValueIndex := 1
@@ -122,7 +122,7 @@ begin
   if ComputePage.SelectedValueIndex = 1 then
     ComputeChoice := 'NVIDIA CUDA acceleration'
   else
-    ComputeChoice := 'CPU compatibility mode';
+    ComputeChoice := 'Display management only (no AI generation)';
 
   Result := MemoUserInfoInfo + MemoDirInfo + MemoTypeInfo + MemoComponentsInfo +
     MemoGroupInfo + MemoTasksInfo + NewLine + 'Image generation:' + NewLine +

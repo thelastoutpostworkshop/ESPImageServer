@@ -429,7 +429,7 @@ def create_app(
         if generator.device == "cuda":
             processing = "NVIDIA graphics card acceleration — fast image generation."
         elif generator.device == "cpu":
-            processing = "Computer processor mode — works broadly, but image generation can take longer."
+            processing = "Display management only — generation requires a working NVIDIA GPU with CUDA."
         else:
             processing = f"Processing device: {generator.device}"
         return {
@@ -465,9 +465,14 @@ def create_app(
             for model in MODELS
         ]
 
+    def require_generation_gpu() -> None:
+        if generator.device != "cuda":
+            raise HTTPException(status_code=400, detail="Generation requires a working NVIDIA GPU with CUDA. Display setup, saved creations, and SD-card management remain available.")
+
     @app.post("/models/{model_id:path}/select")
     async def select_model(model_id: str) -> dict[str, object]:
         nonlocal active_model_id, active_settings
+        require_generation_gpu()
         try:
             selected_settings = model_settings(settings, model_id)
         except ValueError as exc:
@@ -1237,7 +1242,7 @@ def create_app(
         if generator.device == "cuda":
             processing = "NVIDIA graphics card acceleration — fast image generation."
         elif generator.device == "cpu":
-            processing = "Computer processor mode — works broadly, but image generation can take longer."
+            processing = "Display management only — generation requires a working NVIDIA GPU with CUDA."
         else:
             processing = f"Processing device: {generator.device}"
         return {
@@ -1756,6 +1761,7 @@ def create_app(
 
     @app.post("/generate", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
     async def generate(request: GenerateRequest) -> Response:
+        require_generation_gpu()
         if generation_queue.has_active_job():
             raise HTTPException(status_code=409, detail="Wait for queued generation work to finish before using the direct image endpoint")
         target_displays = requested_target_displays(request.display_ids)
@@ -1793,6 +1799,7 @@ def create_app(
     @app.post("/generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_generation_job(request: GenerateRequest) -> dict[str, object]:
         nonlocal active_model_id, active_settings
+        require_generation_gpu()
         target_displays = requested_target_displays(request.display_ids)
         broadcast_aspect_mode = resolve_broadcast_aspect_mode(
             target_displays, request.broadcast_aspect_mode, allow_separate=True,
@@ -1913,8 +1920,7 @@ def create_app(
 
     @app.post("/video-generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_video_generation_job(request: VideoGenerateRequest) -> dict[str, object]:
-        if generator.device != "cuda":
-            raise HTTPException(status_code=409, detail="Video generation requires a compatible NVIDIA GPU; this server is running image generation on CPU.")
+        require_generation_gpu()
         if (request.num_frames - 1) % 8:
             raise HTTPException(status_code=422, detail="Video frame count must be 1 plus a multiple of 8 (for example 17, 25, or 33).")
         video_model = VIDEO_MODELS.get(request.model_id)

@@ -34,7 +34,7 @@ ESPImageServer works best with an NVIDIA graphics card. It can run on the comput
 
 1. Download the latest `ESPImageServer-Setup-<version>.exe` installer.
 2. Run the installer and follow the setup steps.
-3. Choose CPU mode or NVIDIA graphics card acceleration when prompted.
+3. Choose NVIDIA CUDA acceleration for generation, or display management only for setup, saved creations, and SD-card tools.
 4. Choose an initial image model. Its files download during setup or the first time you select it.
 5. Open **ESPImageServer** from the Start Menu or desktop shortcut.
 
@@ -174,9 +174,9 @@ Open **Models** to choose the look and quality level you want.
 
 | Model | Best for | Computer guidance |
 | --- | --- | --- |
-| SD-Turbo | Fast experiments and everyday display images | Works on CPU or NVIDIA graphics cards |
-| DreamShaper 8 | Creative, illustrated, and fantasy artwork | NVIDIA graphics card recommended |
-| Segmind SSD-1B | More detailed, higher-quality images | NVIDIA graphics card recommended |
+| SD-Turbo | Fast experiments and everyday display images | Requires an NVIDIA graphics card with CUDA |
+| DreamShaper 8 | Creative, illustrated, and fantasy artwork | NVIDIA graphics card with CUDA required |
+| Segmind SSD-1B | More detailed, higher-quality images | NVIDIA graphics card with CUDA required |
 | SDXL Base 1.0 | The richest detail and prompt understanding | Powerful NVIDIA graphics card required |
 
 When you choose a model for the first time, ESPImageServer says it is **Downloading and loading** it. Later, it says **Loading** because the model is already on your computer and only needs to be prepared for image generation.
@@ -198,7 +198,7 @@ In **Settings**, you can choose where the image library is stored, open that fol
 
 ### Generation is slow
 
-CPU generation is expected to be slow, especially with larger models. Try SD-Turbo, use fewer steps, or use a computer with a compatible NVIDIA graphics card.
+CPU generation is not supported. Generation requires a working NVIDIA GPU with CUDA; computers without one can still manage displays, saved creations, and SD cards.
 
 ### A model appears to be stuck loading
 
