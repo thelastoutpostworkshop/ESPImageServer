@@ -332,11 +332,12 @@ Windows behavior as platform delivery progresses.
 
 ### Later milestone: platform delivery
 
-- [ ] **P1 - Define the support matrix:** Choose initial Linux distributions
-  and minimum macOS versions; distinguish x64 and ARM64 packages. Start with
-  Linux NVIDIA CUDA generation and display management on both platforms.
-  Keep Apple Silicon Metal/MPS generation disabled.
-  Decide whether Intel Macs and Linux ARM64 are initial targets or later work.
+- [x] **P1 - Define the support matrix:** Initial scope is documented in
+  PLATFORMS.md: retain Windows x64, target Ubuntu 24.04 x64 with NVIDIA CUDA and
+  display management, and macOS 15+ Apple Silicon with display management only.
+  Intel Macs and Linux ARM64 are deferred; CPU/MPS generation stays disabled.
+  CI explicitly checks Python/Node platform and architecture. Linux/macOS
+  packaging remains to be implemented.
 - [ ] **P1 - Package dependencies per OS and architecture:** Replace the
   Windows-only bootstrap and esptool preparation steps with platform-specific
   equivalents. Add CI checks for Python, Diffusers, serialport native

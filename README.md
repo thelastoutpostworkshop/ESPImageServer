@@ -28,7 +28,13 @@ physical recovery checks remain listed in `TODO.md`.
 - An ESP32 display running compatible ESPImageServer firmware and connected to the same Wi-Fi network.
 - Enough free disk space for AI models. The first use of a model downloads its files.
 
-ESPImageServer works best with an NVIDIA graphics card. It can run on the computer processor instead, but image and video generation may take very long.
+Image and video generation require a working NVIDIA graphics card with CUDA.
+Without CUDA, the app supports display management and saved creations; CPU
+generation is disabled.
+
+Linux (Ubuntu 24.04 x64) and macOS (15 or later, Apple Silicon, display management
+only) are planned targets. Their installers are not available yet. See
+[platform scope](PLATFORMS.md) for the initial targets and packaging work.
 
 ## Install
 

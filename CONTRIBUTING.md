@@ -238,8 +238,10 @@ hardware using:
 `.github/workflows/platform-checks.yml` runs on pushes, pull requests, and manual
 dispatch. It uses Windows 2025, Ubuntu 24.04, and macOS 15 hosted runners with
 Python 3.12 and Node.js 22. See the [GitHub runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
-for runner architectures and availability. This matrix is a code-portability
-check, not a commitment to a release support matrix.
+for runner architectures and availability. The explicit targets are Windows x64,
+Ubuntu x64, and macOS ARM64; Python and Node architectures are checked in CI.
+See [platform scope](PLATFORMS.md) for the initial delivery targets. These source
+checks do not imply that Linux/macOS packages are available.
 
 Each runner installs JavaScript dependencies with `npm ci`, runs frontend tests
 and its production build, runs backend tests, and runs Electron module tests.
