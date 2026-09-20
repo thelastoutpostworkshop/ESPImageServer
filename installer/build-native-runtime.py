@@ -1,4 +1,4 @@
-"""Build a relocatable management backend on its native Linux/macOS runner."""
+"""Build a relocatable management or Linux CUDA backend on its native runner."""
 
 import argparse
 import hashlib
@@ -34,11 +34,23 @@ def extract_python(archive, destination, expected_sha256):
         package.extractall(destination, members=members, filter="data")
 
 
-def build(destination):
+def dependency_arguments(target, mode):
+    if mode == "management":
+        return ["-r", str(PROJECT / "installer/requirements-management.txt")]
+    if mode != "cuda" or target != "linux-x64":
+        raise ValueError("CUDA bundles are supported only on Linux x64")
+    dependencies = tomllib.loads((PROJECT / "pyproject.toml").read_text())["project"]["dependencies"]
+    return ["--constraint", str(PROJECT / "installer/constraints-linux-cuda.txt"),
+            "--extra-index-url", "https://download.pytorch.org/whl/cu128",
+            "torch", "setuptools", *dependencies]
+
+
+def build(destination, mode="management"):
     manifest = json.loads((PROJECT / "installer/native-python.json").read_text())
     target = host_target()
     if target not in manifest["targets"]:
         raise ValueError(f"Build on Linux x64 or macOS ARM64, not {target}")
+    dependencies = dependency_arguments(target, mode)
     if destination.exists():
         raise ValueError(f"Output already exists; choose a new directory: {destination}")
     web = PROJECT / "frontend/dist"
@@ -61,7 +73,7 @@ def build(destination):
         if not launcher.exists():
             launcher.symlink_to("python3")
         subprocess.run([str(python), "-I", "-m", "pip", "install", "--only-binary=:all:",
-                        "-r", str(PROJECT / "installer/requirements-management.txt")], check=True)
+                        "--no-cache-dir", *dependencies], check=True)
         subprocess.run([str(python), "-I", "-m", "pip", "check"], check=True)
         shutil.copytree(PROJECT / "src/esp_image_server", bundle / "src/esp_image_server",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
@@ -73,15 +85,17 @@ def build(destination):
         resolved = subprocess.check_output([str(python), "-I", "-m", "pip", "freeze", "--all"], text=True)
         (bundle / "requirements-resolved.txt").write_text(resolved, encoding="utf-8")
         (bundle / "runtime-manifest.json").write_text(json.dumps({
-            "target": target, "mode": "management", "python": manifest["version"],
+            "target": target, "mode": mode, "python": manifest["version"],
             "python_source": source, "app_version": tomllib.loads(
                 (PROJECT / "pyproject.toml").read_text())["project"]["version"],
         }, indent=2) + "\n", encoding="utf-8")
         bundle.rename(destination)
-    print(f"Management backend prepared: {destination}")
+    print(f"{mode} backend prepared: {destination}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
-    build(parser.parse_args().output.resolve())
+    parser.add_argument("--mode", choices=("management", "cuda"), default="management")
+    args = parser.parse_args()
+    build(args.output.resolve(), args.mode)

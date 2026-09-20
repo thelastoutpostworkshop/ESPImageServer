@@ -52,7 +52,32 @@ CI relocates the bundle into a path with spaces and Unicode and runs it with
 isolated Python flags. The server child has an empty PATH. Checks cover Python
 prefix/import locations, no GPU stack, bundled FFmpeg encode/decode, version,
 management HTTP endpoints, generation rejection, and packaged frontend assets.
-Linux CUDA dependencies remain separate.
+Linux CUDA dependencies use the separate variant described below.
+
+## Linux CUDA backend
+
+`python installer/build-native-runtime.py dist/cuda-backend --mode cuda` prepares
+a Linux x64 backend with the project's image/video generation dependencies.
+It uses the existing CUDA pins (PyTorch 2.11.0+cu128 and torchvision 0.26.0+cu128),
+plus `installer/constraints-linux-cuda.txt` for Linux CUDA libraries, Triton,
+and additional dependencies. It rejects CUDA builds on macOS and other targets.
+Management-only builds and the Windows installer are unchanged.
+
+The separate `Linux CUDA backend (x64)` CI job installs binary wheels, runs
+`pip check`, relocates the runtime, imports the actual image/LTX/Wan pipelines,
+and checks a native torchvision operation. It then verifies FFmpeg, HTTP/web
+startup, and rejection of generation with CUDA devices hidden. No model weights
+are downloaded and no image/video generation is run. This checks dependency
+compatibility and no-GPU behavior, not NVIDIA GPU computation.
+
+Successful jobs upload `backend-linux-x64-cuda`, retained for three days because
+CUDA libraries make it substantially larger than the management bundle.
+The manifest records `mode: cuda` and the resolved dependency list is included.
+First hosted CUDA results are pending. This artifact is a backend component;
+the existing desktop artifacts still contain the management-only backend.
+CUDA desktop integration and final distribution remain separate work. The host
+still needs a compatible NVIDIA driver; runtime capability detection controls
+whether generation is enabled.
 
 ## Native desktop bundles
 
@@ -74,7 +99,7 @@ archives for seven days. Linux contains an `espimageserver` executable; macOS
 contains `ESPImageServer.app`. These are unsigned management-only development
 bundles, not final installers. The user confirmed that native builds and packaged
 smoke checks passed on Linux x64 and macOS ARM64.
-Linux CUDA, signing/notarization, and installer/update formats remain unfinished.
+CUDA desktop integration, signing/notarization, and installer/update formats remain unfinished.
 
 - Preserve the current Windows installer and runtime layout.
 - Prepare Linux x64 and macOS ARM64 Python 3.12 runtimes without requiring a

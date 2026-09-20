@@ -13,6 +13,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  linux-cuda:
+    name: Linux CUDA backend (x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      ESP_IMAGE_OPEN_BROWSER: '0'
+      CUDA_VISIBLE_DEVICES: ''
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          architecture: x64
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Verify native target
+        run: python ci/check-platform.py linux x64
+      - name: Build frontend
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+      - name: Build Linux CUDA backend
+        run: python installer/build-native-runtime.py dist/cuda-backend --mode cuda
+      - name: Verify relocated CUDA dependencies and no-GPU startup
+        run: |
+          mkdir -p 'dist/CUDA runtime é'
+          mv dist/cuda-backend 'dist/CUDA runtime é/backend'
+          'dist/CUDA runtime é/backend/.venv/bin/python' -I -B -m pip check
+          'dist/CUDA runtime é/backend/.venv/bin/python' -I -B ci/verify-native-runtime.py 'dist/CUDA runtime é/backend'
+      - name: Archive CUDA backend
+        run: tar -czf dist/backend-linux-x64-cuda.tar.gz -C 'dist/CUDA runtime é' backend
+      - name: Upload CUDA backend
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-linux-x64-cuda
+          path: dist/backend-linux-x64-cuda.tar.gz
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
   tests:
     name: Tests (${{ matrix.os }}, ${{ matrix.arch }})
     strategy:

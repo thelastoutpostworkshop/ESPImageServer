@@ -300,6 +300,14 @@ bundle before uploading a tar archive that preserves executable permissions and
 symlinks. See [platform scope](PLATFORMS.md) for contents and remaining work.
 Changes to dependency constraints or the Python pin must pass these native jobs.
 
+For a Linux x64 CUDA backend, add `--mode cuda` and use a new output directory.
+This uses application requirements from pyproject.toml with Linux CUDA constraints;
+the management requirements are kept separate. The dedicated CUDA job imports
+actual generation pipeline classes and tests startup with CUDA devices hidden.
+Its binary-wheel installation uses no pip download cache to reduce disk use.
+It uploads a large backend archive, not a CUDA desktop installer. See PLATFORMS.md
+for exact scope; hosted GPU computation is not part of this job.
+
 After preparing the backend, `python installer/prepare-native-esptool.py` downloads
 and verifies the native esptool archive. Run `npm --prefix desktop run build:native
 -- ../dist/native-backend` to build the directory bundle. The backend argument is

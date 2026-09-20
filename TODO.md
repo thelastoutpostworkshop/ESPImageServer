@@ -350,8 +350,12 @@ Windows behavior as platform delivery progresses.
   relocates, checks HTTP startup/web assets/FFmpeg with no system Python, and
   uploads backend artifacts. The user confirmed these hosted checks passed on
   Linux x64 and macOS ARM64. Native Electron integration is now implemented with
-  packaged startup checks; the user confirmed both native desktop jobs passed. Remaining
-  dependency work: Linux CUDA packages.
+  packaged startup checks; the user confirmed both native desktop jobs passed.
+  Linux CUDA backend construction and a separate no-GPU CI job are now implemented
+  with pinned PyTorch/torchvision and Linux CUDA libraries. The job checks native
+  imports, pip consistency, relocated startup, and generation rejection without
+  a GPU, and uploads a CUDA backend artifact. Hosted CUDA results are pending;
+  integration into a separately named Linux CUDA desktop bundle remains.
 - [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
   serial permissions/udev setup and macOS driver requirements where applicable.

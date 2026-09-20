@@ -14,14 +14,34 @@ import urllib.request
 import urllib.error
 
 bundle = Path(sys.argv[1]).resolve()
+manifest = json.loads((bundle / "runtime-manifest.json").read_text())
 assert Path(sys.prefix).resolve() == bundle / ".venv"
 assert Path(sys.base_prefix).resolve() == bundle / ".venv"
-assert importlib.util.find_spec("torch") is None
-assert importlib.util.find_spec("diffusers") is None
+if manifest["mode"] == "cuda":
+    assert manifest["target"] == "linux-x64"
+    # Exercise missing-GPU behavior even if a future CI host has an NVIDIA device.
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    import torch
+    import torchvision
+    import accelerate
+    import sentencepiece
+    from transformers import T5Tokenizer, T5EncoderModel
+    from diffusers import AutoPipelineForText2Image, LTXPipeline, LTXImageToVideoPipeline, WanPipeline, AutoencoderKLWan
+    assert torch.__version__ == "2.11.0+cu128"
+    assert torchvision.__version__ == "0.26.0+cu128"
+    assert torch.version.cuda == "12.8"
+    assert not torch.cuda.is_available()
+    # Detect a mismatched/missing torchvision native extension without a GPU.
+    assert torchvision.ops.nms(torch.tensor([[0., 0., 2., 2.]]), torch.tensor([1.]), 0.5).tolist() == [0]
+    print("PASS: pinned CUDA wheels, image/video pipeline imports, native torchvision; GPU computation not exercised")
+else:
+    assert manifest["mode"] == "management"
+    assert importlib.util.find_spec("torch") is None
+    assert importlib.util.find_spec("diffusers") is None
 import esp_image_server
 assert Path(esp_image_server.__file__).resolve().is_relative_to(bundle)
 from esp_image_server.version import APP_VERSION
-assert APP_VERSION == json.loads((bundle / "runtime-manifest.json").read_text())["app_version"]
+assert APP_VERSION == manifest["app_version"]
 from esp_image_server.video_library import bundled_ffmpeg_executable
 assert Path(bundled_ffmpeg_executable()).resolve().is_relative_to(bundle)
 
@@ -88,7 +108,7 @@ uvicorn.run(create_app(enable_mdns=False), host='127.0.0.1', port=int(sys.argv[2
                 assert "NVIDIA" in json.load(error)["detail"]
             else:
                 raise AssertionError("Management runtime must reject generation model loading")
-            print("PASS: relocated standalone Python, bundled FFmpeg, web UI, management API; no system Python or GPU stack")
+            print(f"PASS: relocated {manifest['mode']} runtime, bundled FFmpeg, web UI, management API and disabled generation without GPU; no system Python")
         finally:
             child.terminate()
             try:

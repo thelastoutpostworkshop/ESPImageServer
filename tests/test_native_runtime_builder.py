@@ -9,6 +9,27 @@ import pytest
 builder = runpy.run_path(str(Path(__file__).resolve().parents[1] / "installer/build-native-runtime.py"))
 
 
+@pytest.mark.parametrize("target", ["darwin-arm64", "linux-arm64", "win32-x64"])
+def test_cuda_build_rejects_unsupported_targets(target):
+    with pytest.raises(ValueError, match="Linux x64"):
+        builder["dependency_arguments"](target, "cuda")
+
+
+def test_cuda_uses_project_dependencies_and_linux_constraints():
+    arguments = builder["dependency_arguments"]("linux-x64", "cuda")
+    assert "https://download.pytorch.org/whl/cu128" in arguments
+    assert any(value.endswith("constraints-linux-cuda.txt") for value in arguments)
+    assert "torch" in arguments
+    assert any(value.startswith("diffusers") for value in arguments)
+    assert not any(value.endswith("requirements-management.txt") for value in arguments)
+
+
+def test_management_dependencies_remain_separate():
+    arguments = builder["dependency_arguments"]("darwin-arm64", "management")
+    assert len(arguments) == 2
+    assert arguments[1].endswith("requirements-management.txt")
+
+
 def archive_with(tmp_path, name, link=None):
     archive = tmp_path / "python.tar.gz"
     with tarfile.open(archive, "w:gz") as output:
