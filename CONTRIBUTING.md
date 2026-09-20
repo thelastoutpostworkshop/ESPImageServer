@@ -75,8 +75,8 @@ firmware hardware-ID checks. Low-level serial transports validate path syntax;
 their callers are responsible for checking current enumeration.
 
 The shared enumerator preserves serial number/vendor/product metadata for
-reconnection checks. Native permissions, drivers, and esptool packaging still
-require platform-specific validation. Automated serial tests use simulated
+reconnection checks. Native bundles include esptool; [USB setup help](USB_SETUP.md)
+documents OS permissions and drivers. Automated serial tests use simulated
 devices and do not flash boards or change Wi-Fi credentials.
 
 ## Native library folder actions

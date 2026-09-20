@@ -92,6 +92,9 @@ instead of duplicating its CUDA libraries.
 
 ## Native desktop bundles
 
+See [USB setup help](USB_SETUP.md) for Ubuntu serial permissions, udev, macOS
+driver selection, and connection troubleshooting.
+
 `desktop/build-native.mjs` now builds Linux x64 and macOS ARM64 directory bundles
 with the standalone backend, web assets, Electron, serialport bindings, and
 checksum-verified esptool 5.1.0. The existing Windows build remains unchanged.

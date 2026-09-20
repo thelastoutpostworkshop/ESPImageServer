@@ -358,7 +358,7 @@ Windows behavior as platform delivery progresses.
   job passed; actual GPU generation was not exercised. A separately named Linux
   CUDA desktop bundle and packaged no-GPU checks are implemented. The user
   confirmed the hosted CUDA desktop integration checks passed.
-- [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
+- [x] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
   serial permissions/udev setup and macOS driver requirements where applicable.
   Keep automated identification, flashing, and port-lifecycle coverage.
@@ -366,7 +366,8 @@ Windows behavior as platform delivery progresses.
   Pinned esptool 5.1.0 archives for Linux x64/macOS ARM64 are now verified and
   included by the native bundle build. CI checks the bundled version and actual
   serialport enumeration. The user confirmed both native jobs passed.
-  OS permission documentation remains.
+  USB_SETUP.md now covers Ubuntu group permissions, device-specific udev rules,
+  the udevadm dependency, macOS driver selection, and connection troubleshooting.
 - [ ] **P2 - Add native distribution and update flows:** Choose Linux package
   formats and macOS application packaging, icons, signing/notarization, and
   permissions. Build on appropriate native runners. Define install, update,

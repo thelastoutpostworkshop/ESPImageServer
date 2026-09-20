@@ -50,6 +50,8 @@ The desktop app starts the local server automatically. You can also open the app
 
 ## Install firmware over USB
 
+For Linux permissions and macOS serial drivers, see [USB setup help](USB_SETUP.md).
+
 In the desktop app, open **Set up display**. Connect a USB data cable, select
 the COM port, and choose **Check display**. Setup shows one stage at a time:
 Connect, Firmware, Wi-Fi, and Ready. The Creation Library panel closes to leave
