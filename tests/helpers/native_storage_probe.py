@@ -24,6 +24,10 @@ def writable_path(value):
 
 def audit(event, args):
     if event == "open" and args[2] & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND):
+        # Subprocess output suppression writes to the OS null device, not storage.
+        # Exempt only opening that device; deletion/rename checks stay unchanged.
+        if not isinstance(args[0], int) and os.fsdecode(args[0]) == os.devnull:
+            return
         writable_path(args[0])
     elif event in {"os.mkdir", "os.remove", "os.rmdir", "sqlite3.connect"}:
         writable_path(args[0])
@@ -33,6 +37,21 @@ def audit(event, args):
 
 
 sys.addaudithook(audit)
+
+# Exercise the null-device exception on every host, even when dependencies do
+# not happen to suppress subprocess output during this run.
+with open(os.devnull, "wb") as sink:
+    sink.write(b"discarded output")
+
+# Ordinary files outside user storage must still be rejected before creation.
+blocked = root.parent / "forbidden-storage-probe.txt"
+try:
+    blocked.write_bytes(b"must not be stored")
+except PermissionError:
+    assert violations.pop() == str(blocked.resolve())
+else:
+    raise AssertionError("Storage guard allowed a write outside user storage")
+assert not blocked.exists()
 
 from fastapi.testclient import TestClient
 from PIL import Image
