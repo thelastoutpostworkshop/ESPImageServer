@@ -40,6 +40,30 @@ support remain separate work. Existing experimental non-Windows storage under
 `~/.local/ESPImageServer` is not automatically migrated. Electron continues to
 use its own `app.getPath('userData')` for desktop state and firmware downloads.
 
+## Desktop runtime boundary
+
+`desktop/runtime.mjs` resolves Python, esptool, and icons without importing
+Electron. Development uses the repository's `.venv/Scripts/python.exe` on
+Windows and `.venv/bin/python` on Linux/macOS. There is no system-Python fallback.
+Windows installed paths remain unchanged. Future non-Windows packages must
+provide `resources/backend/.venv/bin/python` and a backend installed into that
+environment; that bundle is not produced yet.
+
+Tool locations are `tools/esptool/esptool-<target>/esptool` beneath the desktop
+directory in development or Electron resources in a package. Windows uses
+`windows-amd64/esptool.exe`; the other target directory conventions are
+`linux-amd64`, `linux-aarch64`, `macos-amd64`, and `macos-arm64`. These conventions
+do not imply binaries are bundled. Automatic download/verification still runs
+only on Windows; the Node preparation entry point skips PowerShell elsewhere.
+Missing tools produce an error before flashing starts and do not block management.
+
+The desktop stops only Python processes it launched, using Windows process-tree
+termination or POSIX termination with a bounded force-kill fallback. Connecting
+to an existing server leaves its lifecycle with its owner. macOS keeps the app
+and owned server running after the last window closes and recreates the window
+on Dock activation; explicit Quit stops the owned server. Windows/Linux quit
+when the last window closes. Native lifecycle verification remains in TODO.md.
+
 ## Development setup
 
 Use Python 3.10 or newer and a recent Node.js LTS release.

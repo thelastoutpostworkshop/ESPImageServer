@@ -1,31 +1,23 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron'
-import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FirmwareInstaller } from './firmware.mjs'
+import { runtimePaths, requireRuntimeFile, ServerRuntime, registerWindowLifecycle } from './runtime.mjs'
+import { FirmwareInstaller, runProcess } from './firmware.mjs'
 import { identifyPort, identifyAfterFlash, serialPorts } from './identification.mjs'
 import { WifiSetup } from './wifi.mjs'
 import { FirmwareLibrary } from './firmware-library.mjs'
 import { FirmwareReleases } from './firmware-releases.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
-const firmwareInstaller = new FirmwareInstaller(path.join(
-  app.isPackaged ? process.resourcesPath : desktopDirectory, 'tools', 'esptool', 'esptool-windows-amd64', 'esptool.exe'),
-  { ports: serialPorts, identify: identifyPort, reconnect: identifyAfterFlash })
+const runtime = runtimePaths({ desktopDirectory, resourcesPath: process.resourcesPath, packaged: app.isPackaged })
+const firmwareInstaller = new FirmwareInstaller(runtime.toolPath,
+  { ports: serialPorts, identify: identifyPort, reconnect: identifyAfterFlash,
+    run: (tool, args, options) => runProcess(requireRuntimeFile(tool, 'USB flashing tool (esptool)', runtime), args, options) })
 const wifiSetup = new WifiSetup(firmwareInstaller)
 const firmwareLibrary = new FirmwareLibrary(path.join(app.getPath('userData'), 'firmware-library.json'))
 const firmwareReleases = new FirmwareReleases(path.join(app.getPath('userData'), 'firmware-downloads'))
-const projectRoot = app.isPackaged
-  ? path.resolve(process.resourcesPath, '..', '..')
-  : path.resolve(desktopDirectory, '..')
-const pythonPath = path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
-const appIcon = app.isPackaged
-  ? path.join(projectRoot, 'espimageserver-icon.ico')
-  : path.join(projectRoot, 'installer', 'assets', 'espimageserver-icon.ico')
-
 let mainWindow
-let serverProcess
 let saveWindowStateTimer
 let isQuitting = false
 const serverLogLines = []
@@ -92,23 +84,15 @@ function appendServerLog(data) {
 
 async function serverIsAvailable() {
   try {
-    const response = await fetch('http://127.0.0.1:8000/health')
+    const response = await fetch('http://127.0.0.1:8000/health', { signal: AbortSignal.timeout(2000) })
     return response.ok
   } catch {
     return false
   }
 }
 
-function startServer() {
-  if (serverProcess || !existsSync(pythonPath)) return
-  updateSplash('Starting local image service', 'Preparing the ESPImageServer Python environment…')
-  serverProcess = spawn(pythonPath, ['-u', '-m', 'esp_image_server'], {
-    cwd: projectRoot,
-    env: { ...process.env, ESP_IMAGE_OPEN_BROWSER: '0' },
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe']
-  })
-  const trackServerOutput = data => {
+const serverRuntime = new ServerRuntime(runtime, {
+  onOutput: data => {
     appendServerLog(data)
     const line = data.toString()
     if (line.includes('Loading weights')) {
@@ -119,13 +103,13 @@ function startServer() {
       updateSplash('AI model ready', 'Starting the ESPImageServer workspace…')
     }
   }
-  serverProcess.stdout.on('data', trackServerOutput)
-  serverProcess.stderr.on('data', trackServerOutput)
-  serverProcess.once('exit', () => { serverProcess = undefined })
-}
+})
 
-async function waitForServer() {
-  for (let attempt = 0; attempt < 180; attempt += 1) {
+async function waitForServer(window) {
+  const deadline = performance.now() + 180_000
+  while (performance.now() < deadline) {
+    if (isQuitting || window.isDestroyed()) return false
+    if (serverRuntime.error) throw serverRuntime.error
     if (await serverIsAvailable()) return true
     await new Promise(resolve => setTimeout(resolve, 1_000))
   }
@@ -141,13 +125,15 @@ async function createWindow() {
     minHeight: 700,
     autoHideMenuBar: true,
     show: false,
-    icon: appIcon,
+    icon: runtime.appIcon,
     webPreferences: {
       preload: path.join(desktopDirectory, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false
     }
   })
+  const window = mainWindow
+  window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
   if (savedPositionIsVisible(windowState)) mainWindow.setPosition(windowState.x, windowState.y)
   mainWindow.on('resize', scheduleWindowStateSave)
   mainWindow.on('move', scheduleWindowStateSave)
@@ -161,25 +147,32 @@ async function createWindow() {
     }
     saveWindowState()
   })
-  await mainWindow.loadFile(path.join(desktopDirectory, 'splash.html'), {
+  await window.loadFile(path.join(desktopDirectory, 'splash.html'), {
     query: { version: app.getVersion() }
   })
   sendToWindow('server-log', serverLogLines)
-  mainWindow.show()
-  if (windowState.isMaximized) mainWindow.maximize()
+  if (isQuitting || window.isDestroyed()) return
+  window.show()
+  if (windowState.isMaximized) window.maximize()
 
-  if (!await serverIsAvailable()) startServer()
-  else updateSplash('Connecting to ESPImageServer', 'The local image service is already running…')
-  updateSplash('Waiting for ESPImageServer', 'The application is being prepared for local image & video generation…')
-  if (await waitForServer()) {
-    updateSplash('Ready', 'Opening the workspace…')
-    await mainWindow.loadURL('http://127.0.0.1:8000/#generate')
-  } else {
-    await dialog.showMessageBox(mainWindow, {
-      type: 'error',
-      title: 'ESPImageServer could not start',
-      message: 'The local image server did not become ready.',
-      detail: 'Run the installer again to repair ESPImageServer, then try opening the app again.'
+  try {
+    const available = await serverIsAvailable()
+    if (isQuitting || window.isDestroyed()) return
+    if (!available) serverRuntime.start()
+    updateSplash('Waiting for ESPImageServer', 'Preparing the local image and video service...')
+    if (await waitForServer(window)) {
+      if (isQuitting || window.isDestroyed()) return
+      updateSplash('Ready', 'Opening the workspace...')
+      await window.loadURL('http://127.0.0.1:8000/#generate')
+    } else if (!isQuitting && !window.isDestroyed()) {
+      throw new Error('The local image server did not become ready within three minutes. Check the startup log.')
+    }
+  } catch (error) {
+    if (isQuitting || window.isDestroyed()) return
+    updateSplash('ESPImageServer could not start', error.message)
+    await dialog.showMessageBox(window, {
+      type: 'error', title: 'ESPImageServer could not start',
+      message: 'The local image server could not start.', detail: error.message
     })
   }
 }
@@ -232,7 +225,10 @@ for (const [channel, handler] of Object.entries({
     if (!result.canceled) await firmwareInstaller.select(result.filePaths[0])
     return firmwareInstaller.snapshot()
   },
-  'firmware-install': ({ port, board, baud } = {}) => firmwareInstaller.start(port, board, baud)
+  'firmware-install': ({ port, board, baud } = {}) => {
+    requireRuntimeFile(runtime.toolPath, 'USB flashing tool (esptool)', runtime)
+    return firmwareInstaller.start(port, board, baud)
+  }
 })) {
   ipcMain.handle(channel, async (event, payload) => {
     requireFirmwareSender(event)
@@ -246,15 +242,14 @@ for (const [channel, handler] of Object.entries({
 
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
+  registerWindowLifecycle(app, {
+    getWindow: () => mainWindow, createWindow, isQuitting: () => isQuitting,
+    onError: error => { if (!isQuitting) dialog.showErrorBox('ESPImageServer could not open', error.message) }
   })
-  app.whenReady().then(createWindow)
-  app.on('window-all-closed', () => app.quit())
+  let shutdownComplete = false
   app.on('before-quit', event => {
+    if (shutdownComplete) return
+    if (isQuitting) { event.preventDefault(); return }
     if (wifiSetup.running) {
       event.preventDefault(); wifiSetup.cancel()
       void wifiSetup.completion.finally(() => app.quit())
@@ -263,6 +258,7 @@ else {
     if (firmwareInstaller.state.busy) { event.preventDefault(); return }
     isQuitting = true
     clearTimeout(saveWindowStateTimer)
-    if (serverProcess) serverProcess.kill()
+    event.preventDefault()
+    void serverRuntime.stop().finally(() => { shutdownComplete = true; app.quit() })
   })
 }

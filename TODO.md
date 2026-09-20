@@ -265,11 +265,12 @@ Complete this milestone before starting native installers or announcing support.
 The source audit found the following Windows dependencies; the code is not yet
 ready for Linux/macOS. Preserve the existing Windows behavior while addressing them.
 
-- [ ] **P1 - Isolate desktop runtime paths and lifecycle:** `desktop/main.mjs`
-  hardcodes `.venv/Scripts/python.exe`, the Windows esptool executable, and the
-  Windows installation layout. Move runtime/tool resolution into a testable
-  platform module. Handle missing runtimes explicitly and review subprocess
-  shutdown and macOS window reopening. Keep one shared FastAPI server and frontend.
+- [ ] **P1 - Validate desktop runtime paths and lifecycle on native platforms:**
+  Runtime/tool resolution is isolated in `desktop/runtime.mjs`; Windows paths
+  are preserved, with explicit missing-runtime errors, owned-server shutdown,
+  and macOS window reopening. Automated tests cover these behaviors. Still test
+  actual startup/quit, child-process cleanup, and Dock reopening on native hosts.
+  Non-Windows runtime/tool bundles and installers remain a later milestone.
 - [ ] **P1 - Validate writable paths on native Linux/macOS:** Shared path
   resolution is implemented in `paths.py`, with Windows locations preserved and
   unit coverage for all three platforms, XDG overrides, Unicode/spaces, and
