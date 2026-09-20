@@ -273,6 +273,13 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   and restart, preserving an independently started server, and focusing the
   existing window on a second launch. Still test actual startup/quit,
   child-process cleanup, and macOS Dock reopening on native Linux/macOS hosts.
+  A real Electron/Python smoke test is now added to the CI matrix, covering Vue
+  rendering, preload IPC, owned-server exit/port release, external-server
+  preservation, and macOS activation after closing the window. Both server
+  ownership scenarios passed locally on Windows. Hosted results are pending;
+  a physical Dock click and packaged startup remain manual checks. The local
+  run logged an mDNS advertisement timeout but completed startup; this does not
+  establish LAN discovery behavior.
   Non-Windows runtime/tool bundles and installers remain a later milestone.
 - [ ] **P1 - Validate writable paths on native Linux/macOS:** Shared path
   resolution is implemented in `paths.py`, with Windows locations preserved and

@@ -243,8 +243,22 @@ check, not a commitment to a release support matrix.
 
 Each runner installs JavaScript dependencies with `npm ci`, runs frontend tests
 and its production build, runs backend tests, and runs Electron module tests.
-It does not launch Electron, prepare esptool, or build an installer. Electron's
-binary download is skipped, but serialport's native bindings are still installed.
+It also downloads Electron and launches the real desktop entry point against
+the real Python server using a `.venv` with the CI backend dependencies.
+The smoke test checks Vue rendering, preload IPC, owned-server shutdown and port
+release, and preservation of an independently started server. On macOS it closes
+the window and emits Electron's activation event to verify reopening before
+quitting. This does not exercise a physical Dock click. Linux uses Xvfb; only the
+CI smoke launcher disables Chromium's sandbox. No installer or esptool is built.
+
+To run locally, build the frontend, prepare the normal project `.venv`, close
+the app/server, then run `npm --prefix desktop run test:smoke` (use `xvfb-run
+--auto-servernum` on headless Linux). The test refuses to run if port 8000 is
+occupied. It opens temporary desktop windows but does not generate media or
+send USB/display commands. Python home/data/cache paths and Electron user data
+are isolated under a temporary directory, whose location is printed for
+diagnostics. The test-only Python startup hook is supplied through `PYTHONPATH`;
+it is not installed into the app or included in desktop packages.
 
 `ci/requirements.txt` is a lightweight test environment, not an application
 installation. It reuses common installer constraints, omits Torch/Diffusers and

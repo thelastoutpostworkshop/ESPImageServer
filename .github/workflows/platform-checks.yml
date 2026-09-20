@@ -26,7 +26,6 @@ jobs:
       HF_HUB_OFFLINE: '1'
       TRANSFORMERS_OFFLINE: '1'
       ESP_IMAGE_OPEN_BROWSER: '0'
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -47,8 +46,10 @@ jobs:
         run: python -m pip install -r ci/requirements.txt
       - name: Install frontend dependencies
         run: npm --prefix frontend ci
-      - name: Install desktop module dependencies
+      - name: Install desktop dependencies and Electron
         run: npm --prefix desktop ci
+      - name: Prepare development Python runtime for desktop smoke test
+        run: python -m venv --system-site-packages .venv
       - name: Frontend tests
         run: npm --prefix frontend test
       - name: Build frontend
@@ -59,3 +60,9 @@ jobs:
         run: npm --prefix desktop test
       - name: Check desktop entry-point syntax
         run: node --check desktop/main.mjs
+      - name: Desktop lifecycle smoke test (Linux virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm --prefix desktop run test:smoke
+      - name: Desktop lifecycle smoke test (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run test:smoke

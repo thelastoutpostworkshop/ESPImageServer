@@ -10,7 +10,8 @@
     "build": "npm run prepare:esptool && npm --prefix ../frontend run build && electron-builder --win --x64 --dir",
     "prepare:esptool": "node ./prepare-esptool.mjs",
     "start": "npm run prepare:esptool && electron .",
-    "test": "node --test serial-ports.test.mjs runtime.test.mjs firmware.test.mjs identification.test.mjs wifi.test.mjs firmware-library.test.mjs firmware-releases.test.mjs"
+    "test": "node --test serial-ports.test.mjs runtime.test.mjs firmware.test.mjs identification.test.mjs wifi.test.mjs firmware-library.test.mjs firmware-releases.test.mjs",
+    "test:smoke": "node smoke-test.mjs"
   },
   "devDependencies": {
     "electron": "^43.3.0",
