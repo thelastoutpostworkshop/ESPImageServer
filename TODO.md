@@ -305,6 +305,10 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   and management-only startup. Run backend/frontend/Electron tests on native
   Windows, Linux, and macOS runners before calling this milestone complete.
   Preserve the ESP32 LAN API, GPU serialization, and cancellation behavior.
+  Windows GPU smoke check confirmed by the user after the capability refactor
+  and dependency repair: video generation completed, followed by successful
+  image generation, validating MP4 export and the video-to-image GPU handoff.
+  This does not replace native Linux/macOS or per-model validation.
 
 ### Later milestone: platform delivery and hardware validation
 

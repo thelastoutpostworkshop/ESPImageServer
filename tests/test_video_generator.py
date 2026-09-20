@@ -1,10 +1,23 @@
 import numpy as np
+import sys
+import pytest
 from PIL import Image
 
 from esp_image_server.video_generator import (
     VIDEO_MODELS, frame_to_rgb_image, remove_cached_video_model, rotate_frame_for_display, video_model_is_cached,
     working_video_size, working_wan_video_size,
 )
+
+
+def test_missing_exporter_fails_before_loading_video_model(tmp_path, monkeypatch):
+    from esp_image_server.video_generator import LTXVideoGenerator
+    monkeypatch.setitem(sys.modules, "imageio", None)
+    generator = LTXVideoGenerator()
+    monkeypatch.setattr(generator, "_load", lambda *args: pytest.fail("Model must not load before export validation"))
+    with pytest.raises(RuntimeError, match="imageio and imageio-ffmpeg"):
+        generator.generate("test", 64, 64, 9, 8, 4, None, tmp_path / "unused.mp4",
+                           lambda *args: None, lambda: False)
+    assert not (tmp_path / "unused.mp4").exists()
 
 
 def test_working_video_size_keeps_portrait_display_aspect_at_useful_resolution() -> None:

@@ -123,6 +123,20 @@ def frame_to_rgb_image(frame: Image.Image | object) -> Image.Image:
     return Image.fromarray(array).convert("RGB")
 
 
+def require_video_export_dependencies() -> None:
+    """Fail before model work if the configured MP4 exporter is unavailable."""
+    try:
+        import imageio
+        import imageio_ffmpeg
+        if not Path(imageio_ffmpeg.get_ffmpeg_exe()).is_file():
+            raise OSError("Bundled FFmpeg executable is missing")
+    except (ImportError, OSError, RuntimeError) as exc:
+        raise RuntimeError(
+            "Video export dependencies are missing or unusable. Repair the ESPImageServer "
+            "installation (imageio and imageio-ffmpeg), then restart the server before retrying."
+        ) from exc
+
+
 class LTXVideoGenerator:
     # The repository also contains a generic, non-distilled Diffusers pipeline.
     # Loading it with ``from_pretrained`` does *not* load the checkpoint advertised
@@ -281,6 +295,7 @@ class LTXVideoGenerator:
             model = VIDEO_MODELS.get(model_id)
             if model is None:
                 raise ValueError("Unsupported video model")
+            require_video_export_dependencies()
             self._load(model_id, progress)
             import torch
             from diffusers.utils import export_to_video

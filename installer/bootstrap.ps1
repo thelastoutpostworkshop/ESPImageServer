@@ -166,11 +166,10 @@ try {
     if ((Invoke-LoggedExternal $venvPython $applicationInstallArguments) -ne 0) {
         throw 'Unable to install the pinned ESPImageServer dependencies.'
     }
-    # Video thumbnails use the FFmpeg binary bundled by imageio-ffmpeg. Verify
-    # that the executable was installed now, rather than discovering a missing
-    # dependency after the user saves their first generated video.
-    if ((Invoke-LoggedExternal $venvPython @('-c', 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')) -ne 0) {
-        throw 'Unable to install the bundled FFmpeg tools needed for video thumbnails.'
+    # Verify tokenizer and export imports as well as bundled FFmpeg before a
+    # user spends time generating a video that cannot be encoded.
+    if ((Invoke-LoggedExternal $venvPython @('-c', 'import imageio, imageio_ffmpeg, sentencepiece; print(imageio_ffmpeg.get_ffmpeg_exe())')) -ne 0) {
+        throw 'Unable to verify the video tokenizer, MP4 exporter, and bundled FFmpeg dependencies.'
     }
 
     Set-InstallStatus 4 'Recording installed package versions...'
