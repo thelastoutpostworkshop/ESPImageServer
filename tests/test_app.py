@@ -29,6 +29,9 @@ from esp_image_server.video_library import VideoLibrary
 def isolate_app_data(tmp_path, monkeypatch) -> None:
     """Keep fake generated test images out of the user's real app data."""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    for variable in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
+        monkeypatch.setenv(variable, str(tmp_path / variable))
 
 
 class FakeGenerator:

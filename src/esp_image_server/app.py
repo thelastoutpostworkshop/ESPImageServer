@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from PIL import Image
 from starlette.background import BackgroundTask
 
+from .paths import cache_dir
 from .config import Settings
 from .app_settings import AppSettingsStore
 from .display import ActiveDisplayStore
@@ -268,7 +269,7 @@ def create_app(
     active_display_store = active_display_store or ActiveDisplayStore()
     display_settings_store = display_settings_store or DisplaySettingsStore()
     display_registry = display_registry or DisplayRegistry()
-    video_output_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "videos"
+    video_output_path = cache_dir() / "videos"
     generation_queue = generation_queue or GenerationQueue(video_result_root=video_output_path)
     diagnostics = DiagnosticLogStore()
     diagnostics.setFormatter(logging.Formatter("%(message)s"))
@@ -282,7 +283,7 @@ def create_app(
     video_generator = video_generator or LTXVideoGenerator()
     model_loading_status: dict[str, object] = {"active": False, "step": 0, "steps": 0, "stage": ""}
     mjpeg_cache = mjpeg_cache or MjpegConversionCache(video_output_path / "display-mjpeg")
-    sd_thumbnail_path = Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "display_sd_thumbnails"
+    sd_thumbnail_path = cache_dir() / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
     persisted_app_settings = app_settings_store.get()
     library_location = persisted_app_settings.get("image_library_location")

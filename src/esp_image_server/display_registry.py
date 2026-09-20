@@ -6,12 +6,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
-import os
 from pathlib import Path
 import sqlite3
 from threading import RLock
 import time
 
+from .paths import data_dir
 from .display_settings import VALID_ROTATIONS
 
 
@@ -78,7 +78,7 @@ class DisplayRegistry:
 
     @staticmethod
     def _default_path() -> Path:
-        return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "displays.sqlite3"
+        return data_dir() / "displays.sqlite3"
 
     def register(
         self,

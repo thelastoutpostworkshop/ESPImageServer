@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
+
+from .paths import config_dir
 
 
 class ModelSelectionStore:
@@ -14,7 +15,7 @@ class ModelSelectionStore:
 
     @staticmethod
     def _default_path() -> Path:
-        return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "settings.json"
+        return config_dir() / "settings.json"
 
     def get(self) -> str:
         try:

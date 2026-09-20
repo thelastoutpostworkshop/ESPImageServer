@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-import os
 from pathlib import Path
 import shutil
 
 from .config import Settings
+from .paths import image_model_cache_roots
 
 
 @dataclass(frozen=True)
@@ -50,12 +50,7 @@ def model_settings(settings: Settings, model_id: str) -> Settings:
 
 def model_cache_roots(cache_dir: Path | None) -> tuple[Path, ...]:
     """Return the image-model cache roots used by installed and dev builds."""
-    if cache_dir is None:
-        app_cache = Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
-        hub_cache = os.getenv("HUGGINGFACE_HUB_CACHE") or os.getenv("HF_HUB_CACHE")
-        hf_home = Path(os.getenv("HF_HOME", Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache")) / "huggingface"))
-        return (app_cache, Path(hub_cache) if hub_cache else hf_home / "hub")
-    return (cache_dir,)
+    return image_model_cache_roots(cache_dir)
 
 
 def model_is_cached(model: ModelDefinition, cache_dir: Path | None) -> bool:

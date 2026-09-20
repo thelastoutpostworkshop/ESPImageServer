@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
+
+from .paths import config_dir
 
 
 class AppSettingsStore:
@@ -13,7 +14,7 @@ class AppSettingsStore:
 
     @staticmethod
     def _default_path() -> Path:
-        return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "app_settings.json"
+        return config_dir() / "app_settings.json"
 
     def get(self) -> dict[str, object]:
         try:

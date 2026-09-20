@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
-import os
 from pathlib import Path
 import shutil
 from threading import Lock
 from uuid import uuid4
+
+from .paths import data_dir
 
 
 class ImageLibrary:
@@ -21,11 +22,11 @@ class ImageLibrary:
 
     @staticmethod
     def _default_path() -> Path:
-        return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "images"
+        return data_dir() / "images"
 
     @staticmethod
     def _default_index_path() -> Path:
-        return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "image_library_index.json"
+        return data_dir() / "image_library_index.json"
 
     def save(self, jpeg: bytes, metadata: dict[str, object]) -> dict[str, object]:
         with self._lock:

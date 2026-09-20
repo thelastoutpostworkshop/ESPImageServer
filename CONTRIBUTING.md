@@ -12,6 +12,34 @@ Thanks for helping improve ESPImageServer. This project creates locally generate
 
 The ESP32 firmware lives in the separate `ESPImageDisplay` repository. Do not change it for server-only work, but consider it whenever changing an API or the JPEG format.
 
+## Writable backend locations
+
+Use `src/esp_image_server/paths.py` for default writable paths. Resolution does
+not create directories or migrate files; stores create their directories when
+writing. User-selected image libraries and explicit store paths remain unchanged.
+
+| Purpose | Windows (unchanged) | Linux | macOS |
+| --- | --- | --- | --- |
+| Settings | `%LOCALAPPDATA%/ESPImageServer` | `$XDG_CONFIG_HOME/ESPImageServer` | `~/Library/Application Support/ESPImageServer` |
+| Registry, library index, default images | `%LOCALAPPDATA%/ESPImageServer` | `$XDG_DATA_HOME/ESPImageServer` | `~/Library/Application Support/ESPImageServer` |
+| Generated video results, converted media, SD thumbnails | `%LOCALAPPDATA%/ESPImageServer` | `$XDG_CACHE_HOME/ESPImageServer` | `~/Library/Caches/ESPImageServer` |
+| Model downloads | `~/.cache/ESPImageServer/models` | `$XDG_CACHE_HOME/ESPImageServer/models` | `~/Library/Caches/ESPImageServer/models` |
+
+Linux XDG defaults are `~/.config`, `~/.local/share`, and `~/.cache` respectively;
+empty or relative XDG overrides are ignored. Windows retains its historical
+`~/.local/ESPImageServer` fallback when LOCALAPPDATA is unset. Saved videos stay
+in the image library's `videos` subfolder, separate from disposable video results.
+
+`ESP_IMAGE_MODEL_CACHE` overrides the model-download location on every OS.
+An explicitly supplied image-generation `Settings.model_cache_dir` takes
+precedence over that environment variable. Image-model discovery also retains
+the shared Hugging Face cache lookup and its existing environment overrides.
+
+These paths prepare the backend for Linux/macOS; desktop packaging and hardware
+support remain separate work. Existing experimental non-Windows storage under
+`~/.local/ESPImageServer` is not automatically migrated. Electron continues to
+use its own `app.getPath('userData')` for desktop state and firmware downloads.
+
 ## Development setup
 
 Use Python 3.10 or newer and a recent Node.js LTS release.

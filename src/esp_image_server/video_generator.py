@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import shutil
 from threading import RLock
@@ -11,6 +10,7 @@ from typing import Callable
 import numpy as np
 from PIL import Image, ImageOps
 
+from .paths import model_cache_dir as resolve_model_cache_dir
 from .generation_jobs import GenerationCancelled
 from .download_progress import huggingface_progress
 
@@ -33,7 +33,7 @@ VIDEO_MODELS = {
 
 
 def video_model_cache_dir() -> Path:
-    return Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
+    return resolve_model_cache_dir()
 
 
 def video_model_is_cached(model_id: str) -> bool:

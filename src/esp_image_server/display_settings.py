@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
+
+from .paths import config_dir
 
 
 VALID_ROTATIONS = {0, 90, 180, 270}
@@ -16,7 +17,7 @@ class DisplaySettingsStore:
 
     @staticmethod
     def _default_path() -> Path:
-        return Path(os.getenv("LOCALAPPDATA", Path.home() / ".local")) / "ESPImageServer" / "display_settings.json"
+        return config_dir() / "display_settings.json"
 
     def get_rotation(self) -> int:
         return self._get_setting("image_rotation")

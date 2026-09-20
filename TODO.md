@@ -270,12 +270,11 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   Windows installation layout. Move runtime/tool resolution into a testable
   platform module. Handle missing runtimes explicitly and review subprocess
   shutdown and macOS window reopening. Keep one shared FastAPI server and frontend.
-- [ ] **P1 - Standardize writable paths:** Replace the repeated LOCALAPPDATA
-  defaults in settings stores, display registry, image library, and `app.py`
-  with shared platform-aware configuration/data/cache paths. Respect Linux XDG
-  and macOS application-support/cache locations; preserve existing Windows
-  locations, user-selected libraries, and explicit model-cache overrides.
-  Test spaces, Unicode, case sensitivity, and read-only installation directories.
+- [ ] **P1 - Validate writable paths on native Linux/macOS:** Shared path
+  resolution is implemented in `paths.py`, with Windows locations preserved and
+  unit coverage for all three platforms, XDG overrides, Unicode/spaces, and
+  explicit library/model-cache paths. Still verify persistence on native
+  case-sensitive filesystems and with a read-only installation directory.
 - [ ] **P1 - Remove COM-only USB assumptions:** `firmware.mjs`,
   `identification.mjs`, and `wifi.mjs` reject non-COM device names, including
   ports returned by SerialPort.list(). Centralize validation against enumerated

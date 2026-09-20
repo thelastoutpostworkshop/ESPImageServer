@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
 from threading import Lock
 from typing import Callable
 
 from PIL import Image
 
+from .paths import model_cache_dir as resolve_model_cache_dir
 from .config import Settings
 from .download_progress import DownloadProgress, huggingface_progress
 from .generation_jobs import GenerationCancelled
@@ -68,7 +67,7 @@ class DiffusersGenerator:
         dtype = torch.float16
         logger.info("Loading model '%s' on %s", self.settings.model_id, self._device)
         options = {"torch_dtype": dtype}
-        model_cache_dir = Path(os.getenv("ESP_IMAGE_MODEL_CACHE", Path.home() / ".cache" / "ESPImageServer" / "models"))
+        model_cache_dir = resolve_model_cache_dir(self.settings.model_cache_dir)
         model_cache_dir.mkdir(parents=True, exist_ok=True)
         if progress is not None:
             progress(0, 0, f"Checking or downloading {self.settings.model_id}")

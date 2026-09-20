@@ -21,3 +21,27 @@ def test_usable_cuda_runs_probe(monkeypatch):
     ))
     assert DiffusersGenerator(Settings()).device == 'cuda'
     assert calls == ['cuda', 'sync']
+
+
+def test_image_loading_honors_settings_cache_override(tmp_path, monkeypatch):
+    cache = tmp_path / 'chosen models'
+    monkeypatch.setenv('ESP_IMAGE_MODEL_CACHE', str(tmp_path / 'environment models'))
+    monkeypatch.setattr(DiffusersGenerator, '_detect_device', staticmethod(lambda: 'cuda'))
+    monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace(float16='float16'))
+    monkeypatch.setitem(sys.modules, 'diffusers', SimpleNamespace(AutoPipelineForText2Image=object()))
+    calls = []
+
+    class StopBeforeDownload(Exception):
+        pass
+
+    def snapshot_download(model, **kwargs):
+        calls.append(kwargs['cache_dir'])
+        raise StopBeforeDownload
+
+    monkeypatch.setitem(sys.modules, 'huggingface_hub', SimpleNamespace(snapshot_download=snapshot_download))
+    generator = DiffusersGenerator(Settings(model_cache_dir=cache))
+    with pytest.raises(StopBeforeDownload):
+        generator.load()
+    assert calls == [cache]
+    assert cache.is_dir()
+    assert not (tmp_path / 'environment models').exists()
