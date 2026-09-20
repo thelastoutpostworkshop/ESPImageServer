@@ -39,6 +39,7 @@ class QueuedGenerationJob:
     generation_time_seconds: float | None = None
     finished_at: float | None = None
     media_references: int = 0
+    started_at: float | None = None
 
     def as_dict(self, queue_position: int | None = None) -> dict[str, object]:
         progress = 100 if self.status == "complete" else (0 if self.steps == 0 else round(self.step * 100 / self.steps))
@@ -48,6 +49,9 @@ class QueuedGenerationJob:
             "cancellable": self.status in {"queued", "running", "cancelling"},
             "queue_position": queue_position, "metadata": self.metadata,
             "generation_time_seconds": self.generation_time_seconds,
+            "elapsed_seconds": self.generation_time_seconds if self.finished_at is not None else (
+                round(max(0, perf_counter() - self.started_at), 2) if self.started_at is not None else 0
+            ),
         }
 
 
@@ -124,7 +128,7 @@ class GenerationQueue:
                 job.finished_at = time()
             elif job.status in {"running", "cancelling"}:
                 job.cancel_requested = True
-                job.status, job.stage = "cancelling", f"Cancelling {job.kind} generation"
+                job.status = "cancelling"
             return job
 
     def clear_finished(self) -> int:
@@ -257,6 +261,7 @@ class GenerationQueue:
             job = self._jobs[job_id]
             kind = job.kind
             work = job.work
+            job.started_at = perf_counter()
         generation_started_at = perf_counter()
         try:
             if cancelled():

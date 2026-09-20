@@ -204,6 +204,44 @@ def test_generation_job_reports_progress_and_returns_its_image() -> None:
     assert Image.open(BytesIO(image.content)).size == (20, 10)
 
 
+def test_loading_stage_and_pending_cancellation_are_shared_with_queue() -> None:
+    class LoadingGenerator(FakeGenerator):
+        def activate_model(self, settings, progress=None):
+            progress(0, 0, "Loading test model from disk")
+            started.set()
+            assert release.wait(5)
+            self.ready = True
+
+    started, release = Event(), Event()
+    generator = LoadingGenerator()
+    app = create_app(Settings(), generator, enable_mdns=False)
+    with TestClient(app) as client:
+        try:
+            job_id = client.post('/generation-jobs', json={'prompt': 'a tiny robot'}).json()['id']
+            assert started.wait(2)
+            job = client.get(f'/generation-jobs/{job_id}').json()
+            assert job['stage'] == 'Loading test model from disk'
+            assert job['steps'] == 0
+            assert job['elapsed_seconds'] >= 0
+            cancelled = client.delete(f'/generation-jobs/{job_id}').json()
+            assert cancelled['status'] == 'cancelling'
+            assert cancelled['stage'] == job['stage']
+            queued = next(item for item in client.get('/generation-queue').json() if item['id'] == job_id)
+            assert queued['status'] == 'cancelling'
+            assert queued['stage'] == job['stage']
+            assert queued['elapsed_seconds'] >= job['elapsed_seconds']
+        finally:
+            release.set()
+        for _ in range(100):
+            job = client.get(f'/generation-jobs/{job_id}').json()
+            if job['status'] == 'cancelled':
+                break
+            time.sleep(0.01)
+        assert job['status'] == 'cancelled'
+        assert generator.generate_calls == 0
+        assert job['elapsed_seconds'] == job['generation_time_seconds']
+
+
 def test_generation_job_can_be_cancelled() -> None:
     generator = CancellableFakeGenerator()
     app = create_app(Settings(), generator, enable_mdns=False)

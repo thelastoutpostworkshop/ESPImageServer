@@ -106,3 +106,7 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
   .sd-card-mobile-list .v-list-item { min-height: 104px; padding-block: 8px; }
   .sd-card-mobile-list .v-list-item-title { overflow-wrap: anywhere; }
 }
+:root .generation-job-detail {
+  white-space: normal;
+  -webkit-line-clamp: unset;
+}

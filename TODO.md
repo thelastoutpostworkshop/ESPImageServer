@@ -180,14 +180,14 @@ design follow-ups; implementation causes have not been verified.
    invalid submission adds no job and does not obscure an existing job's
    progress or cancellation state.
 
-2. **P1 — Explain model loading and pending cancellation.** The SD-Turbo
-   test job remained at “Preparing image generation — 0%” for several
-   minutes; only Diagnostics explained that the model was loading on CUDA.
-   Surface the actual stage and elapsed time in generation and Queue views.
-   Explain when cancellation must wait, keep status consistent across views,
-   and confirm when cancellation finishes. The test job was still cancelling
-   at the last review check; successful generation and completed cancellation
-   remain unverified. Do not assume the model loader is permanently stuck.
+2. **P1 — Validate model loading and cancellation on a real GPU.** Loading
+   stages, elapsed time, and pending-cancellation explanations are implemented
+   in generation and Queue views. Automated tests cover cancellation during a
+   blocked model load, matching queue/API status, and completion without starting
+   inference after cancellation. Still verify a cold model load, successful
+   image/video generation, cancellation during loading and inference, and the
+   next queued job starting only after the cancelled operation has stopped.
+   Check desktop and phone layouts; automated fakes do not establish GPU timing.
 
 3. **P1 — Reconcile SD-card refresh acknowledgements, results, and errors.**
    Refreshing the active display's SD card produced a completed status in the

@@ -74,12 +74,17 @@ class DiffusersGenerator:
         # positives are returned as an all-black image, which is especially
         # confusing on a small ESP32 display. The app validates output below
         # instead of silently showing a blank image.
+        if progress is not None:
+            progress(0, 0, f"Loading {self.settings.model_id} from disk")
         pipeline = AutoPipelineForText2Image.from_pretrained(
             model_path,
             safety_checker=None,
             requires_safety_checker=False,
             **options,
         )
+        if progress is not None:
+            destination = "NVIDIA graphics card (CUDA)" if self._device == "cuda" else "CPU"
+            progress(0, 0, f"Moving {self.settings.model_id} to {destination}")
         pipeline = pipeline.to(self._device)
         if self._device == "cpu":
             pipeline.enable_attention_slicing()

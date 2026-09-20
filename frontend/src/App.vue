@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import QRCode from 'qrcode'
+import { generationJobDetail, generationHasMeasuredProgress } from './generationStatus.js'
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
@@ -402,9 +403,9 @@ const appBarStatus = computed(() => {
     const cancelling = runningJob.status === 'cancelling'
     return {
       color: 'primary', icon: isVideo ? 'mdi-movie-open-outline' : 'mdi-image-outline', page: isVideo ? 'video' : 'generate',
-      label: cancelling ? `Cancelling ${kind}` : Number.isFinite(progress) && progress > 0 ? `Generating ${kind} · ${progress}%` : `Preparing ${kind}`,
+      label: cancelling ? `Cancellation pending (${kind})` : runningJob.stage,
       compactLabel: cancelling ? 'Cancel' : Number.isFinite(progress) && progress > 0 ? `${progress}%` : isVideo ? 'Video' : 'Image',
-      description: cancelling ? `Cancelling ${kind} generation.` : `Image and video generation progress: ${Number.isFinite(progress) && progress > 0 ? `${progress}%` : `preparing ${kind}`}.`
+      description: generationJobDetail(runningJob)
     }
   }
   if (videoGenerationActive.value) {
@@ -1115,6 +1116,10 @@ async function loadServerStatus() {
   ])
 }
 
+function updateGenerationQueueJob(job) {
+  generationQueue.value = generationQueue.value.map(item => item.id === job.id ? { ...item, ...job } : item)
+}
+
 async function loadGenerationQueue() {
   try {
     const response = await fetch('/generation-queue', { cache: 'no-store' })
@@ -1132,9 +1137,7 @@ function latestCompletedGenerationJob(jobs, kind) {
 
 function resultPanelQueueStatus(job) {
   if (!job) return ''
-  if (job.status === 'queued') return job.queue_position ? `Queued · position ${job.queue_position}` : 'Queued'
-  if (job.status === 'cancelling') return 'Cancelling'
-  return Number.isFinite(job.progress) && job.progress > 0 ? `Generating · ${job.progress}%` : 'Starting'
+  return job.status === 'cancelling' ? 'Cancellation pending' : job.stage
 }
 
 function queueJobDisplayTarget(job) {
@@ -2583,6 +2586,7 @@ async function generate() {
       const statusResponse = await fetchGenerationResponse(`/generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
+      updateGenerationQueueJob(currentJob)
       if (['running', 'cancelling'].includes(currentJob.status) && !activeJobId.value) activeJobId.value = job.id
       if (activeJobId.value === job.id) {
         activeImageJobRunning.value = ['running', 'cancelling'].includes(currentJob.status)
@@ -2708,6 +2712,7 @@ async function generateVideo() {
       const statusResponse = await fetchGenerationResponse(`/video-generation-jobs/${job.id}`)
       if (!statusResponse.ok) throw new Error(`Request failed (${statusResponse.status})`)
       currentJob = await statusResponse.json()
+      updateGenerationQueueJob(currentJob)
       if (['running', 'cancelling'].includes(currentJob.status) && !activeVideoJobId.value) activeVideoJobId.value = job.id
       if (activeVideoJobId.value === job.id) {
         activeVideoJobRunning.value = ['running', 'cancelling'].includes(currentJob.status)
@@ -3412,10 +3417,10 @@ onUnmounted(() => {
                 </v-avatar>
               </template>
               <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
-              <v-list-item-subtitle>{{ job.status === 'queued' ? `Waiting · position ${job.queue_position}` : job.stage }}<span v-if="job.status !== 'queued' && job.progress"> · {{ job.progress }}%</span></v-list-item-subtitle>
+              <v-list-item-subtitle class="generation-job-detail">{{ generationJobDetail(job) }}</v-list-item-subtitle>
               <v-list-item-subtitle>{{ queueJobDisplayLabel(job) }}</v-list-item-subtitle>
-              <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" :title="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
-              <v-progress-linear v-if="job.status !== 'queued'" class="mt-2" :model-value="job.progress" color="primary" height="6" rounded />
+              <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || job.status === 'cancelling' || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" :title="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
+              <v-progress-linear v-if="job.status !== 'queued'" class="mt-2" :model-value="job.progress" :indeterminate="!generationHasMeasuredProgress(job)" color="primary" height="6" rounded />
             </v-list-item>
           </v-list>
           <v-card-text v-if="!activeGenerationQueue.length" class="text-medium-emphasis py-6 text-center">No image or video jobs are waiting.</v-card-text>
@@ -3579,11 +3584,11 @@ onUnmounted(() => {
                   {{ activeJobId ? 'Cancel generation' : 'Cancel' }}
                 </v-btn>
               </div>
-              <div v-if="generating && activeImageJobRunning" class="mt-5">
+              <div v-if="activeImageQueueJob" class="mt-5" role="status">
                 <div class="d-flex justify-space-between text-body-2 mb-2">
-                  <span>{{ generationStage }}</span><span>{{ activeJobId || generationProgress ? `${generationProgress}%` : 'Preparing' }}</span>
+                  <span>{{ generationJobDetail(activeImageQueueJob) }}</span><span v-if="generationHasMeasuredProgress(activeImageQueueJob)">{{ activeImageQueueJob.progress }}%</span>
                 </div>
-                <v-progress-linear :model-value="generationProgress" :indeterminate="!activeJobId && !generationProgress" color="primary" height="10" rounded />
+                <v-progress-linear :model-value="activeImageQueueJob.progress" :indeterminate="!generationHasMeasuredProgress(activeImageQueueJob)" color="primary" height="10" rounded />
               </div>
               <v-alert v-if="status" class="mt-4" type="success" variant="tonal" density="compact">
                 {{ status }}
@@ -3614,7 +3619,7 @@ onUnmounted(() => {
             v-if="activeImageQueueJob"
             class="mx-4 mb-3"
             :color="activeImageQueueJob.status === 'cancelling' ? 'warning' : 'primary'"
-            :indeterminate="activeImageQueueJob.status !== 'running'"
+            :indeterminate="!generationHasMeasuredProgress(activeImageQueueJob)"
             :model-value="activeImageQueueJob.status === 'running' ? activeImageQueueJob.progress : undefined"
             height="6"
             rounded
@@ -3775,9 +3780,9 @@ onUnmounted(() => {
                 <v-btn v-if="generatingVideo" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
               </div>
             </v-form>
-            <div v-if="generatingVideo && activeVideoJobRunning" class="mt-5">
-              <div class="d-flex justify-space-between text-body-2 mb-2"><span>{{ videoStage }}</span><span>{{ videoProgress }}%</span></div>
-              <v-progress-linear :model-value="videoProgress" :indeterminate="!activeVideoJobId" color="primary" height="10" rounded />
+            <div v-if="activeVideoQueueJob" class="mt-5" role="status">
+              <div class="d-flex justify-space-between text-body-2 mb-2"><span>{{ generationJobDetail(activeVideoQueueJob) }}</span><span v-if="generationHasMeasuredProgress(activeVideoQueueJob)">{{ activeVideoQueueJob.progress }}%</span></div>
+              <v-progress-linear :model-value="activeVideoQueueJob.progress" :indeterminate="!generationHasMeasuredProgress(activeVideoQueueJob)" color="primary" height="10" rounded />
             </div>
             <v-alert v-else-if="videoStage" type="success" variant="tonal" density="compact" class="mt-4">{{ videoStage }}</v-alert>
             <v-alert v-if="videoError" type="error" variant="tonal" density="compact" class="mt-4">{{ videoError }}</v-alert>
@@ -3799,7 +3804,7 @@ onUnmounted(() => {
                     v-if="activeVideoQueueJob"
                     class="mx-4 mb-3"
                     :color="activeVideoQueueJob.status === 'cancelling' ? 'warning' : 'primary'"
-                    :indeterminate="activeVideoQueueJob.status !== 'running'"
+                    :indeterminate="!generationHasMeasuredProgress(activeVideoQueueJob)"
                     :model-value="activeVideoQueueJob.status === 'running' ? activeVideoQueueJob.progress : undefined"
                     height="6"
                     rounded
@@ -4322,8 +4327,8 @@ onUnmounted(() => {
               <v-list-item v-for="job in generationQueue.filter(item => ['queued', 'running', 'cancelling'].includes(item.status))" :key="job.id">
                 <template #prepend><v-icon :icon="job.kind === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline'" /></template>
                 <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
-                <v-list-item-subtitle>{{ job.status === 'queued' ? `Waiting · position ${job.queue_position}` : job.stage }}<span v-if="job.status !== 'queued' && job.progress"> · {{ job.progress }}%</span></v-list-item-subtitle>
-                <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
+              <v-list-item-subtitle class="generation-job-detail">{{ generationJobDetail(job) }}</v-list-item-subtitle>
+                <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || job.status === 'cancelling' || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
               </v-list-item>
             </v-list>
             <div v-else class="pa-4 text-medium-emphasis">No image or video jobs are waiting.</div>

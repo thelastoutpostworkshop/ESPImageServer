@@ -1630,7 +1630,10 @@ def create_app(
         ensure_not_cancelled()
         job_model_id = model_id or active_model_id
         job_settings = selected_settings or active_settings
-        generator.activate_model(job_settings)
+        if progress is not None:
+            progress(0, 0, f"Preparing {get_model(job_model_id).name}")
+        generator.activate_model(job_settings, progress=progress)
+        ensure_not_cancelled()
         model = get_model(job_model_id)
         if request.negative_prompt and not model.supports_negative_prompt:
             raise ValueError(f"{model.name} does not support negative prompts")

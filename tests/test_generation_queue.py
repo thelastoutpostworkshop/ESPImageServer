@@ -17,6 +17,34 @@ def wait_for_status(queue: GenerationQueue, job_id: str, status: str) -> None:
     raise AssertionError(f"Job {job_id} did not reach {status}")
 
 
+def test_pending_cancellation_keeps_gpu_queue_blocked_until_work_returns() -> None:
+    queue = GenerationQueue()
+    started, release, next_started = Event(), Event(), Event()
+    def loading(progress, cancelled):
+        progress(0, 0, 'Loading model from disk')
+        started.set()
+        assert release.wait(3)
+        return b'cancelled result'
+    try:
+        first = queue.create('image', loading)
+        assert started.wait(1)
+        second = queue.create('video', lambda progress, cancelled: (next_started.set(), Path('video.mp4'))[1])
+        queue.cancel(first.job_id)
+        queue.cancel(first.job_id)
+        assert first.status == 'cancelling'
+        assert first.stage == 'Loading model from disk'
+        assert not next_started.is_set()
+        assert second.status == 'queued'
+        release.set()
+        wait_for_status(queue, first.job_id, 'cancelled')
+        wait_for_status(queue, second.job_id, 'complete')
+        assert first.jpeg is None
+        assert first.as_dict()['elapsed_seconds'] == first.generation_time_seconds
+    finally:
+        release.set()
+        queue.close()
+
+
 def test_shared_queue_orders_mixed_work_and_cancels_waiting_job() -> None:
     queue = GenerationQueue()
     started = Event()
