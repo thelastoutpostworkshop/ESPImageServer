@@ -97,6 +97,7 @@ const generationQueueSnackbar = ref(false)
 const generationQueueSnackbarMessage = ref('')
 const displayRotation = ref(0)
 const videoRotation = ref(0)
+const savingVideoRotation = ref(false)
 const models = ref([])
 const availableVideoModels = ref([])
 const removingImageModelId = ref('')
@@ -1003,7 +1004,8 @@ async function setDisplayRotation(rotation) {
 }
 
 async function setVideoRotation(rotation) {
-  if (!display.value?.connected) return
+  if (!display.value?.connected || savingVideoRotation.value) return
+  savingVideoRotation.value = true
   const previousRotation = videoRotation.value
   videoRotation.value = rotation
   error.value = ''
@@ -1028,6 +1030,8 @@ async function setVideoRotation(rotation) {
   } catch (requestError) {
     videoRotation.value = previousRotation
     error.value = `Could not save video rotation: ${requestError.message}`
+  } finally {
+    savingVideoRotation.value = false
   }
 }
 
@@ -2683,6 +2687,7 @@ async function cancelGeneration() {
 }
 
 async function generateVideo() {
+  if (savingVideoRotation.value) return
   const frames = Number(videoFrames.value)
   if (!Number.isInteger(frames) || frames < 9 || frames > 249 || (frames - 1) % 8 !== 0) {
     videoError.value = 'Choose a duration preset or enter an advanced frame count from 9 to 249 in steps of 8.'
@@ -3734,8 +3739,9 @@ onUnmounted(() => {
                 :label="display?.connected ? `Video rotation for ${display.name}` : 'Video rotation'"
                 variant="outlined"
                 density="comfortable"
-                :disabled="generationBusy || Boolean(displays.length && !display?.connected)"
-                hint="This setting applies only to generated videos. The video is generated in the rotated aspect, then delivered at the screen’s native dimensions."
+                :disabled="savingVideoRotation || !display?.connected"
+                :loading="savingVideoRotation"
+                hint="Applies to the next video you add to the queue. Videos already running or queued keep their selected orientation."
                 persistent-hint
                 class="mb-4"
                 @update:model-value="setVideoRotation"
@@ -3804,7 +3810,7 @@ onUnmounted(() => {
                 </v-col>
               </v-row>
               <div class="generation-form-actions mt-4">
-                <v-btn type="submit" color="primary" :disabled="health?.device !== 'cuda'" prepend-icon="mdi-movie-open-plus">{{ generationBusy ? 'Add video to queue' : 'Generate video' }}</v-btn>
+                <v-btn type="submit" color="primary" :disabled="health?.device !== 'cuda' || savingVideoRotation" prepend-icon="mdi-movie-open-plus">{{ generationBusy ? 'Add video to queue' : 'Generate video' }}</v-btn>
                 <v-btn v-if="generatingVideo" color="warning" variant="tonal" :loading="cancellingVideo" @click="cancelVideoGeneration">Cancel</v-btn>
               </div>
             </v-form>
