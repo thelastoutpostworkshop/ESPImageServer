@@ -46,6 +46,29 @@ function Set-DerivedVersion([string]$Path, [string]$Pattern, [scriptblock]$Repla
     }
 }
 
+function Invoke-InstallerCompile([string]$Compiler, [string]$ScriptPath, [string]$DesktopOutput, [string]$OutputRoot, [string]$Version) {
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        # Resource updates can collide with scanners or a previous setup process.
+        # Compile to a new path on every attempt; publish only a finished EXE.
+        $stagingDirectory = Join-Path $OutputRoot ('installer-staging-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
+        Write-Host "`n==> Compiling the installer (attempt $($attempt + 1) of 3)" -ForegroundColor Cyan
+        & $Compiler "/O$stagingDirectory" "/DDesktopBuildOutput=$DesktopOutput" $ScriptPath | Out-Host
+        if ($LASTEXITCODE -eq 0) {
+            $stagedInstaller = Join-Path $stagingDirectory "ESPImageServer-Setup-$Version.exe"
+            if (-not (Test-Path -LiteralPath $stagedInstaller)) {
+                throw "Compiler reported success but did not create $stagedInstaller"
+            }
+            return $stagedInstaller
+        }
+        if ($attempt -lt 2) {
+            Write-Warning 'Installer compilation failed. Retrying with a fresh output path in 3 seconds. See the compiler error above.'
+            Start-Sleep -Seconds 3
+        }
+    }
+    throw 'Installer compilation failed after 3 attempts. For EndUpdateResource errors, another process or security scanner may be interfering with the output file. Check the compiler output and Windows Security protection history. The previous installer has not been replaced.'
+}
+
 Push-Location $projectRoot
 try {
     $versionMatch = Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"([^"]+)"'
@@ -94,11 +117,18 @@ try {
     if (-not (Test-Path -LiteralPath $desktopAppOutput)) {
         throw "Electron packaging completed but the expected staging folder was not found: $desktopAppOutput"
     }
-    Invoke-BuildStep 'Compiling the installer' { & $innoSetup "/DDesktopBuildOutput=$desktopAppOutput" installer\ESPImageServer.iss }
-
+    $stagedInstaller = Invoke-InstallerCompile $innoSetup (Join-Path $projectRoot 'installer\ESPImageServer.iss') $desktopAppOutput (Join-Path $projectRoot 'dist') $version
     $installerPath = Join-Path $projectRoot "dist\ESPImageServer-Setup-$version.exe"
-    if (-not (Test-Path -LiteralPath $installerPath)) {
-        throw "Installer compilation completed but the expected file was not found: $installerPath"
+    for ($copyAttempt = 0; $copyAttempt -lt 3; $copyAttempt++) {
+        try {
+            Copy-Item -LiteralPath $stagedInstaller -Destination $installerPath -Force
+            break
+        } catch {
+            if ($copyAttempt -eq 2) {
+                throw "Installer compiled successfully at $stagedInstaller but could not be copied to $installerPath. Close any running copy of that installer and retry copying it. $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds 3
+        }
     }
     Write-Host "`nInstaller created: $installerPath" -ForegroundColor Green
 } finally {
