@@ -276,7 +276,7 @@ models.
   download progress or user-facing error messages.
 - Confirm model downloads still work on Windows without Developer Mode or
   administrator privileges.
-- Test image generation with DreamShaper, SSD-1B, SDXL, and SD-Turbo.
+- Test image generation with DreamShaper, SSD-1B, and SDXL.
 - Test video generation with LTX and Wan, including the saved-image
   first-frame path and model download/caching behavior.
 - Run the backend test suite, frontend build, and a manual GPU smoke test for

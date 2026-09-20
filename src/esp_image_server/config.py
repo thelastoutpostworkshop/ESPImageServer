@@ -23,14 +23,14 @@ def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
 
 @dataclass(frozen=True)
 class Settings:
-    model_id: str = "stabilityai/sd-turbo"
+    model_id: str = "Lykon/dreamshaper-8"
     output_width: int = 466
     output_height: int = 466
     generation_width: int = 512
     generation_height: int = 512
     jpeg_quality: int = 85
-    inference_steps: int = 1
-    guidance_scale: float = 0.0
+    inference_steps: int = 25
+    guidance_scale: float = 7.0
     host: str = "0.0.0.0"
     port: int = 8000
     model_cache_dir: Path | None = None
@@ -51,8 +51,8 @@ class Settings:
             generation_width=generation_width,
             generation_height=generation_height,
             jpeg_quality=quality,
-            inference_steps=_env_int("ESP_IMAGE_INFERENCE_STEPS", 1),
-            guidance_scale=_env_float("ESP_IMAGE_GUIDANCE_SCALE", 0.0),
+            inference_steps=_env_int("ESP_IMAGE_INFERENCE_STEPS", cls.inference_steps),
+            guidance_scale=_env_float("ESP_IMAGE_GUIDANCE_SCALE", cls.guidance_scale),
             host=os.getenv("ESP_IMAGE_HOST", cls.host),
             port=_env_int("ESP_IMAGE_PORT", 8000),
             model_cache_dir=Path(os.environ["ESP_IMAGE_MODEL_CACHE"]) if os.getenv("ESP_IMAGE_MODEL_CACHE") else None,

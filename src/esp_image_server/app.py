@@ -259,8 +259,9 @@ def create_app(
     try:
         active_settings = model_settings(settings, active_model_id)
     except ValueError:
-        active_model_id = settings.model_id
-        active_settings = settings
+        active_model_id = Settings().model_id
+        active_settings = model_settings(settings, active_model_id)
+        model_selection_store.set(active_model_id)
     generator = generator or DiffusersGenerator(active_settings)
     device_manager = device_manager or DeviceManager()
     latest_image_store = latest_image_store or LatestImageStore()
@@ -414,10 +415,6 @@ def create_app(
     def server_info() -> dict[str, object]:
         lan_address = active_lan_address()
         model_details = {
-            "stabilityai/sd-turbo": (
-                "SD-Turbo",
-                "Fast local AI image model, designed for quick results.",
-            ),
             "segmind/SSD-1B": (
                 "Segmind SSD-1B",
                 "Higher-quality local AI image model; slower and best with an NVIDIA graphics card.",

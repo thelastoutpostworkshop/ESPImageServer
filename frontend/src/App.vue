@@ -1036,7 +1036,7 @@ async function loadModels() {
     models.value = await fetch('/models').then(response => response.json())
     const activeModel = models.value.find(model => model.active)
     if (activeModel && !models.value.some(model => model.id === activeModelId.value)) {
-      activeModelId.value = activeModel.id
+      selectModelById(activeModel.id)
     }
   } catch {
     models.value = []
@@ -1395,6 +1395,7 @@ async function openQueuedGeneration(job) {
 
 function selectModelById(modelId) {
   const model = models.value.find(candidate => candidate.id === modelId)
+    || models.value.find(candidate => candidate.active) || models.value[0]
   if (!model) return
   activeModelId.value = model.id
   steps.value = model.default_steps
@@ -3885,7 +3886,7 @@ onUnmounted(() => {
           <v-card-title class="text-h5 pt-5">Image models</v-card-title>
           <v-card-text class="text-body-1">
             Compare the available models. Choose the model to use from the Generate image page; it downloads once and stays on this computer.
-            All models require NVIDIA CUDA. Available graphics-card memory also matters: SD-Turbo and DreamShaper use smaller 512-pixel working images; SSD-1B and SDXL use 1024-pixel working images and need more memory. CUDA availability alone does not guarantee that every model will fit.
+            All models require NVIDIA CUDA. Available graphics-card memory also matters: DreamShaper uses smaller 512-pixel working images; SSD-1B and SDXL use 1024-pixel working images and need more memory. CUDA availability alone does not guarantee that every model will fit.
           </v-card-text>
           <v-table v-if="!compact" class="model-table" hover density="comfortable">
             <thead>

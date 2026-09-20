@@ -94,7 +94,7 @@ class FakeVideoGenerator:
     ('/generate', {'prompt': 'a tiny robot'}),
     ('/generation-jobs', {'prompt': 'a tiny robot'}),
     ('/video-generation-jobs', {'prompt': 'a tiny robot'}),
-    ('/models/stabilityai/sd-turbo/select', {}),
+    ('/models/Lykon/dreamshaper-8/select', {}),
 ])
 def test_cpu_rejects_generation_before_loading_and_keeps_management_available(endpoint, payload):
     generator = FakeGenerator()
@@ -302,10 +302,10 @@ def test_generate_accepts_valid_steps_and_a_seed() -> None:
     generator = FakeGenerator()
     app = create_app(Settings(), generator, enable_mdns=False)
     with TestClient(app) as client:
-        response = client.post("/generate", json={"prompt": "a tiny robot", "steps": 3, "seed": 42})
+        response = client.post("/generate", json={"prompt": "a tiny robot", "steps": 25, "seed": 42})
 
     assert response.status_code == 200
-    assert (generator.last_steps, generator.last_seed) == (3, 42)
+    assert (generator.last_steps, generator.last_seed) == (25, 42)
 
 
 def test_latest_image_is_available_to_esp32_displays() -> None:
@@ -394,13 +394,13 @@ def test_ssd_1b_uses_a_larger_aspect_matched_generation_canvas() -> None:
 
 def test_server_info_explains_the_model_in_maker_friendly_terms(monkeypatch) -> None:
     monkeypatch.setattr("esp_image_server.app.active_lan_address", lambda: "192.168.1.90")
-    app = create_app(Settings(model_id="stabilityai/sd-turbo"), FakeGenerator(), enable_mdns=False)
+    app = create_app(Settings(model_id="Lykon/dreamshaper-8"), FakeGenerator(), enable_mdns=False)
     with TestClient(app) as client:
         response = client.get("/server-info")
 
     assert response.status_code == 200
     assert response.json()["version"] == app.version
-    assert response.json()["model_name"] == "SD-Turbo"
+    assert response.json()["model_name"] == "DreamShaper 8"
     assert "cuda" not in response.json()["processing"].lower()
     assert response.json()["local_network_url"] == "http://192.168.1.90:8000"
 
@@ -508,22 +508,35 @@ def test_sd_card_refresh_reports_the_inventory_version_it_requires() -> None:
     assert report.status_code == 204
 
 
+def test_removed_model_falls_back_and_cannot_be_queued(tmp_path, monkeypatch):
+    monkeypatch.setenv('ESP_IMAGE_MODEL', 'stabilityai/sd-turbo')
+    store = ModelSelectionStore('stabilityai/sd-turbo', tmp_path / 'selection.json')
+    store.set('stabilityai/sd-turbo')
+    with TestClient(create_app(generator=FakeGenerator(), model_selection_store=store, enable_mdns=False)) as client:
+        models = client.get('/models').json()
+        assert len(models) == 3
+        assert next(model for model in models if model['active'])['id'] == 'Lykon/dreamshaper-8'
+        assert store.get() == 'Lykon/dreamshaper-8'
+        assert client.post('/generation-jobs', json={'prompt': 'a tiny robot', 'model_id': 'stabilityai/sd-turbo'}).status_code == 404
+        assert client.post('/models/stabilityai/sd-turbo/select').status_code == 404
+
+
 def test_model_selection_is_persisted_after_the_model_loads(tmp_path) -> None:
-    store = ModelSelectionStore("stabilityai/sd-turbo", tmp_path / "settings.json")
+    store = ModelSelectionStore("Lykon/dreamshaper-8", tmp_path / "settings.json")
     app = create_app(Settings(), FakeGenerator(), model_selection_store=store, enable_mdns=False)
     with TestClient(app) as client:
         models = client.get("/models")
         selected = client.post("/models/segmind/SSD-1B/select")
 
     assert models.status_code == 200
-    assert len(models.json()) == 4
-    assert next(model for model in models.json() if model["id"] == "stabilityai/sd-turbo")["model_card_url"] == "https://huggingface.co/stabilityai/sd-turbo"
+    assert len(models.json()) == 3
+    assert next(model for model in models.json() if model["id"] == "Lykon/dreamshaper-8")["model_card_url"] == "https://huggingface.co/Lykon/dreamshaper-8"
     assert selected.status_code == 200
     assert store.get() == "segmind/SSD-1B"
 
 
 def test_model_selection_is_saved_for_subsequent_jobs_while_queue_is_busy(tmp_path, monkeypatch) -> None:
-    store = ModelSelectionStore("stabilityai/sd-turbo", tmp_path / "settings.json")
+    store = ModelSelectionStore("Lykon/dreamshaper-8", tmp_path / "settings.json")
     queue = GenerationQueue()
     monkeypatch.setattr(queue, "has_active_job", lambda: True)
     app = create_app(Settings(), FakeGenerator(), generation_queue=queue, model_selection_store=store, enable_mdns=False)
@@ -538,20 +551,20 @@ def test_model_selection_is_saved_for_subsequent_jobs_while_queue_is_busy(tmp_pa
 
 def test_image_model_cache_can_be_removed(tmp_path) -> None:
     cache_dir = tmp_path / "models"
-    model_cache = cache_dir / "models--stabilityai--sd-turbo" / "snapshots" / "main"
+    model_cache = cache_dir / "models--Lykon--dreamshaper-8" / "snapshots" / "main"
     model_cache.mkdir(parents=True)
     app = create_app(Settings(model_cache_dir=cache_dir), FakeGenerator(), enable_mdns=False)
 
     with TestClient(app) as client:
         before = client.get("/models")
-        removed = client.delete("/models/stabilityai/sd-turbo")
+        removed = client.delete("/models/Lykon/dreamshaper-8")
         after = client.get("/models")
 
-    assert next(model for model in before.json() if model["id"] == "stabilityai/sd-turbo")["installed"] is True
+    assert next(model for model in before.json() if model["id"] == "Lykon/dreamshaper-8")["installed"] is True
     assert removed.status_code == 200
     assert removed.json() == {"removed": True}
-    assert not (cache_dir / "models--stabilityai--sd-turbo").exists()
-    assert next(model for model in after.json() if model["id"] == "stabilityai/sd-turbo")["installed"] is False
+    assert not (cache_dir / "models--Lykon--dreamshaper-8").exists()
+    assert next(model for model in after.json() if model["id"] == "Lykon/dreamshaper-8")["installed"] is False
 
 
 def test_upgrade_preserves_image_library_model_and_rotation(tmp_path, monkeypatch) -> None:
@@ -560,7 +573,7 @@ def test_upgrade_preserves_image_library_model_and_rotation(tmp_path, monkeypatc
     original_library = tmp_path / "old-images"
     upgraded_library = tmp_path / "kept-images"
     app_settings_store = AppSettingsStore(app_data / "app_settings.json")
-    model_store = ModelSelectionStore("stabilityai/sd-turbo", app_data / "settings.json")
+    model_store = ModelSelectionStore("Lykon/dreamshaper-8", app_data / "settings.json")
     rotation_store = DisplaySettingsStore(app_data / "display_settings.json")
 
     old_app = create_app(

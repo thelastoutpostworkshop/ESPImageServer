@@ -174,7 +174,6 @@ Open **Models** to choose the look and quality level you want.
 
 | Model | Best for | Computer guidance |
 | --- | --- | --- |
-| SD-Turbo | Fast experiments and everyday display images | Requires an NVIDIA graphics card with CUDA |
 | DreamShaper 8 | Creative, illustrated, and fantasy artwork | NVIDIA graphics card with CUDA required |
 | Segmind SSD-1B | More detailed, higher-quality images | NVIDIA graphics card with CUDA required |
 | SDXL Base 1.0 | The richest detail and prompt understanding | Powerful NVIDIA graphics card required |

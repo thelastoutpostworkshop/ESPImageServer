@@ -15,7 +15,7 @@
 - Models are managed through `/models`; model selection is persistent on the server.
 - Image generation uses background jobs at `/generation-jobs`. Jobs support progress polling and `DELETE /generation-jobs/{id}` cancellation.
 - Generated JPEGs are stored in the configured local image library. Its `image_library_index.json` is kept separately in `%LOCALAPPDATA%\ESPImageServer` so the visible image folder contains only user images.
-- Image models expose a negative-prompt field only when supported: DreamShaper 8, SSD-1B, and SDXL. SD-Turbo deliberately does not receive a negative prompt.
+- Supported image models are DreamShaper 8 (default), SSD-1B, and SDXL; all support a negative-prompt field.
 - Image and video models share the GPU. Starting one kind of job unloads the other model and clears CUDA cache; do not remove this handoff or allow concurrent image/video generation jobs.
 
 ## Video generation and Creation Gallery
