@@ -4,6 +4,9 @@ import { useDisplay } from 'vuetify'
 import QRCode from 'qrcode'
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
+import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
+
+let displaySelectionInitialized = false
 
 function createRandomSeed() {
   return Math.floor(Math.random() * 4_294_967_296)
@@ -268,10 +271,13 @@ const hasDisplayTargets = computed(() => Boolean(selectedRegisteredDisplay.value
 const activeDisplayOnline = computed(() => Boolean(display.value?.connected && display.value.online !== false))
 const activeDisplayConnectionLabel = computed(() => {
   if (!display.value?.connected) return 'No display selected'
-  return activeDisplayOnline.value ? 'Online' : 'Offline · last seen earlier'
+  return displayConnectionLabel(display.value)
 })
 const firmwareActivity = computed(() => {
   const target = display.value
+  if (target && !target.online && !target.seen_this_session) {
+    return { color: 'secondary', description: `${target.name}: Not seen this session`, icon: 'mdi-lan-disconnect', pulse: false }
+  }
   if (!target?.connected) {
     return {
       color: 'secondary',
@@ -296,8 +302,8 @@ const selectedTargetDisplayIds = computed(() => (
   selectedRegisteredDisplay.value ? [selectedRegisteredDisplay.value.id] : []
 ))
 const displayTargetLabel = computed(() => {
-  if (display.value?.connected) return `Active display: ${display.value.name} · ${display.value.width}×${display.value.height} · ${activeDisplayOnline.value ? 'online' : 'offline'}`
-  return displays.value.length ? 'Choose active display' : 'Active display waiting'
+  if (display.value?.connected) return `Active display: ${display.value.name} · ${display.value.width}×${display.value.height} · ${displayConnectionLabel(display.value)}`
+  return 'Waiting for a display'
 })
 const displayManagementLabel = computed(() => {
   if (display.value?.connected) return `${display.value.name} · ${display.value.width} × ${display.value.height} · ${activeDisplayConnectionLabel.value}`
@@ -826,7 +832,7 @@ const displayMessage = computed(() => {
       : 'Waiting for the ESP32 board to report its integrated display...'
   }
   if (!activeDisplayOnline.value) {
-    return `${display.value.name} is offline (last seen earlier). Generated images remain ready for it, while display and SD-card commands are unavailable.`
+    return `${display.value.name}: ${displayConnectionLabel(display.value)}. Generated images remain ready for it, while display and SD-card commands are unavailable.`
   }
   const firmwareVersion = display.value.firmware_version
   const availability = display.value.online === false ? 'Last seen earlier' : 'Online'
@@ -927,9 +933,8 @@ async function loadDisplay() {
     const nextDisplays = Array.isArray(registered) ? registered : []
     displays.value = nextDisplays
     legacyDisplay.value = !nextDisplays.length && legacyResponse.ok ? await legacyResponse.json() : null
-    const availableIds = new Set(nextDisplays.map(display => display.id))
-    if (activeDisplayId.value && !availableIds.has(activeDisplayId.value)) activeDisplayId.value = ''
-    if (nextDisplays.length && !activeDisplayId.value) activeDisplayId.value = nextDisplays[0].id
+    activeDisplayId.value = sessionDisplayId(nextDisplays, activeDisplayId.value, !displaySelectionInitialized)
+    displaySelectionInitialized = true
     const nextDisplay = display.value
     const nextKey = nextDisplay?.connected && nextDisplay.online !== false
       ? `${nextDisplay.id || 'legacy'}:${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}:${nextDisplay.firmware_version}`
@@ -943,6 +948,7 @@ async function loadDisplay() {
   } catch {
     displays.value = []
     legacyDisplay.value = null
+    displaySelectionInitialized = false
     activeDisplayId.value = ''
   }
 }
@@ -2879,7 +2885,7 @@ onUnmounted(() => {
                 </v-avatar>
               </template>
               <v-list-item-title>{{ target.name }}</v-list-item-title>
-              <v-list-item-subtitle>{{ target.width }} × {{ target.height }} · v{{ target.firmware_version }} · {{ target.online ? 'Online' : 'Last seen earlier' }}</v-list-item-subtitle>
+              <v-list-item-subtitle>{{ target.width }} × {{ target.height }} · v{{ target.firmware_version }} · {{ displayConnectionLabel(target) }}</v-list-item-subtitle>
               <template #append><v-icon v-if="target.id === activeDisplayId" color="primary">mdi-check</v-icon></template>
             </v-list-item>
           </v-list>
@@ -3944,6 +3950,9 @@ onUnmounted(() => {
           <v-card-subtitle>Choose the screen used by generation, display controls, and SD-card actions.</v-card-subtitle>
           <v-card-text>
             <v-progress-linear v-if="displayCardsLoading" indeterminate color="primary" class="mb-4" />
+            <v-alert v-if="!displays.some(target => target.online)" type="info" variant="tonal" class="mb-4">
+              Waiting for a display. Saved displays and their settings are kept; connection status reflects this server session.
+            </v-alert>
             <v-row v-if="displays.length">
               <v-col v-for="target in displays" :key="target.id" cols="12" md="6">
                 <v-card variant="outlined" :class="{ 'border-primary': target.id === activeDisplayId }">
@@ -3952,7 +3961,7 @@ onUnmounted(() => {
                     <span class="text-truncate">{{ target.name }}</span>
                     <v-spacer />
                     <v-chip v-if="target.id === activeDisplayId" color="primary" size="small" variant="tonal">Active</v-chip>
-                    <v-chip :color="target.online ? 'success' : 'warning'" size="small" variant="tonal">{{ target.online ? 'Online' : 'Offline' }}</v-chip>
+                    <v-chip :color="target.online ? 'success' : 'warning'" size="small" variant="tonal">{{ displayConnectionLabel(target) }}</v-chip>
                   </v-card-title>
                   <v-card-text class="pt-0">
                     <div class="text-body-2"><strong>Native size:</strong> {{ target.width }} × {{ target.height }}</div>
@@ -4009,7 +4018,7 @@ onUnmounted(() => {
             <v-progress-linear v-if="displayExperienceLoading" indeterminate color="primary" class="mb-4" />
             <div class="d-flex flex-wrap ga-2 mb-5">
               <v-chip :color="activeDisplayOnline ? 'success' : 'warning'" variant="tonal" :prepend-icon="activeDisplayOnline ? 'mdi-monitor' : 'mdi-monitor-off'">
-                {{ activeDisplayOnline ? 'Display online' : 'Display offline · last seen earlier' }}
+                {{ activeDisplayConnectionLabel }}
               </v-chip>
               <v-chip :color="displayExperience.current_mode.startsWith('offline_') ? 'warning' : 'info'" variant="tonal" :prepend-icon="displayExperience.current_mode.startsWith('offline_') ? 'mdi-play-circle-outline' : 'mdi-cloud-check-outline'">
                 {{ activeDisplayOnline ? 'Current mode: ' : 'Last reported mode: ' }}{{ displayExperience.current_mode === 'offline_video_loop' ? 'Offline video loop' : displayExperience.current_mode === 'offline_slideshow' ? 'Offline slideshow' : 'Server controlled' }}

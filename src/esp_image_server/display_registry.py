@@ -40,6 +40,7 @@ class DisplayDevice:
     last_seen: float
     last_activity_message: str
     last_activity_at: float
+    seen_this_session: bool = False
 
     def as_dict(self, now: float | None = None) -> dict[str, object]:
         now = time.time() if now is None else now
@@ -53,7 +54,8 @@ class DisplayDevice:
             "rotation": self.rotation,
             "video_rotation": self.video_rotation,
             "capabilities": dict(self.capabilities),
-            "online": now - self.last_seen <= DisplayRegistry.online_after_seconds,
+            "seen_this_session": self.seen_this_session,
+            "online": self.seen_this_session and now - self.last_seen <= DisplayRegistry.online_after_seconds,
             "paired_at": datetime.fromtimestamp(self.paired_at, UTC).isoformat(),
             "last_seen": datetime.fromtimestamp(self.last_seen, UTC).isoformat(),
             "last_activity": {
@@ -71,6 +73,7 @@ class DisplayRegistry:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or self._default_path()
         self._lock = RLock()
+        self._seen_this_session: set[str] = set()
         self._initialize_database()
 
     @staticmethod
@@ -116,6 +119,7 @@ class DisplayRegistry:
                 ),
             )
             row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
+            self._seen_this_session.add(display_id)
         return self._row_to_device(row)
 
     def list(self) -> list[DisplayDevice]:
@@ -153,6 +157,7 @@ class DisplayRegistry:
             if not updated:
                 raise DisplayNotFoundError("Display was not found")
             row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
+            self._seen_this_session.add(display_id)
         return self._row_to_device(row)
 
     def record_activity(self, display_id: str, message: str) -> DisplayDevice:
@@ -170,6 +175,7 @@ class DisplayRegistry:
             if not updated:
                 raise DisplayNotFoundError("Display was not found")
             row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
+            self._seen_this_session.add(display_id)
         return self._row_to_device(row)
 
     def set_name(self, display_id: str, name: str) -> DisplayDevice:
@@ -269,8 +275,7 @@ class DisplayRegistry:
             return {}
         return {str(key): bool(value) for key, value in capabilities.items()}
 
-    @staticmethod
-    def _row_to_device(row: sqlite3.Row | None) -> DisplayDevice:
+    def _row_to_device(self, row: sqlite3.Row | None) -> DisplayDevice:
         if row is None:
             raise DisplayNotFoundError("Display was not found")
         try:
@@ -293,4 +298,5 @@ class DisplayRegistry:
             last_seen=float(row["last_seen"]),
             last_activity_message=str(row["last_activity_message"]),
             last_activity_at=float(row["last_activity_at"]),
+            seen_this_session=str(row["id"]) in self._seen_this_session,
         )

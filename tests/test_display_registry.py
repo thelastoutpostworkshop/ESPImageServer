@@ -25,9 +25,17 @@ def test_display_registry_persists_mac_profiles_and_per_display_rotation(tmp_pat
     assert restored.rotation == 90
     assert restored.video_rotation == 270
     assert restored.capabilities == {"sd_card": True}
+    assert restored.as_dict()["seen_this_session"] is False
+    assert restored.as_dict()["online"] is False
+    assert restarted_registry.set_name(display.id, "Kitchen display").as_dict()["seen_this_session"] is False
+    assert restarted_registry.set_rotation(display.id, 90).as_dict()["online"] is False
     updated = restarted_registry.heartbeat(display.id, "1.2.4", {"sd_card": True, "touch": False})
     assert updated.firmware_version == "1.2.4"
     assert updated.capabilities == {"sd_card": True, "touch": False}
+    assert updated.as_dict()["seen_this_session"] is True
+    assert updated.as_dict()["online"] is True
+    assert updated.as_dict(now=updated.last_seen + 91)["online"] is False
+    assert updated.as_dict(now=updated.last_seen + 91)["seen_this_session"] is True
 
 
 def test_registering_a_hardware_id_keeps_its_display_id_and_rotation(tmp_path) -> None:
@@ -55,3 +63,13 @@ def test_display_activity_is_persisted_with_the_display_profile(tmp_path) -> Non
     assert updated.last_activity_at >= updated.paired_at
     restarted = DisplayRegistry(path).get(display.id)
     assert restarted.last_activity_message == "SD-card list received"
+    assert restarted.as_dict()["seen_this_session"] is False
+
+
+def test_firmware_contact_marks_a_restored_display_seen(tmp_path) -> None:
+    path = tmp_path / "displays.sqlite3"
+    DisplayRegistry(path).register("abcdef", "Office", 320, 820, "1.0.0")
+    registry = DisplayRegistry(path)
+    assert registry.record_activity("abcdef", "SD-card list received").as_dict()["online"] is True
+    registry = DisplayRegistry(path)
+    assert registry.register("abcdef", "Office", 320, 820, "1.0.0").as_dict()["seen_this_session"] is True
