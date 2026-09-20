@@ -180,16 +180,7 @@ design follow-ups; implementation causes have not been verified.
    invalid submission adds no job and does not obscure an existing job's
    progress or cancellation state.
 
-2. **P1 — Validate model loading and cancellation on a real GPU.** Loading
-   stages, elapsed time, and pending-cancellation explanations are implemented
-   in generation and Queue views. Automated tests cover cancellation during a
-   blocked model load, matching queue/API status, and completion without starting
-   inference after cancellation. Still verify a cold model load, successful
-   image/video generation, cancellation during loading and inference, and the
-   next queued job starting only after the cancelled operation has stopped.
-   Check desktop and phone layouts; automated fakes do not establish GPU timing.
-
-3. **P1 — Reconcile SD-card refresh acknowledgements, results, and errors.**
+2. **P1 — Reconcile SD-card refresh acknowledgements, results, and errors.**
    Refreshing the active display's SD card produced a completed status in the
    header, followed by an error saying the updated list had not arrived. The
    error remained after the list timestamp updated and also appeared on the
@@ -198,21 +189,21 @@ design follow-ups; implementation causes have not been verified.
    feedback to the relevant display and operation. Verify delayed list
    delivery and timeout recovery.
 
-4. **P2 — Make desktop Creation Library filters readable.** With the library
+3. **P2 — Make desktop Creation Library filters readable.** With the library
    pinned at its observed width, all three filter labels were truncated to
    “Filt…”. Use short labels such as **Model**, **Display**, and **On SD card**,
    or stack filters when the pane is narrow. Keep the active display context
    available without putting its full name inside every narrow field. Check
    selected values and clear controls at desktop and phone widths.
 
-5. **P2 — Label SD-card actions and use consistent library terminology.**
+4. **P2 — Label SD-card actions and use consistent library terminology.**
    The SD-card row action buttons exposed no accessible names. Add specific
    names such as “Show on display” and “Delete file,” with tooltips and enough
    row context to distinguish files for assistive technology. Rename visible
    “Creation Gallery” references, including automatic-save controls, to
    **Creation Library**. Verify keyboard and screen-reader discoverability.
 
-6. **P2 — Put the prompt first and simplify generation settings.** The
+5. **P2 — Put the prompt first and simplify generation settings.** The
    image form puts model, rotation, and automatic saving before the prompt;
    steps and seed also lengthen the phone workflow. Move the prompt to the
    beginning and group secondary controls such as seed, steps, and rotation
