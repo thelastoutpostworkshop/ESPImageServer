@@ -11,11 +11,14 @@
     "prepare:esptool": "node ./prepare-esptool.mjs",
     "start": "npm run prepare:esptool && electron .",
     "test": "node --test serial-ports.test.mjs runtime.test.mjs firmware.test.mjs identification.test.mjs wifi.test.mjs firmware-library.test.mjs firmware-releases.test.mjs",
-    "test:smoke": "node smoke-test.mjs"
+    "test:smoke": "node smoke-test.mjs",
+    "build:native": "node build-native.mjs",
+    "test:packaged": "node packaged-smoke.mjs"
   },
   "devDependencies": {
     "electron": "^43.3.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "playwright-core": "1.63.0"
   },
   "build": {
     "appId": "com.espimageserver.desktop",

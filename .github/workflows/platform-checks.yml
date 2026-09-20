@@ -102,3 +102,36 @@ jobs:
       - name: Desktop lifecycle smoke test (Windows and macOS)
         if: runner.os != 'Linux'
         run: npm --prefix desktop run test:smoke
+      - name: Prepare native esptool
+        if: runner.os != 'Windows'
+        run: python installer/prepare-native-esptool.py
+      - name: Build native desktop directory bundle
+        if: runner.os != 'Windows'
+        run: npm --prefix desktop run build:native -- "../dist/runtime-check é/backend"
+      - name: Relocate desktop bundle
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p 'dist/Desktop bundles é'
+          if [ '${{ runner.os }}' = 'Linux' ]; then
+            mv desktop/release/native/linux-unpacked 'dist/Desktop bundles é/app'
+          else
+            mv desktop/release/native/mac-arm64 'dist/Desktop bundles é/app'
+          fi
+      - name: Packaged desktop smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm --prefix desktop run test:packaged -- "../dist/Desktop bundles é/app"
+      - name: Packaged desktop smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: npm --prefix desktop run test:packaged -- "../dist/Desktop bundles é/app"
+      - name: Archive native desktop bundle
+        if: runner.os != 'Windows'
+        run: tar -czf dist/desktop-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz -C 'dist/Desktop bundles é/app' .
+      - name: Upload native desktop bundle
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/desktop-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7

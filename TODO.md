@@ -349,13 +349,17 @@ Windows behavior as platform delivery progresses.
   ARM64 using pinned, checksum-verified standalone Python 3.12.14. CI builds,
   relocates, checks HTTP startup/web assets/FFmpeg with no system Python, and
   uploads backend artifacts. The user confirmed these hosted checks passed on
-  Linux x64 and macOS ARM64. Remaining work:
-  Linux CUDA dependencies and integration into the native Electron bundles.
+  Linux x64 and macOS ARM64. Native Electron integration is now implemented with
+  packaged startup checks; first hosted desktop results are pending. Remaining
+  dependency work: Linux CUDA packages.
 - [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
   serial permissions/udev setup and macOS driver requirements where applicable.
   Keep automated identification, flashing, and port-lifecycle coverage.
   Keep permissions narrowly scoped; do not require running the whole app as root.
+  Pinned esptool 5.1.0 archives for Linux x64/macOS ARM64 are now verified and
+  included by the native bundle build. CI checks the bundled version and actual
+  serialport enumeration. Native job results and OS permission documentation remain.
 - [ ] **P2 - Add native distribution and update flows:** Choose Linux package
   formats and macOS application packaging, icons, signing/notarization, and
   permissions. Build on appropriate native runners. Define install, update,
@@ -364,6 +368,8 @@ Windows behavior as platform delivery progresses.
 - [ ] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported
   architectures. Keep Windows manual acceptance checks.
+  Native directory-bundle build, relocation, and packaged Electron smoke checks
+  are implemented for Linux x64 and macOS ARM64; first hosted results are pending.
 
 ## Plan the Hugging Face major-version upgrade
 

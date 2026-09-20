@@ -52,7 +52,27 @@ CI relocates the bundle into a path with spaces and Unicode and runs it with
 isolated Python flags. The server child has an empty PATH. Checks cover Python
 prefix/import locations, no GPU stack, bundled FFmpeg encode/decode, version,
 management HTTP endpoints, generation rejection, and packaged frontend assets.
-Linux CUDA dependencies, Electron integration, and esptool packaging remain below.
+Linux CUDA dependencies remain separate.
+
+## Native desktop bundles
+
+`desktop/build-native.mjs` now builds Linux x64 and macOS ARM64 directory bundles
+with the standalone backend, web assets, Electron, serialport bindings, and
+checksum-verified esptool 5.1.0. The existing Windows build remains unchanged.
+The application version comes from the backend manifest, derived from pyproject.toml.
+
+CI relocates and launches the actual packaged executable using Playwright's
+Electron driver. It checks `app.isPackaged`, backend import location, rendered
+workspace, preload IPC, serial-port enumeration, esptool version, owned-server
+shutdown, and port release. macOS also exercises window reopening. The backend
+receives only a test isolation hook through PYTHONPATH, never checkout app source;
+the test process PATH is empty. No flashing or generation is performed.
+
+After checks pass, CI uploads `desktop-linux-x64` and `desktop-darwin-arm64` tar
+archives for seven days. Linux contains an `espimageserver` executable; macOS
+contains `ESPImageServer.app`. These are unsigned management-only development
+bundles, not final installers. Native build/smoke results are pending the first run.
+Linux CUDA, signing/notarization, and installer/update formats remain unfinished.
 
 - Preserve the current Windows installer and runtime layout.
 - Prepare Linux x64 and macOS ARM64 Python 3.12 runtimes without requiring a
@@ -64,6 +84,5 @@ Linux CUDA dependencies, Electron integration, and esptool packaging remain belo
   `desktop/runtime.mjs`: backend under `resources/backend`, Python under
   `.venv/bin/python`, and esptool under the platform-specific resources tool path.
   Produce these runtimes on native CI runners; do not copy a Windows virtualenv.
-- Add native bundle build commands: the current desktop build and esptool
-  preparation still target Windows. Run packaged startup/dependency checks in CI
-  before publishing artifacts. Signing and update flows remain separate work.
+- Native bundle commands and packaged startup checks are implemented above.
+  Signing and update flows remain separate work.

@@ -251,7 +251,8 @@ The smoke test checks Vue rendering, preload IPC, owned-server shutdown and port
 release, and preservation of an independently started server. On macOS it closes
 the window and emits Electron's activation event to verify reopening before
 quitting. This does not exercise a physical Dock click. Linux uses Xvfb; only the
-CI smoke launcher disables Chromium's sandbox. No installer or esptool is built.
+CI smoke launcher disables Chromium's sandbox. No installer is built; the native
+bundle checks below also prepare esptool.
 
 To run locally, build the frontend, prepare the normal project `.venv`, close
 the app/server, then run `npm --prefix desktop run test:smoke` (use `xvfb-run
@@ -298,6 +299,18 @@ Platform CI moves the output, launches its own Python, and verifies the relocate
 bundle before uploading a tar archive that preserves executable permissions and
 symlinks. See [platform scope](PLATFORMS.md) for contents and remaining work.
 Changes to dependency constraints or the Python pin must pass these native jobs.
+
+After preparing the backend, `python installer/prepare-native-esptool.py` downloads
+and verifies the native esptool archive. Run `npm --prefix desktop run build:native
+-- ../dist/native-backend` to build the directory bundle. The backend argument is
+relative to `desktop`, where npm runs the script. macOS signing is disabled for
+these development artifacts. Windows continues using its existing build command.
+
+CI runs `test:packaged` through Playwright against the relocated executable, using
+Xvfb on Linux. Playwright is a development dependency and no extra browser is
+downloaded. The test is restricted to Linux/macOS CI, isolates backend storage,
+and checks the bundled esptool version and serial binding without sending device
+commands. Successful jobs upload tar archives to preserve permissions and symlinks.
 
 ## Windows folder action acceptance
 
