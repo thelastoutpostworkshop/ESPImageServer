@@ -293,11 +293,13 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   Still verify the Electron UI flow (native UI automation was unavailable), and
   Linux/macOS enumeration, permissions, unplug/replug, and setup on actual
   hardware once native tooling is available.
-- [ ] **P1 - Separate native folder actions:** Browser folder endpoints in
-  `app.py` directly use `os.startfile` and a PowerShell Windows Forms dialog.
-  Introduce explicit platform capabilities/adapters; reuse Electron's native
-  dialogs for desktop use. Give browser/headless users a supported path-entry
-  flow when native dialogs are unavailable, with clear errors for unsupported actions.
+- [ ] **P1 - Validate native folder actions on target systems:** Folder actions
+  are isolated in `folder_actions.py`, with capability reporting, Windows chooser,
+  Windows/macOS/Linux folder opening, and explicit unsupported-action errors.
+  Electron retains its native dialogs. Settings allows manual server-side path
+  entry when a chooser is unavailable. Adapter/API tests cover fallback, cancel,
+  overrides, and validation; verify actual dialogs/opening on native systems,
+  including headless environments and Windows regression checks.
 - [ ] **P1 - Define generation capabilities independently of the OS:** Keep
   CUDA generation and management-only operation explicit. Isolate device checks,
   precision, memory cleanup, and offload policy so future MPS support does not

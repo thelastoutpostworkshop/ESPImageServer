@@ -26,6 +26,7 @@ from PIL import Image
 from starlette.background import BackgroundTask
 
 from .paths import cache_dir
+from . import folder_actions
 from .config import Settings
 from .app_settings import AppSettingsStore
 from .display import ActiveDisplayStore
@@ -1256,6 +1257,7 @@ def create_app(
     def get_app_settings() -> dict[str, object]:
         return {
             "image_library_location": str(image_library.path),
+            "folder_actions": folder_actions.capabilities(),
             "jpeg_quality": jpeg_quality,
             "video_jpeg_quality": video_jpeg_quality,
             "auto_save_images": auto_save_images,
@@ -1297,33 +1299,22 @@ def create_app(
 
     @app.post("/app-settings/image-library/reveal")
     def reveal_image_library() -> dict[str, str]:
-        image_library.path.mkdir(parents=True, exist_ok=True)
         try:
-            os.startfile(image_library.path)  # type: ignore[attr-defined]  # Windows Explorer
-        except (AttributeError, OSError) as exc:
+            folder_actions.reveal_folder(image_library.path)
+        except folder_actions.FolderActionUnavailable as exc:
+            raise HTTPException(status_code=501, detail=str(exc)) from exc
+        except (OSError, subprocess.SubprocessError) as exc:
             raise HTTPException(status_code=500, detail=f"Could not open the image library folder: {exc}") from exc
         return {"status": "opened", "image_library_location": str(image_library.path)}
 
     @app.post("/app-settings/image-library/choose")
     def choose_image_library() -> dict[str, object]:
-        command = (
-            "Add-Type -AssemblyName System.Windows.Forms; "
-            "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
-            "$dialog.Description = 'Choose an empty folder for ESPImageServer images'; "
-            "$dialog.SelectedPath = '" + str(image_library.path).replace("'", "''") + "'; "
-            "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { "
-            "[Console]::Out.Write($dialog.SelectedPath) }"
-        )
         try:
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-STA", "-Command", command],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
+            selected_path = folder_actions.choose_folder(image_library.path)
+        except folder_actions.FolderActionUnavailable as exc:
+            raise HTTPException(status_code=501, detail=str(exc)) from exc
+        except (OSError, subprocess.SubprocessError) as exc:
             raise HTTPException(status_code=500, detail=f"Could not open the folder chooser: {exc}") from exc
-        selected_path = result.stdout.strip()
         return {"selected": bool(selected_path), "image_library_location": selected_path or str(image_library.path)}
 
     @app.get("/devices")

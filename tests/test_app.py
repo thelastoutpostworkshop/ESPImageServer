@@ -1326,3 +1326,27 @@ def test_missing_ffmpeg_rejects_video_save_before_replacing_display_command(tmp_
         assert reused.status_code == 202
         assert reused.json()['status'] == 'already_saved'
         assert store.next(display_id) == previous
+
+
+def test_folder_actions_capabilities_cancel_and_unavailable(tmp_path, monkeypatch):
+    from esp_image_server import folder_actions
+    monkeypatch.setattr(folder_actions, "capabilities", lambda: {"choose": False, "reveal": False})
+    def unavailable(*args):
+        raise folder_actions.FolderActionUnavailable("Enter an absolute library path")
+    monkeypatch.setattr(folder_actions, "choose_folder", unavailable)
+    monkeypatch.setattr(folder_actions, "reveal_folder", unavailable)
+    app = create_app(Settings(), FakeGenerator(), enable_mdns=False)
+    with TestClient(app) as client:
+        settings = client.get("/app-settings").json()
+        assert settings["folder_actions"] == {"choose": False, "reveal": False}
+        for action in ("choose", "reveal"):
+            response = client.post(f"/app-settings/image-library/{action}")
+            assert response.status_code == 501
+            assert "absolute library path" in response.json()["detail"]
+        monkeypatch.setattr(folder_actions, "choose_folder", lambda current: "")
+        cancelled = client.post("/app-settings/image-library/choose").json()
+        assert cancelled == {"selected": False, "image_library_location": settings["image_library_location"]}
+        assert client.put("/app-settings", json={"image_library_location": "relative"}).status_code == 422
+        destination = str(tmp_path / "manual library")
+        assert client.put("/app-settings", json={"image_library_location": destination}).status_code == 200
+        assert client.get("/app-settings").json()["image_library_location"] == destination

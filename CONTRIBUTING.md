@@ -79,6 +79,21 @@ reconnection checks. Native permissions, drivers, and esptool packaging still
 require platform-specific validation. Automated serial tests use simulated
 devices and do not flash boards or change Wi-Fi credentials.
 
+## Native library folder actions
+
+`folder_actions.py` isolates server-side folder actions. `/app-settings` reports
+`folder_actions.choose` and `folder_actions.reveal`; unsupported endpoints return
+501 with a path-entry explanation. Windows retains its PowerShell folder chooser
+and Explorer action. macOS opening uses `/usr/bin/open`; Linux requires a desktop
+session (`DISPLAY` or `WAYLAND_DISPLAY`) and `xdg-open`. Availability is a capability
+hint: a native action can still fail at runtime, and errors are surfaced to the user.
+
+Electron continues to prefer its own folder dialog and `shell.openPath` through
+preload IPC. Browsers can enter an absolute library path in Settings, including on
+headless servers. Paths refer to the server computer, and saving uses the existing
+library relocation validation. Opening the folder uses the saved library location,
+not an unsaved edit. Native chooser cancellation leaves settings unchanged.
+
 ## Development setup
 
 Use Python 3.10 or newer and a recent Node.js LTS release.

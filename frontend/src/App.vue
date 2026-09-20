@@ -203,6 +203,11 @@ const creationModelFilter = ref(null)
 const creationDisplayFilter = ref(null)
 const creationSdCardFilter = ref(null)
 const imageLibraryLocation = ref('')
+const savedImageLibraryLocation = ref('')
+const windowDesktop = Boolean(window.espImageServerDesktop)
+const folderActions = ref({ choose: false, reveal: false })
+const canChooseLibrary = computed(() => Boolean(window.espImageServerDesktop?.chooseImageLibrary) || folderActions.value.choose)
+const canRevealLibrary = computed(() => Boolean(window.espImageServerDesktop?.revealImageLibrary) || folderActions.value.reveal)
 const jpegQuality = ref(85)
 const videoJpegQuality = ref(10)
 const autoSaveImages = ref(true)
@@ -2063,7 +2068,9 @@ async function loadAppSettings() {
     const response = await fetch('/app-settings')
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
     const settings = await response.json()
+    savedImageLibraryLocation.value = settings.image_library_location
     imageLibraryLocation.value = settings.image_library_location
+    folderActions.value = settings.folder_actions || { choose: false, reveal: false }
     jpegQuality.value = settings.jpeg_quality
     videoJpegQuality.value = settings.video_jpeg_quality
     autoSaveImages.value = settings.auto_save_images !== false
@@ -2096,7 +2103,9 @@ async function saveAppSettings() {
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     const settings = await response.json()
+    savedImageLibraryLocation.value = settings.image_library_location
     imageLibraryLocation.value = settings.image_library_location
+    folderActions.value = settings.folder_actions || { choose: false, reveal: false }
     jpegQuality.value = settings.jpeg_quality
     videoJpegQuality.value = settings.video_jpeg_quality
     autoSaveImages.value = settings.auto_save_images !== false
@@ -2180,7 +2189,7 @@ async function revealImageLibrary() {
   settingsError.value = ''
   try {
     if (window.espImageServerDesktop?.revealImageLibrary) {
-      const failure = await window.espImageServerDesktop.revealImageLibrary(imageLibraryLocation.value)
+      const failure = await window.espImageServerDesktop.revealImageLibrary(savedImageLibraryLocation.value)
       if (failure) throw new Error(failure)
     } else {
       const response = await fetch('/app-settings/image-library/reveal', { method: 'POST' })
@@ -4277,29 +4286,28 @@ onUnmounted(() => {
               </v-alert>
             </v-card>
             <v-form @submit.prevent="saveAppSettings">
-              <template v-if="!compact">
+              <div>
                 <v-text-field
                   v-model="imageLibraryLocation"
                   label="Image library location"
                   variant="outlined"
-                  readonly
-                  hint="Existing generated images move with the library. Choose an empty destination folder."
+                  hint="Enter an absolute folder path on the computer running ESPImageServer. Saving moves the library; use an empty destination folder."
                   persistent-hint
                   prepend-inner-icon="mdi-folder-image"
                   class="mb-7"
                 />
+                <p v-if="!canChooseLibrary" class="mb-4">A folder chooser is unavailable here. Enter the library path above, then save settings, or use the desktop app.</p>
+                <p v-if="!canRevealLibrary" class="mb-4">Opening folders is unavailable here. Use the library path in the server computer's file manager.</p>
+                <p v-if="!windowDesktop" class="mb-4">Folder actions open on the computer running ESPImageServer, not on this browser's device.</p>
                 <div class="d-flex flex-wrap ga-2 mb-6">
-                  <v-btn type="button" variant="tonal" prepend-icon="mdi-folder-search" :loading="choosingImageLibrary" @click="chooseImageLibrary">
+                  <v-btn type="button" variant="tonal" prepend-icon="mdi-folder-search" :disabled="!canChooseLibrary" :loading="choosingImageLibrary" @click="chooseImageLibrary">
                     Choose image library folder
                   </v-btn>
-                  <v-btn type="button" variant="tonal" prepend-icon="mdi-folder-open" :loading="openingImageLibrary" @click="revealImageLibrary">
+                  <v-btn type="button" variant="tonal" prepend-icon="mdi-folder-open" :disabled="!canRevealLibrary" :loading="openingImageLibrary" @click="revealImageLibrary">
                     Open image library folder
                   </v-btn>
                 </div>
-              </template>
-              <v-alert v-else type="info" variant="tonal" density="compact" class="mb-6">
-                Image-library folders are managed on the computer running ESPImageServer. Use the desktop app to choose or open that folder.
-              </v-alert>
+              </div>
               <v-slider
                 v-model="jpegQuality"
                 label="JPEG quality"
