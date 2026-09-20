@@ -126,7 +126,8 @@ runtime manifest. Artifact names in GitHub remain unchanged.
 The archive builder reads every archived file back and compares its contents,
 permissions, directories, and symbolic links with the tested desktop bundle
 before producing a checksum. Native CI also tests extraction of executable files
-and symbolic links. These checks are implemented; their hosted run is pending.
+and symbolic links. The user confirmed the hosted archive and checksum checks
+passed on Linux and macOS.
 
 Download and unzip the GitHub artifact first. In the directory containing the
 archive and checksum, verify the exact downloaded filename:

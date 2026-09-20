@@ -376,7 +376,8 @@ Windows behavior as platform delivery progresses.
   Versioned desktop tar archives and adjacent SHA-256 files are implemented for
   Linux management/CUDA and macOS management bundles. CI verifies archived
   contents, permissions, and symlinks before upload; focused tests cover archive
-  extraction and reject version mismatches. Hosted validation is pending.
+  extraction and reject version mismatches. The user confirmed the hosted
+  archive and checksum checks passed on Linux and macOS.
   Final package formats, signing/notarization, and update flows remain open.
 - [x] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported
