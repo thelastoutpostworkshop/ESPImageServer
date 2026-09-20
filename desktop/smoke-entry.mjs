@@ -1,5 +1,5 @@
 // Test-only entry point: exercise the real main module without production hooks.
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, shell } from 'electron'
 import assert from 'node:assert/strict'
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -43,6 +43,7 @@ async function checkWindow(window) {
   assert.ok(mounted, 'Vue workspace must render, not just the splash or an empty page')
   const startup = await window.webContents.executeJavaScript('window.espImageServerDesktop.getStartupState()')
   assert.equal(startup.status.title, 'Ready', 'preload IPC must reach the real main process')
+  await checkFolderActions(window)
   loadedWindows += 1
   console.log(`Workspace loaded (${loadedWindows}); preload IPC passed`)
   if (process.platform === 'darwin' && loadedWindows === 1) {
@@ -57,5 +58,38 @@ async function checkWindow(window) {
   writeFileSync(path.join(storage, 'result.json'), JSON.stringify({ loadedWindows, platform: process.platform }))
   if (process.platform === 'darwin') app.quit()
   else window.close()
+}
+
+async function checkFolderActions(window) {
+  const originalDialog = dialog.showOpenDialog
+  const originalOpen = shell.openPath
+  const selectedPath = path.join(storage, "User's créations 日本語")
+  const settingsBefore = await (await fetch('http://127.0.0.1:8000/app-settings')).json()
+  const choose = () => window.webContents.executeJavaScript('window.espImageServerDesktop.chooseImageLibrary()')
+  try {
+    dialog.showOpenDialog = async (parent, options) => {
+      assert.equal(parent, window)
+      assert.ok(options.properties.includes('openDirectory'))
+      return { canceled: false, filePaths: [selectedPath] }
+    }
+    assert.equal(await choose(), selectedPath)
+    dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] })
+    assert.equal(await choose(), null)
+    dialog.showOpenDialog = async () => { throw new Error('Folder dialog unavailable') }
+    await assert.rejects(choose(), /Folder dialog unavailable/)
+    const reveal = () => window.webContents.executeJavaScript(
+      `window.espImageServerDesktop.revealImageLibrary(${JSON.stringify(selectedPath)})`)
+    shell.openPath = async value => { assert.equal(value, selectedPath); return '' }
+    assert.equal(await reveal(), '')
+    shell.openPath = async () => 'No file manager available'
+    assert.equal(await reveal(), 'No file manager available')
+    const settingsAfter = await (await fetch('http://127.0.0.1:8000/app-settings')).json()
+    assert.equal(settingsAfter.image_library_location, settingsBefore.image_library_location,
+      'Choosing or opening a folder must not save or move the library')
+    console.log('Folder IPC passed: selection, cancellation, errors, and unchanged saved library (native UI stubbed)')
+  } finally {
+    dialog.showOpenDialog = originalDialog
+    shell.openPath = originalOpen
+  }
 }
 await import('./main.mjs')

@@ -4,6 +4,8 @@ import logging
 import os
 from pathlib import Path
 import re
+import subprocess
+from types import SimpleNamespace
 from threading import Event
 import time
 
@@ -1350,3 +1352,37 @@ def test_folder_actions_capabilities_cancel_and_unavailable(tmp_path, monkeypatc
         destination = str(tmp_path / "manual library")
         assert client.put("/app-settings", json={"image_library_location": destination}).status_code == 200
         assert client.get("/app-settings").json()["image_library_location"] == destination
+
+
+def test_headless_folder_api_uses_real_capability_fallback(tmp_path, monkeypatch):
+    from esp_image_server import folder_actions
+    monkeypatch.setattr(folder_actions, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    with TestClient(create_app(Settings(), FakeGenerator(), enable_mdns=False)) as client:
+        assert client.get("/app-settings").json()["folder_actions"] == {"choose": False, "reveal": False}
+        for action in ("choose", "reveal"):
+            response = client.post(f"/app-settings/image-library/{action}")
+            assert response.status_code == 501
+            assert "unavailable" in response.json()["detail"]
+        destination = str(tmp_path / "Manual créations 日本語")
+        assert client.put("/app-settings", json={"image_library_location": destination}).status_code == 200
+        assert client.get("/app-settings").json()["image_library_location"] == destination
+
+
+@pytest.mark.parametrize("failure", [OSError("No file manager"),
+    subprocess.CalledProcessError(1, "xdg-open"), subprocess.TimeoutExpired("xdg-open", 15)])
+def test_folder_opener_failure_returns_readable_error_without_changing_library(monkeypatch, failure):
+    from esp_image_server import folder_actions
+    monkeypatch.setattr(folder_actions, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setattr(folder_actions.shutil, "which", lambda name: "/tools/xdg-open")
+    def failed_open(*args, **kwargs):
+        raise failure
+    with TestClient(create_app(Settings(), FakeGenerator(), enable_mdns=False)) as client:
+        original = client.get("/app-settings").json()["image_library_location"]
+        monkeypatch.setattr(folder_actions.subprocess, "run", failed_open)
+        response = client.post("/app-settings/image-library/reveal")
+        assert response.status_code == 500
+        assert "Could not open the image library folder" in response.json()["detail"]
+        assert client.get("/app-settings").json()["image_library_location"] == original

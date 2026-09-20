@@ -68,3 +68,22 @@ def test_missing_native_tools_disable_actions(monkeypatch):
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     monkeypatch.setattr(actions.shutil, "which", lambda command: None)
     assert actions.capabilities()["reveal"] is False
+
+
+def test_wayland_reveal_preserves_unicode_and_shell_characters(monkeypatch, tmp_path):
+    platform(monkeypatch, "linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    calls = []
+    monkeypatch.setattr(actions.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    folder = tmp_path / "User's créations 日本語; $literal"
+    assert actions.capabilities() == {"choose": False, "reveal": True}
+    actions.reveal_folder(folder)
+    assert calls == [(["/tools/xdg-open", str(folder)],
+                     {"check": True, "capture_output": True, "timeout": 15})]
+
+
+def test_missing_macos_opener_disables_reveal(monkeypatch):
+    platform(monkeypatch, "darwin")
+    monkeypatch.setattr(Path, "is_file", lambda self: False)
+    assert actions.capabilities() == {"choose": False, "reveal": False}

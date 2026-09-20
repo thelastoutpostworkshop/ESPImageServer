@@ -315,6 +315,12 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   entry when a chooser is unavailable. Adapter/API tests cover fallback, cancel,
   overrides, and validation; verify actual dialogs/opening on native systems,
   including headless environments and Windows regression checks.
+  Added desktop smoke coverage through real preload/IPC for selection, cancel,
+  native errors, and preservation of the saved library path; OS dialog/opener
+  calls are stubbed. Backend checks cover Wayland, missing macOS opener, headless
+  API/manual-path fallback, and opener failures/timeouts. Hosted results for this
+  added coverage are pending. Follow CONTRIBUTING.md's native folder checklist
+  for real dialogs/file managers; automated IPC checks do not complete this item.
 - [x] **P1 - Verify the readiness boundary:** The `Platform checks` GitHub Actions
   workflow runs backend tests, frontend tests/build, and desktop module tests on
   Windows, Ubuntu, and macOS. Tests cover platform paths, runtime resolution,
