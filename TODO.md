@@ -265,11 +265,14 @@ Complete this milestone before starting native installers or announcing support.
 The source audit found the following Windows dependencies; the code is not yet
 ready for Linux/macOS. Preserve the existing Windows behavior while addressing them.
 
-- [ ] **P1 - Validate desktop runtime paths and lifecycle on native platforms:**
+- [ ] **P1 - Validate desktop runtime paths and lifecycle on native Linux/macOS:**
   Runtime/tool resolution is isolated in `desktop/runtime.mjs`; Windows paths
   are preserved, with explicit missing-runtime errors, owned-server shutdown,
-  and macOS window reopening. Automated tests cover these behaviors. Still test
-  actual startup/quit, child-process cleanup, and Dock reopening on native hosts.
+  and macOS window reopening. Automated tests cover these behaviors. User-confirmed
+  Windows desktop checks passed: startup with saved content, owned-server shutdown
+  and restart, preserving an independently started server, and focusing the
+  existing window on a second launch. Still test actual startup/quit,
+  child-process cleanup, and macOS Dock reopening on native Linux/macOS hosts.
   Non-Windows runtime/tool bundles and installers remain a later milestone.
 - [ ] **P1 - Validate writable paths on native Linux/macOS:** Shared path
   resolution is implemented in `paths.py`, with Windows locations preserved and
