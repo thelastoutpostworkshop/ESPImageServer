@@ -336,8 +336,9 @@ Windows behavior as platform delivery progresses.
   PLATFORMS.md: retain Windows x64, target Ubuntu 24.04 x64 with NVIDIA CUDA and
   display management, and macOS 15+ Apple Silicon with display management only.
   Intel Macs and Linux ARM64 are deferred; CPU/MPS generation stays disabled.
-  CI explicitly checks Python/Node platform and architecture. Linux/macOS
-  packaging remains to be implemented.
+  CI explicitly checks Python/Node platform and architecture. The user confirmed
+  the updated workflow passed on Windows x64, Ubuntu x64, and macOS ARM64.
+  Linux/macOS packaging remains to be implemented.
 - [ ] **P1 - Package dependencies per OS and architecture:** Replace the
   Windows-only bootstrap and esptool preparation steps with platform-specific
   equivalents. Add CI checks for Python, Diffusers, serialport native
