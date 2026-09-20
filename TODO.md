@@ -263,6 +263,61 @@ pinned library state were restored after testing.
    published SHA-256 checksum. This reduces SmartScreen friction and makes a
    downloaded installer verifiable.
 
+## Linux and macOS support preparation
+
+Preparation only: retain Windows support and the current no-CPU-generation
+policy. Keep display management available independently of AI generation.
+
+- [ ] **P1 - Define the support matrix:** Choose initial Linux distributions
+  and minimum macOS versions; distinguish x64 and ARM64 packages. Start with
+  Linux NVIDIA CUDA generation and display management on both platforms.
+  Treat Apple Silicon Metal/MPS generation as a separate feasibility task;
+  do not advertise it until each supported model and operation is validated.
+  Decide whether Intel Macs and Linux ARM64 are initial targets or later work.
+- [ ] **P1 - Separate platform-specific code:** Audit Electron startup,
+  Python discovery, virtual-environment paths, subprocess creation/termination,
+  folder selection/reveal, and PowerShell commands. Introduce platform adapters
+  while keeping one shared FastAPI server and frontend. Preserve the LAN
+  endpoint used by ESP32 firmware, GPU serialization, and cancellation behavior.
+- [ ] **P1 - Standardize data and cache locations:** Replace scattered
+  LOCALAPPDATA assumptions with shared platform-aware paths for configuration,
+  databases, logs, temporary media, and model caches. Respect Linux XDG paths
+  and macOS application-support/cache locations. Preserve user-selected image
+  libraries, support spaces and Unicode, and test case-sensitive filesystems.
+  Keep application installation directories separate from writable user data.
+- [ ] **P1 - Package dependencies per OS and architecture:** Replace the
+  Windows-only bootstrap and esptool preparation steps with platform-specific
+  equivalents. Validate Python, PyTorch/CUDA, Diffusers, serialport native
+  bindings, and the imageio-ffmpeg executable on each target. Verify GPU
+  computation before enabling generation; avoid requiring a system Python,
+  Arduino installation, or system ffmpeg for the packaged-app workflow.
+- [ ] **P1 - Validate USB setup and firmware flashing:** Package the matching
+  esptool executable and handle native serial-device names. Document Linux
+  serial permissions/udev setup and macOS driver requirements where applicable.
+  Test identification, BOOT/RESET, Wi-Fi provisioning, unplug/replug, occupied
+  ports, interrupted flashing, and port release on all supported ESP32 boards.
+  Keep permissions narrowly scoped; do not require running the whole app as root.
+- [ ] **P1 - Validate networking and phone access:** Test server binding,
+  local address discovery, mDNS, hostname conflicts, firewall prompts, and QR
+  access from an iPhone on the same network. Check sleep/wake, network changes,
+  server restart, ESP32 reconnection, and offline Display Experience recovery.
+- [ ] **P2 - Evaluate Apple Silicon generation:** Probe Metal/MPS operations,
+  precision, memory use, model loading, cancellation, and image/video quality.
+  Review CUDA-specific calls and CPU-offload assumptions separately for each
+  model family. Keep unsupported models disabled with clear explanations;
+  do not silently fall back to CPU generation.
+- [ ] **P2 - Add native distribution and update flows:** Choose Linux package
+  formats and macOS application packaging, icons, signing/notarization, and
+  permissions. Build on appropriate native runners. Define install, update,
+  repair, and uninstall behavior that preserves settings and user creations.
+  Keep pyproject.toml as the version source and publish per-platform checksums.
+- [ ] **P1 - Add cross-platform release checks:** Run backend, frontend, and
+  Electron tests in an OS/architecture matrix. Perform packaged-app smoke tests
+  on clean machines for management-only and supported GPU configurations.
+  Cover successful generation, loading/cancellation, queue orientation,
+  downloads, saved media, SD operations, and all hardware-dependent workflows.
+  Record tested versions and known limitations before announcing support.
+
 ## Plan the Hugging Face major-version upgrade
 
 Do not upgrade `transformers` 5.x or `huggingface-hub` 1.x independently.
