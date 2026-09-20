@@ -16,7 +16,7 @@ jobs:
   linux-cuda:
     name: Linux CUDA desktop (x64)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       HF_HUB_OFFLINE: '1'
       TRANSFORMERS_OFFLINE: '1'
@@ -88,6 +88,26 @@ jobs:
           compression-level: 0
           retention-days: 3
           if-no-files-found: error
+      - name: Release uploaded CUDA desktop archive space
+        run: python -c "from pathlib import Path; [p.unlink() for p in Path('dist/distribution-cuda').glob('*.tar.gz')]"
+      - name: Build Linux CUDA installer
+        run: npm --prefix desktop run build:native-installer -- '../dist/CUDA desktop é/app'
+      - name: Release staged CUDA bundle before installation
+        run: |
+          test -f 'dist/CUDA desktop é/app/resources/backend/runtime-manifest.json'
+          rm -r -- 'dist/CUDA desktop é/app'
+      - name: Verify CUDA installation, replacement, repair, and removal
+        run: python ci/verify-native-installer.py desktop/release/installers-cuda cuda
+      - name: Upload CUDA installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: installer-linux-x64-cuda
+          path: |
+            desktop/release/installers-cuda/*.deb
+            desktop/release/installers-cuda/*.sha256
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
   tests:
     name: Tests (${{ matrix.os }}, ${{ matrix.arch }})
     strategy:
@@ -104,7 +124,7 @@ jobs:
             platform: darwin
             arch: arm64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       PYTHONPATH: src
       HF_HUB_OFFLINE: '1'
@@ -210,3 +230,21 @@ jobs:
           path: dist/distribution/*
           if-no-files-found: error
           retention-days: 7
+      - name: Build native installer
+        if: runner.os != 'Windows'
+        run: npm --prefix desktop run build:native-installer -- '../dist/Desktop bundles é/app'
+      - name: Verify native installation, replacement, repair, and removal
+        if: runner.os != 'Windows'
+        run: python ci/verify-native-installer.py desktop/release/installers management
+      - name: Upload native installer
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: installer-${{ matrix.platform }}-${{ matrix.arch }}-management
+          path: |
+            desktop/release/installers/*.deb
+            desktop/release/installers/*.dmg
+            desktop/release/installers/*.sha256
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error

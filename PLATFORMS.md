@@ -1,13 +1,14 @@
 # Platform scope
 
 Windows remains the existing distribution. The initial Linux/macOS targets below
-define upcoming packaging work; Linux/macOS installers are not available yet.
+define the native packaging scope. Development installers are implemented in CI;
+their first hosted installation checks are pending. Signed releases are not available yet.
 
 | Target | Architecture | Image/video generation | Display management | Delivery |
 | --- | --- | --- | --- | --- |
 | Windows (existing target) | x64 | NVIDIA CUDA | Yes | Existing Windows installer |
-| Ubuntu 24.04 LTS | x64 | NVIDIA CUDA | Yes | Planned |
-| macOS 15 or later | Apple Silicon / ARM64 | Disabled | Yes | Planned |
+| Ubuntu 24.04 LTS | x64 | NVIDIA CUDA | Yes | Development .deb (CI validation pending) |
+| macOS 15 or later | Apple Silicon / ARM64 | Disabled | Yes | Unsigned .dmg (CI validation pending) |
 
 Ubuntu 24.04 is the initial Linux distribution baseline. Other distributions,
 older macOS versions, Intel Macs, Linux ARM64, and native Windows ARM64 packages
@@ -113,7 +114,10 @@ archives for seven days. Linux contains an `espimageserver` executable; macOS
 contains `ESPImageServer.app`. These are unsigned management-only development
 bundles, not final installers. The user confirmed that native builds and packaged
 smoke checks passed on Linux x64 and macOS ARM64.
-Signing/notarization and installer/update formats remain unfinished.
+Native `.deb` and `.dmg` builders now consume these tested bundles. See
+[native installation and replacement](NATIVE_INSTALL.md) for downloads, update,
+repair, removal, and data-preservation behavior. Hosted package validation is
+pending; signing/notarization and automatic updates remain unfinished.
 
 ### Versioned downloads and checksums
 
