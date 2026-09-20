@@ -7,6 +7,23 @@ def queued(store):
     return store.queue_save('image.jpg', display_id='screen')
 
 
+@pytest.mark.parametrize('success', [False, True])
+def test_delete_ack_updates_only_confirmed_display_inventory(success):
+    store = DisplayCommandStore()
+    report = {'available': True, 'files': [{'name': 'image.jpg'}, {'name': 'video.mjpeg'}]}
+    for display_id in ['screen', 'other']:
+        store.report_sd_card(report, display_id=display_id)
+    command = store.queue('delete_sd_file', filename='image.jpg', display_id='screen')
+    assert len(store.sd_card_report(display_id='screen')['files']) == 2
+    store.acknowledge(command['id'], success, 'done', display_id='screen')
+    updated = store.sd_card_report(display_id='screen')
+    assert [item['name'] for item in updated['files']] == (['video.mjpeg'] if success else ['image.jpg', 'video.mjpeg'])
+    assert bool(updated.get('inventory_refresh_pending')) == success
+    assert len(store.sd_card_report(display_id='other')['files']) == 2
+    store.report_sd_card({'available': True, 'files': [{'name': 'video.mjpeg'}]}, display_id='screen')
+    assert not store.sd_card_report(display_id='screen').get('inventory_refresh_pending')
+
+
 def test_cancellation_requires_board_confirmation_and_late_ack_cannot_reverse_it():
     store = DisplayCommandStore()
     save = queued(store)

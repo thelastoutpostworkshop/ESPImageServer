@@ -142,6 +142,14 @@ class DisplayCommandStore:
             if command.get("status") in {"complete", "failed", "cancelled", "superseded"}:
                 return dict(command)
             command.update({"status": "complete" if success else "failed", "detail": detail})
+            if success and command.get("type") == "delete_sd_file":
+                report = self._sd_card_reports.get(display_id)
+                if report is not None:
+                    self._sd_card_reports[display_id] = {
+                        **report,
+                        "files": [item for item in report.get("files", []) if item.get("name") != command.get("filename")],
+                        "inventory_refresh_pending": True,
+                    }
             if command.get("type") == "cancel_operation":
                 original = self._completed.get(str(command.get("cancelled_command_id", "")))
                 if original is not None and original.get("status") == "cancelling":

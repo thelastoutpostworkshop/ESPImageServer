@@ -1676,20 +1676,26 @@ async function fetchDisplaySdCardReport() {
   return response.json()
 }
 
+let sdCardLoadSequence = 0
 async function loadDisplaySdCard() {
+  const sequence = ++sdCardLoadSequence
+  const scope = selectedDisplayEndpoint('')
   if (!display.value?.connected) {
     displaySdCard.value = { available: false, files: [] }
     return null
   }
   displaySdCardLoading.value = true
   try {
-    displaySdCard.value = await fetchDisplaySdCardReport()
+    const report = await fetchDisplaySdCardReport()
+    if (sequence !== sdCardLoadSequence || scope !== selectedDisplayEndpoint('')) return null
+    displaySdCard.value = report
     return displaySdCard.value
   } catch {
+    if (sequence !== sdCardLoadSequence || scope !== selectedDisplayEndpoint('')) return null
     displaySdCard.value = { available: false, files: [] }
     return null
   } finally {
-    displaySdCardLoading.value = false
+    if (sequence === sdCardLoadSequence) displaySdCardLoading.value = false
   }
 }
 
@@ -1917,10 +1923,13 @@ async function deleteDisplaySdCardFile() {
   const file = sdCardFileToDelete.value
   if (!file || deletingSdCardFile.value) return
   deletingSdCardFile.value = true
+  error.value = ''
   try {
     if (deleteSdCardFileDontAskAgain.value) await setDeleteConfirmation(false)
-    const deleted = await sendDisplaySdCardCommand(`/display-sd-card/files/${encodeURIComponent(file.name)}`, 'DELETE')
-    if (deleted) deleteSdCardFileDialog.value = false
+    await deleteSdCardFileAndWait(file)
+    deleteSdCardFileDialog.value = false
+    showSDCardSnackbar('File deleted. Updating the SD-card list…')
+    await loadDisplaySdCard()
   } catch (requestError) {
     error.value = `Could not remove the display SD card ${displaySdCardMediaType(file)}: ${requestError.message}`
   } finally {
@@ -1941,6 +1950,11 @@ function confirmDeleteSelectedSdCardFiles() {
 }
 
 async function deleteSdCardFileAndWait(file) {
+  if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
+  const scope = selectedDisplayEndpoint('')
+  const checkDisplay = () => {
+    if (scope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Check the original display for the deletion result.')
+  }
   const response = await fetch(
     selectedDisplayEndpoint(`/display-sd-card/files/${encodeURIComponent(file.name)}`),
     { method: 'DELETE' }
@@ -1952,11 +1966,19 @@ async function deleteSdCardFileAndWait(file) {
   const command = await response.json()
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await new Promise(resolve => window.setTimeout(resolve, 500))
-    const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
+    checkDisplay()
+    const commandResponse = await fetch(sdSaveCommandEndpoint(command))
     if (!commandResponse.ok) throw new Error(`Could not check display status (${commandResponse.status})`)
     const result = await commandResponse.json()
-    if (result.status === 'complete') return
-    if (result.status === 'failed') throw new Error(result.detail || `The display could not delete ${file.name}`)
+    checkDisplay()
+    if (result.status === 'complete') {
+      ++sdCardLoadSequence
+      displaySdCardLoading.value = false
+      removeSdCardFilesFromInventory([file])
+      displaySdCard.value = { ...displaySdCard.value, inventory_refresh_pending: true }
+      return
+    }
+    if (['failed', 'cancelled', 'superseded'].includes(result.status)) throw new Error(result.detail || `The display could not delete ${file.name}`)
   }
   throw new Error(`The display has not confirmed deleting ${file.name}`)
 }
@@ -1982,12 +2004,10 @@ async function deleteSelectedDisplaySdCardFiles() {
       await deleteSdCardFileAndWait(file)
       deletedFiles.push(file)
     }
-    removeSdCardFilesFromInventory(deletedFiles)
     deleteSdCardFilesDialog.value = false
     showSDCardSnackbar(`${deletedFiles.length} ${deletedFiles.length === 1 ? 'file' : 'files'} removed from the display SD card.`)
-    window.setTimeout(loadDisplaySdCard, 750)
+    await loadDisplaySdCard()
   } catch (requestError) {
-    if (deletedFiles.length) removeSdCardFilesFromInventory(deletedFiles)
     error.value = `Could not remove all selected SD card files: ${requestError.message}`
   } finally {
     deletingSdCardFiles.value = false
@@ -4103,6 +4123,12 @@ onUnmounted(() => {
               Waiting for {{ display?.name || 'the display' }} to report its SD card.
             </v-alert>
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
+            <v-alert v-if="deletingSdCardFile || deletingSdCardFiles" type="info" variant="tonal" density="compact" class="mb-4" role="status">
+              Deleting from the SD card. Waiting for the display to confirm…
+            </v-alert>
+            <v-alert v-else-if="displaySdCard.inventory_refresh_pending" type="info" variant="tonal" density="compact" class="mb-4" role="status">
+              Deletion confirmed. Deleted files have been removed from this list; waiting for the display’s updated SD-card report.
+            </v-alert>
             <div class="d-flex flex-wrap ga-2 mb-4">
               <v-btn prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="!activeDisplayOnline || deletingSdCardFile || deletingSdCardFiles" @click="refreshDisplaySdCard">Refresh {{ displaySdCardLabel }}</v-btn>
               <v-btn
