@@ -78,7 +78,7 @@ The job now also builds a separate `desktop-linux-x64-cuda` artifact, retained f
 three days, using the CUDA backend and the same Electron/esptool resources.
 The original `desktop-linux-x64` and macOS artifacts remain management-only.
 The CUDA desktop build uses `release/native-cuda`, and rejects CUDA on macOS.
-Its first hosted packaged results are pending. The host
+The user confirmed its hosted packaged checks passed. The host
 still needs a compatible NVIDIA driver; runtime capability detection controls
 whether generation is enabled.
 

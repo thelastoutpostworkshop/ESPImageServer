@@ -338,8 +338,8 @@ Windows behavior as platform delivery progresses.
   Intel Macs and Linux ARM64 are deferred; CPU/MPS generation stays disabled.
   CI explicitly checks Python/Node platform and architecture. The user confirmed
   the updated workflow passed on Windows x64, Ubuntu x64, and macOS ARM64.
-  Linux/macOS packaging remains to be implemented.
-- [ ] **P1 - Package dependencies per OS and architecture:** Replace the
+  Linux/macOS directory bundles are implemented; final distribution formats remain.
+- [x] **P1 - Package dependencies per OS and architecture:** Replace the
   Windows-only bootstrap and esptool preparation steps with platform-specific
   equivalents. Add CI checks for Python, Diffusers, serialport native
   bindings, and the imageio-ffmpeg executable on each target. Preserve runtime
@@ -356,8 +356,8 @@ Windows behavior as platform delivery progresses.
   imports, pip consistency, relocated startup, and generation rejection without
   a GPU, and uploads a CUDA backend artifact. The user confirmed the hosted CUDA
   job passed; actual GPU generation was not exercised. A separately named Linux
-  CUDA desktop bundle and packaged no-GPU checks are now implemented. Hosted
-  results for the CUDA desktop integration are pending.
+  CUDA desktop bundle and packaged no-GPU checks are implemented. The user
+  confirmed the hosted CUDA desktop integration checks passed.
 - [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
   serial permissions/udev setup and macOS driver requirements where applicable.
