@@ -24,6 +24,14 @@ jobs:
       CUDA_VISIBLE_DEVICES: ''
     steps:
       - uses: actions/checkout@v6
+      - name: Free unused SDK space on the disposable CUDA runner
+        shell: bash
+        run: |
+          test "$GITHUB_ACTIONS" = 'true'
+          test "$RUNNER_ENVIRONMENT" = 'github-hosted'
+          # This job uses Python/Node, not Android, .NET, or Haskell.
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h / /tmp
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -91,7 +99,10 @@ jobs:
       - name: Release uploaded CUDA desktop archive space
         run: python -c "from pathlib import Path; [p.unlink() for p in Path('dist/distribution-cuda').glob('*.tar.gz')]"
       - name: Build Linux CUDA installer
-        run: npm --prefix desktop run build:native-installer -- '../dist/CUDA desktop é/app'
+        run: |
+          df -h / /tmp
+          du -sh 'dist/CUDA desktop é/app'
+          npm --prefix desktop run build:native-installer -- '../dist/CUDA desktop é/app'
       - name: Release staged CUDA bundle before installation
         run: |
           test -f 'dist/CUDA desktop é/app/resources/backend/runtime-manifest.json'

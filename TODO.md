@@ -382,7 +382,10 @@ Windows behavior as platform delivery progresses.
   with version checks and SHA-256 files. CI now installs/copies each package,
   launches it, replaces it at the same version, repairs a missing executable,
   and removes it while preserving external data fixtures. Hosted validation is
-  pending. NATIVE_INSTALL.md documents installation and replacement behavior.
+  pending for macOS and CUDA. The Ubuntu management installer lifecycle passed
+  in run 96224090005. Fixes canonicalize macOS smoke-test paths and free unused
+  SDK space on the hosted CUDA runner after its package build exhausted disk.
+  NATIVE_INSTALL.md documents installation and replacement behavior.
   Signing/notarization, cross-version migration, and automatic updates remain open.
 - [x] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported

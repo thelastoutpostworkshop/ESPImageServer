@@ -1,6 +1,6 @@
 import { _electron } from 'playwright-core'
 import assert from 'node:assert/strict'
-import { access, mkdtemp, mkdir, readdir, readFile, symlink } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readdir, readFile, realpath, symlink } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import os from 'node:os'
@@ -10,7 +10,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 if (!process.env.CI || !['linux', 'darwin'].includes(process.platform)) throw new Error('Run on native CI runners')
 const desktop = path.dirname(fileURLToPath(import.meta.url))
-const root = path.resolve(process.argv[2])
+// macOS exposes /var through /private/var; Electron reports the physical path.
+// Canonicalize before deriving resources and checking backend import locations.
+const root = await realpath(path.resolve(process.argv[2]))
 const mac = process.platform === 'darwin'
 const executablePath = mac ? path.join(root, 'ESPImageServer.app/Contents/MacOS/ESPImageServer') : path.join(root, 'espimageserver')
 const resources = mac ? path.join(root, 'ESPImageServer.app/Contents/Resources') : path.join(root, 'resources')
@@ -53,7 +55,7 @@ try {
     args: [`--user-data-dir=${path.join(storage, 'electron')}`, ...(mac ? [] : ['--no-sandbox'])] })
   const processInfo = await application.evaluate(({ app }) => ({ packaged: app.isPackaged, resources: process.resourcesPath }))
   assert.equal(processInfo.packaged, true)
-  assert.equal(processInfo.resources, resources)
+  assert.equal(await realpath(processInfo.resources), await realpath(resources))
   let window = await application.firstWindow()
   async function check(page) {
     await page.waitForURL('http://127.0.0.1:8000/**', { timeout: 90000 })
