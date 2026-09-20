@@ -72,7 +72,8 @@ with no system Python or FFmpeg. No flashing or generation is performed.
 After checks pass, CI uploads `desktop-linux-x64` and `desktop-darwin-arm64` tar
 archives for seven days. Linux contains an `espimageserver` executable; macOS
 contains `ESPImageServer.app`. These are unsigned management-only development
-bundles, not final installers. Native build/smoke results are pending the first run.
+bundles, not final installers. The user confirmed that native builds and packaged
+smoke checks passed on Linux x64 and macOS ARM64.
 Linux CUDA, signing/notarization, and installer/update formats remain unfinished.
 
 - Preserve the current Windows installer and runtime layout.

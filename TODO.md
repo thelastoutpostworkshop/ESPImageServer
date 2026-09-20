@@ -350,7 +350,7 @@ Windows behavior as platform delivery progresses.
   relocates, checks HTTP startup/web assets/FFmpeg with no system Python, and
   uploads backend artifacts. The user confirmed these hosted checks passed on
   Linux x64 and macOS ARM64. Native Electron integration is now implemented with
-  packaged startup checks; first hosted desktop results are pending. Remaining
+  packaged startup checks; the user confirmed both native desktop jobs passed. Remaining
   dependency work: Linux CUDA packages.
 - [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
@@ -359,17 +359,18 @@ Windows behavior as platform delivery progresses.
   Keep permissions narrowly scoped; do not require running the whole app as root.
   Pinned esptool 5.1.0 archives for Linux x64/macOS ARM64 are now verified and
   included by the native bundle build. CI checks the bundled version and actual
-  serialport enumeration. Native job results and OS permission documentation remain.
+  serialport enumeration. The user confirmed both native jobs passed.
+  OS permission documentation remains.
 - [ ] **P2 - Add native distribution and update flows:** Choose Linux package
   formats and macOS application packaging, icons, signing/notarization, and
   permissions. Build on appropriate native runners. Define install, update,
   repair, and uninstall behavior that preserves settings and user creations.
   Keep pyproject.toml as the version source and publish per-platform checksums.
-- [ ] **P1 - Add automated cross-platform release checks:** Extend the existing
+- [x] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported
   architectures. Keep Windows manual acceptance checks.
   Native directory-bundle build, relocation, and packaged Electron smoke checks
-  are implemented for Linux x64 and macOS ARM64; first hosted results are pending.
+  passed for Linux x64 and macOS ARM64, confirmed by the user.
 
 ## Plan the Hugging Face major-version upgrade
 
