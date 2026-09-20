@@ -66,7 +66,7 @@ try {
     Set-DerivedVersion (Join-Path $projectRoot 'desktop\package-lock.json') '(?s)("packages"\s*:\s*\{\s*""\s*:\s*\{\s*"name"\s*:\s*"esp-image-server-desktop",\s*"version"\s*:\s*")[^"]+("\s*,)' {
         param($match) $match.Groups[1].Value + $version + $match.Groups[2].Value
     } 'Electron lockfile package version'
-    Set-DerivedVersion (Join-Path $projectRoot 'installer\ESPImageServer.iss') '(?m)(#define AppVersion ")[^"]+("$)' {
+    Set-DerivedVersion (Join-Path $projectRoot 'installer\ESPImageServer.iss') '(?m)(#define AppVersion ")[^"]+("(?=\r?$))' {
         param($match) $match.Groups[1].Value + $version + $match.Groups[2].Value
     } 'Inno Setup app version'
     Set-DerivedVersion (Join-Path $projectRoot 'installer\ESPImageServer.iss') '(?m)(OutputBaseFilename=ESPImageServer-Setup-)[^\r\n]+' {
