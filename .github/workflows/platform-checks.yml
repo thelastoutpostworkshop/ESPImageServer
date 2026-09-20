@@ -73,6 +73,25 @@ jobs:
         run: python -m pytest -q --ignore=tests/test_native_storage.py
       - name: Native storage persistence and read-only installation
         run: python -m pytest tests/test_native_storage.py -v
+      - name: Build standalone management backend
+        if: runner.os != 'Windows'
+        run: python installer/build-native-runtime.py dist/native-backend
+      - name: Verify relocated backend without system Python
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p 'dist/runtime-check é'
+          mv dist/native-backend 'dist/runtime-check é/backend'
+          'dist/runtime-check é/backend/.venv/bin/python' -I -B ci/verify-native-runtime.py 'dist/runtime-check é/backend'
+          tar -czf dist/backend-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz -C 'dist/runtime-check é' backend
+      - name: Upload management backend bundle
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/backend-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
       - name: Desktop module tests
         run: npm --prefix desktop test
       - name: Check desktop entry-point syntax

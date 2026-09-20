@@ -33,6 +33,27 @@ automated coverage, not availability of a packaged Linux/macOS release.
 
 ## Packaging implementation scope
 
+The first backend bundle builder is implemented in
+`installer/build-native-runtime.py`. CI builds management-only bundles for Linux
+x64 and macOS ARM64 and uploads `backend-linux-x64` and `backend-darwin-arm64`
+artifacts, retained for seven days. These are backend components, not installers.
+The first hosted build results are pending.
+
+The Python runtime is pinned to CPython 3.12.14 from
+[python-build-standalone](https://github.com/astral-sh/python-build-standalone/releases/tag/20260901),
+with archive SHA-256 values recorded in `installer/native-python.json`. Its full
+prefix occupies `.venv` for compatibility with the desktop runtime contract;
+it is not a virtualenv linked to system Python. Management requirements reuse
+the existing constraints without installing Torch or Diffusers. The bundle keeps
+the standalone distribution's license files, package metadata, resolved package
+versions, application license, and runtime manifest.
+
+CI relocates the bundle into a path with spaces and Unicode and runs it with
+isolated Python flags. The server child has an empty PATH. Checks cover Python
+prefix/import locations, no GPU stack, bundled FFmpeg encode/decode, version,
+management HTTP endpoints, generation rejection, and packaged frontend assets.
+Linux CUDA dependencies, Electron integration, and esptool packaging remain below.
+
 - Preserve the current Windows installer and runtime layout.
 - Prepare Linux x64 and macOS ARM64 Python 3.12 runtimes without requiring a
   system Python. Keep management dependencies separate from the Linux CUDA stack;

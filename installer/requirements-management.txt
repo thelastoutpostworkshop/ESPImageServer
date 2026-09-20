@@ -1,0 +1,11 @@
+# Runtime dependencies only; no GPU stack, generation, or test frameworks.
+-c constraints-cpu.txt
+fastapi
+numpy
+Pillow
+uvicorn
+zeroconf
+imageio
+imageio-ffmpeg
+sentencepiece
+tqdm

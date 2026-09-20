@@ -345,6 +345,11 @@ Windows behavior as platform delivery progresses.
   bindings, and the imageio-ffmpeg executable on each target. Preserve runtime
   GPU capability detection before enabling generation; avoid requiring a system Python,
   Arduino installation, or system ffmpeg for the packaged-app workflow.
+  Management backend bundle construction is implemented for Linux x64 and macOS
+  ARM64 using pinned, checksum-verified standalone Python 3.12.14. CI builds,
+  relocates, checks HTTP startup/web assets/FFmpeg with no system Python, and
+  uploads backend artifacts. First hosted results are pending. Remaining work:
+  Linux CUDA dependencies and integration into the native Electron bundles.
 - [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
   serial permissions/udev setup and macOS driver requirements where applicable.

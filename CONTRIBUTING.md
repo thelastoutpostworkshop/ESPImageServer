@@ -286,6 +286,19 @@ model cache. Native dialogs, real GPU output/cancellation, physical USB behavior
 and packaged-app startup still require separate acceptance checks. Do not mark
 Linux/macOS validation complete until the corresponding hosted jobs pass.
 
+## Native backend bundles
+
+On the matching Linux x64 or macOS ARM64 build host, build the frontend, then run
+`python installer/build-native-runtime.py dist/native-backend`. The output must
+not already exist. This downloads a pinned standalone Python archive, verifies
+its checksum, installs management dependencies using the existing constraints,
+and copies the backend and built web app. It does not build an installer.
+
+Platform CI moves the output, launches its own Python, and verifies the relocated
+bundle before uploading a tar archive that preserves executable permissions and
+symlinks. See [platform scope](PLATFORMS.md) for contents and remaining work.
+Changes to dependency constraints or the Python pin must pass these native jobs.
+
 ## Windows folder action acceptance
 
 The Electron smoke test exercises the real preload/IPC path for folder selection,
