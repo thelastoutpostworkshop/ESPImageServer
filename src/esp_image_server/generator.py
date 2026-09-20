@@ -10,6 +10,7 @@ from PIL import Image
 
 from .paths import model_cache_dir as resolve_model_cache_dir
 from .config import Settings
+from .generation_capabilities import GenerationCapabilities, detect_generation_device, clear_generation_cache
 from .download_progress import DownloadProgress, huggingface_progress
 from .generation_jobs import GenerationCancelled
 
@@ -30,15 +31,7 @@ class DiffusersGenerator:
 
     @staticmethod
     def _detect_device() -> str:
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.empty(1, device="cuda")
-                torch.cuda.synchronize()
-                return "cuda"
-            return "cpu"
-        except (ImportError, RuntimeError, OSError):
-            return "cpu"
+        return detect_generation_device()
 
     @property
     def device(self) -> str:
@@ -53,8 +46,8 @@ class DiffusersGenerator:
         if self._pipeline is not None:
             return
         self._device = self._detect_device()
-        if self._device != "cuda":
-            raise RuntimeError("Image generation requires a working NVIDIA GPU with CUDA; CPU generation is not supported.")
+        capabilities = GenerationCapabilities(self._device)
+        policy = capabilities.policy("image")
         try:
             import torch
             from diffusers import AutoPipelineForText2Image
@@ -64,7 +57,7 @@ class DiffusersGenerator:
                 "Image dependencies are missing. Install the project dependencies and PyTorch."
             ) from exc
 
-        dtype = torch.float16
+        dtype = getattr(torch, policy.precision)
         logger.info("Loading model '%s' on %s", self.settings.model_id, self._device)
         options = {"torch_dtype": dtype}
         model_cache_dir = resolve_model_cache_dir(self.settings.model_cache_dir)
@@ -88,9 +81,9 @@ class DiffusersGenerator:
             **options,
         )
         if progress is not None:
-            destination = "NVIDIA graphics card (CUDA)" if self._device == "cuda" else "CPU"
+            destination = "NVIDIA graphics card (CUDA)"
             progress(0, 0, f"Moving {self.settings.model_id} to {destination}")
-        pipeline = pipeline.to(self._device)
+        pipeline = capabilities.place_pipeline(pipeline, "image")
         self._pipeline = pipeline
 
     def activate_model(self, settings: Settings, progress: DownloadProgress | None = None) -> None:
@@ -112,12 +105,7 @@ class DiffusersGenerator:
             pipeline.to("cpu")
         finally:
             del pipeline
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except ImportError:
-                pass
+            clear_generation_cache()
 
     def generate(
         self, prompt: str, width: int | None = None, height: int | None = None,
@@ -157,6 +145,6 @@ class DiffusersGenerator:
                 options["negative_prompt"] = negative_prompt
             if seed is not None:
                 import torch
-                options["generator"] = torch.Generator(device=self._device).manual_seed(seed)
+                options["generator"] = GenerationCapabilities(self._device).seeded_generator(torch, seed)
             result = self._pipeline(**options)
         return result.images[0]

@@ -94,6 +94,27 @@ headless servers. Paths refer to the server computer, and saving uses the existi
 library relocation validation. Opening the folder uses the saved library location,
 not an unsaved edit. Native chooser cancellation leaves settings unchanged.
 
+## Generation capability policy
+
+`generation_capabilities.py` owns device detection and model-family execution
+rules independently of the host OS. CUDA availability is verified with an
+allocation and synchronization before model downloads. Missing or unusable CUDA
+leaves management available; `cpu` remains the API's management-only device marker.
+CPU and MPS generation are not enabled.
+
+The policy preserves image float16, LTX bfloat16 (including its text encoder),
+and Wan bfloat16 with a float32 VAE and model CPU offload. Offload manages GPU
+memory; it does not enable CPU generation. Pipeline placement, seeded random
+generators, and CUDA cache cleanup use the shared policy. Model catalogs still
+own IDs, step limits, and supported input types. API admission checks use the
+requested model family; loaders recheck actual device availability before loading.
+
+Keep the shared single-worker queue and image/video unload handoff intact when
+adding a backend. Add explicit family policies and validate precision, offload,
+cancellation, and actual GPU output before enabling another accelerator. Unit
+tests mock model downloads/pipelines; they do not establish MPS or native-platform
+generation support.
+
 ## Development setup
 
 Use Python 3.10 or newer and a recent Node.js LTS release.

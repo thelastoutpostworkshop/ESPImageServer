@@ -300,10 +300,6 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   entry when a chooser is unavailable. Adapter/API tests cover fallback, cancel,
   overrides, and validation; verify actual dialogs/opening on native systems,
   including headless environments and Windows regression checks.
-- [ ] **P1 - Define generation capabilities independently of the OS:** Keep
-  CUDA generation and management-only operation explicit. Isolate device checks,
-  precision, memory cleanup, and offload policy so future MPS support does not
-  require scattered OS checks. Do not enable MPS or CPU generation in this stage.
 - [ ] **P1 - Verify the readiness boundary:** Add focused tests for platform
   paths, runtime resolution, serial-port validation, native-action availability,
   and management-only startup. Run backend/frontend/Electron tests on native

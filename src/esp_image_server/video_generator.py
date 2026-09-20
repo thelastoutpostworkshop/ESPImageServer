@@ -12,6 +12,7 @@ from PIL import Image, ImageOps
 
 from .paths import model_cache_dir as resolve_model_cache_dir
 from .generation_jobs import GenerationCancelled
+from .generation_capabilities import GenerationCapabilities, detect_generation_device, clear_generation_cache
 from .download_progress import huggingface_progress
 
 
@@ -133,6 +134,7 @@ class LTXVideoGenerator:
     def __init__(self) -> None:
         self._pipeline = None
         self._loaded_model_id: str | None = None
+        self._capabilities = GenerationCapabilities("cpu")
         self._lock = RLock()
 
     @property
@@ -150,12 +152,7 @@ class LTXVideoGenerator:
             pipeline.to("cpu")
         finally:
             del pipeline
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except ImportError:
-                pass
+            clear_generation_cache()
 
     def _load(
         self, model_id: str, progress: Callable[[int, int, str], None] | None = None,
@@ -171,8 +168,8 @@ class LTXVideoGenerator:
             import torch
         except ImportError as exc:
             raise RuntimeError("Video dependencies are missing. Reinstall ESPImageServer to add video support.") from exc
-        if not torch.cuda.is_available():
-            raise RuntimeError("Video generation requires a compatible NVIDIA GPU. Video generation is not available in CPU mode.")
+        self._capabilities = GenerationCapabilities(detect_generation_device())
+        policy = self._capabilities.policy(model["family"])
         cache_dir = video_model_cache_dir()
         cache_dir.mkdir(parents=True, exist_ok=True)
         if model["family"] == "wan":
@@ -193,15 +190,15 @@ class LTXVideoGenerator:
             # cleaner Wan decoding. CPU offload keeps it out of VRAM except when
             # it is needed to decode the finished frames.
             vae = AutoencoderKLWan.from_pretrained(
-                model_path, subfolder="vae", torch_dtype=torch.float32,
+                model_path, subfolder="vae", torch_dtype=getattr(torch, policy.vae_precision),
             )
             pipeline = WanPipeline.from_pretrained(
-                model_path, vae=vae, torch_dtype=torch.bfloat16,
+                model_path, vae=vae, torch_dtype=getattr(torch, policy.precision),
             )
             pipeline.scheduler = UniPCMultistepScheduler.from_config(pipeline.scheduler.config, flow_shift=5.0)
             if progress is not None:
                 progress(0, 0, "Loading Wan 2.1 with graphics-card memory offload")
-            pipeline.enable_model_cpu_offload()
+            pipeline = self._capabilities.place_pipeline(pipeline, model["family"])
             pipeline.vae.enable_tiling()
             pipeline.vae.enable_slicing()
             self._pipeline = pipeline
@@ -256,7 +253,7 @@ class LTXVideoGenerator:
         )
         text_encoder = T5EncoderModel.from_pretrained(
             Path(text_encoder_root) / "text_encoder",
-            torch_dtype=torch.bfloat16,
+            torch_dtype=getattr(torch, policy.precision),
             local_files_only=True,
         )
         if progress is not None:
@@ -264,10 +261,10 @@ class LTXVideoGenerator:
         pipeline = LTXPipeline.from_single_file(
             checkpoint_path,
             config=config_path,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=getattr(torch, policy.precision),
             text_encoder=text_encoder,
         )
-        pipeline.to("cuda")
+        pipeline = self._capabilities.place_pipeline(pipeline, model["family"])
         # Tiling is provided by the LTX VAE rather than the pipeline itself.
         # This keeps memory use manageable on supported NVIDIA GPUs.
         pipeline.vae.enable_tiling()
@@ -296,7 +293,7 @@ class LTXVideoGenerator:
                 progress(step + 1, steps, "Generating video frames")
                 return callback_kwargs
 
-            generator = torch.Generator(device="cuda").manual_seed(seed) if seed is not None else None
+            generator = self._capabilities.seeded_generator(torch, seed, model["family"])
             generation_pipeline = self._pipeline
             generation_options: dict[str, object] = {}
             if model["family"] == "wan" and source_image_path is not None:

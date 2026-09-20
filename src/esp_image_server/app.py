@@ -28,6 +28,7 @@ from starlette.background import BackgroundTask
 from .paths import cache_dir
 from . import folder_actions
 from .config import Settings
+from .generation_capabilities import GenerationCapabilities
 from .app_settings import AppSettingsStore
 from .display import ActiveDisplayStore
 from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandStore
@@ -464,8 +465,8 @@ def create_app(
             for model in MODELS
         ]
 
-    def require_generation_gpu() -> None:
-        if generator.device != "cuda":
+    def require_generation_gpu(family: str = "image") -> None:
+        if not GenerationCapabilities(generator.device).supports(family):
             raise HTTPException(status_code=400, detail="Generation requires a working NVIDIA GPU with CUDA. Display setup, saved creations, and SD-card management remain available.")
 
     @app.post("/models/{model_id:path}/select")
@@ -1909,12 +1910,12 @@ def create_app(
 
     @app.post("/video-generation-jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_video_generation_job(request: VideoGenerateRequest) -> dict[str, object]:
-        require_generation_gpu()
         if (request.num_frames - 1) % 8:
             raise HTTPException(status_code=422, detail="Video frame count must be 1 plus a multiple of 8 (for example 17, 25, or 33).")
         video_model = VIDEO_MODELS.get(request.model_id)
         if video_model is None:
             raise HTTPException(status_code=422, detail="This video model is not available")
+        require_generation_gpu(video_model["family"])
         if not video_model["minimum_steps"] <= request.steps <= video_model["maximum_steps"]:
             raise HTTPException(status_code=422, detail=(
                 f"{video_model['name']} supports {video_model['minimum_steps']} to {video_model['maximum_steps']} steps"
