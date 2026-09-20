@@ -259,23 +259,52 @@ pinned library state were restored after testing.
 Preparation only: retain Windows support and the current no-CPU-generation
 policy. Keep display management available independently of AI generation.
 
+### First milestone: code readiness
+
+Complete this milestone before starting native installers or announcing support.
+The source audit found the following Windows dependencies; the code is not yet
+ready for Linux/macOS. Preserve the existing Windows behavior while addressing them.
+
+- [ ] **P1 - Isolate desktop runtime paths and lifecycle:** `desktop/main.mjs`
+  hardcodes `.venv/Scripts/python.exe`, the Windows esptool executable, and the
+  Windows installation layout. Move runtime/tool resolution into a testable
+  platform module. Handle missing runtimes explicitly and review subprocess
+  shutdown and macOS window reopening. Keep one shared FastAPI server and frontend.
+- [ ] **P1 - Standardize writable paths:** Replace the repeated LOCALAPPDATA
+  defaults in settings stores, display registry, image library, and `app.py`
+  with shared platform-aware configuration/data/cache paths. Respect Linux XDG
+  and macOS application-support/cache locations; preserve existing Windows
+  locations, user-selected libraries, and explicit model-cache overrides.
+  Test spaces, Unicode, case sensitivity, and read-only installation directories.
+- [ ] **P1 - Remove COM-only USB assumptions:** `firmware.mjs`,
+  `identification.mjs`, and `wifi.mjs` reject non-COM device names, including
+  ports returned by SerialPort.list(). Centralize validation against enumerated
+  ports and support Linux/macOS serial paths throughout identification, flashing,
+  and Wi-Fi setup. Replace the PowerShell enumeration fallback and use neutral
+  serial-port wording in frontend help. Preserve board identity verification.
+- [ ] **P1 - Separate native folder actions:** Browser folder endpoints in
+  `app.py` directly use `os.startfile` and a PowerShell Windows Forms dialog.
+  Introduce explicit platform capabilities/adapters; reuse Electron's native
+  dialogs for desktop use. Give browser/headless users a supported path-entry
+  flow when native dialogs are unavailable, with clear errors for unsupported actions.
+- [ ] **P1 - Define generation capabilities independently of the OS:** Keep
+  CUDA generation and management-only operation explicit. Isolate device checks,
+  precision, memory cleanup, and offload policy so future MPS support does not
+  require scattered OS checks. Do not enable MPS or CPU generation in this stage.
+- [ ] **P1 - Verify the readiness boundary:** Add focused tests for platform
+  paths, runtime resolution, serial-port validation, native-action availability,
+  and management-only startup. Run backend/frontend/Electron tests on native
+  Windows, Linux, and macOS runners before calling this milestone complete.
+  Preserve the ESP32 LAN API, GPU serialization, and cancellation behavior.
+
+### Later milestone: platform delivery and hardware validation
+
 - [ ] **P1 - Define the support matrix:** Choose initial Linux distributions
   and minimum macOS versions; distinguish x64 and ARM64 packages. Start with
   Linux NVIDIA CUDA generation and display management on both platforms.
   Treat Apple Silicon Metal/MPS generation as a separate feasibility task;
   do not advertise it until each supported model and operation is validated.
   Decide whether Intel Macs and Linux ARM64 are initial targets or later work.
-- [ ] **P1 - Separate platform-specific code:** Audit Electron startup,
-  Python discovery, virtual-environment paths, subprocess creation/termination,
-  folder selection/reveal, and PowerShell commands. Introduce platform adapters
-  while keeping one shared FastAPI server and frontend. Preserve the LAN
-  endpoint used by ESP32 firmware, GPU serialization, and cancellation behavior.
-- [ ] **P1 - Standardize data and cache locations:** Replace scattered
-  LOCALAPPDATA assumptions with shared platform-aware paths for configuration,
-  databases, logs, temporary media, and model caches. Respect Linux XDG paths
-  and macOS application-support/cache locations. Preserve user-selected image
-  libraries, support spaces and Unicode, and test case-sensitive filesystems.
-  Keep application installation directories separate from writable user data.
 - [ ] **P1 - Package dependencies per OS and architecture:** Replace the
   Windows-only bootstrap and esptool preparation steps with platform-specific
   equivalents. Validate Python, PyTorch/CUDA, Diffusers, serialport native
