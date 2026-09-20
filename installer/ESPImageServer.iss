@@ -61,6 +61,7 @@ var
   BootstrapOutput: TNewMemo;
   BootstrapCancelButton: TNewButton;
   BootstrapCancelRequested: Boolean;
+  NvidiaSummary: String;
 
 procedure Sleep(Milliseconds: Longword);
 external 'Sleep@kernel32.dll stdcall';
@@ -68,9 +69,24 @@ external 'Sleep@kernel32.dll stdcall';
 function NvidiaDetected: Boolean;
 var
   ResultCode: Integer;
+  ReportPath: String;
+  ReportText: AnsiString;
 begin
-  Result := Exec('nvidia-smi.exe', '--query-gpu=name --format=csv,noheader', '', SW_HIDE,
+  ReportPath := ExpandConstant('{tmp}\nvidia-hardware.txt');
+  Result := Exec('nvidia-smi.exe', '--query-gpu=name,memory.total --format=csv,noheader --filename="' + ReportPath + '"', '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+  if Result then begin
+    Result := LoadStringFromFile(ReportPath, ReportText);
+    if Result then begin
+      NvidiaSummary := Trim(String(ReportText));
+      Result := NvidiaSummary <> '';
+    end;
+  end;
+  DeleteFile(ReportPath);
+  if Result then
+    NvidiaSummary := 'Detected NVIDIA GPU(s), total graphics memory:' + #13#10 + NvidiaSummary
+  else
+    NvidiaSummary := 'No NVIDIA GPU could be detected through its driver. Install or update the NVIDIA driver to enable CUDA generation.';
 end;
 
 procedure BootstrapCancelClick(Sender: TObject);
@@ -83,15 +99,19 @@ begin
 end;
 
 procedure InitializeWizard;
+var
+  HasNvidia: Boolean;
 begin
+  HasNvidia := NvidiaDetected;
   ComputePage := CreateInputOptionPage(wpSelectDir,
     'Choose image and video generation hardware',
     'Select the hardware this computer should use.',
-    'Generation requires NVIDIA CUDA and a compatible NVIDIA driver. Display management mode supports setup, saved creations and SD cards without generation.',
+    NvidiaSummary + #13#10#13#10 +
+    'Generation requires NVIDIA CUDA. Installation will test a GPU computation after installing PyTorch. Memory needs vary by model; detection does not guarantee every model will fit. Display management mode works without generation.',
     True, True);
   ComputePage.Add('Display management only (no AI generation)');
   ComputePage.Add('NVIDIA CUDA acceleration');
-  if NvidiaDetected then
+  if HasNvidia then
     ComputePage.SelectedValueIndex := 1
   else
     ComputePage.SelectedValueIndex := 0;
@@ -127,6 +147,7 @@ begin
   Result := MemoUserInfoInfo + MemoDirInfo + MemoTypeInfo + MemoComponentsInfo +
     MemoGroupInfo + MemoTasksInfo + NewLine + 'Image generation:' + NewLine +
     Space + 'Hardware: ' + ComputeChoice + NewLine +
+    Space + NvidiaSummary + NewLine +
     Space + 'Models: choose and download them later in the app';
 end;
 
