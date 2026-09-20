@@ -37,7 +37,7 @@ The first backend bundle builder is implemented in
 `installer/build-native-runtime.py`. CI builds management-only bundles for Linux
 x64 and macOS ARM64 and uploads `backend-linux-x64` and `backend-darwin-arm64`
 artifacts, retained for seven days. These are backend components, not installers.
-The first hosted build results are pending.
+The user confirmed that the hosted builds and relocation checks passed on both targets.
 
 The Python runtime is pinned to CPython 3.12.14 from
 [python-build-standalone](https://github.com/astral-sh/python-build-standalone/releases/tag/20260901),

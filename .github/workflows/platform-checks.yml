@@ -86,7 +86,7 @@ jobs:
           tar -czf dist/backend-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz -C 'dist/runtime-check é' backend
       - name: Upload management backend bundle
         if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: backend-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/backend-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz

@@ -348,7 +348,8 @@ Windows behavior as platform delivery progresses.
   Management backend bundle construction is implemented for Linux x64 and macOS
   ARM64 using pinned, checksum-verified standalone Python 3.12.14. CI builds,
   relocates, checks HTTP startup/web assets/FFmpeg with no system Python, and
-  uploads backend artifacts. First hosted results are pending. Remaining work:
+  uploads backend artifacts. The user confirmed these hosted checks passed on
+  Linux x64 and macOS ARM64. Remaining work:
   Linux CUDA dependencies and integration into the native Electron bundles.
 - [ ] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
