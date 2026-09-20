@@ -1,0 +1,14 @@
+# Management/API tests mock the GPU pipelines. This is NOT an app installation.
+# Reuse tested common versions without installing the Windows CUDA stack.
+-c ../installer/constraints-cpu.txt
+fastapi
+httpx
+numpy
+Pillow
+uvicorn
+zeroconf
+imageio
+imageio-ffmpeg
+sentencepiece
+tqdm
+pytest>=8,<10

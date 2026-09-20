@@ -117,7 +117,7 @@ generation support.
 
 ## Development setup
 
-Use Python 3.10 or newer and a recent Node.js LTS release.
+Use Python 3.12 and Node.js 22 (22.12 or newer).
 
 Create a local Python environment and install the project with development dependencies:
 
@@ -232,6 +232,31 @@ hardware using:
 ```powershell
 & .\scripts\test-package-firmware.ps1
 ```
+
+## Automated platform checks
+
+`.github/workflows/platform-checks.yml` runs on pushes, pull requests, and manual
+dispatch. It uses Windows 2025, Ubuntu 24.04, and macOS 15 hosted runners with
+Python 3.12 and Node.js 22. See the [GitHub runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+for runner architectures and availability. This matrix is a code-portability
+check, not a commitment to a release support matrix.
+
+Each runner installs JavaScript dependencies with `npm ci`, runs frontend tests
+and its production build, runs backend tests, and runs Electron module tests.
+It does not launch Electron, prepare esptool, or build an installer. Electron's
+binary download is skipped, but serialport's native bindings are still installed.
+
+`ci/requirements.txt` is a lightweight test environment, not an application
+installation. It reuses common installer constraints, omits Torch/Diffusers and
+model downloads, and runs the source through `PYTHONPATH=src`. GPU pipeline tests
+use mocks; an additional management-only startup test uses the real device
+detection with Torch unavailable. A tiny MP4 test exercises bundled FFmpeg.
+
+`tests/conftest.py` redirects writable user paths before test collection imports
+the global FastAPI app. Tests must not read or write the developer's library or
+model cache. Native dialogs, real GPU output/cancellation, physical USB behavior,
+and packaged-app startup still require separate acceptance checks. Do not mark
+Linux/macOS validation complete until the corresponding hosted jobs pass.
 
 ## Before submitting changes
 

@@ -300,10 +300,14 @@ ready for Linux/macOS. Preserve the existing Windows behavior while addressing t
   entry when a chooser is unavailable. Adapter/API tests cover fallback, cancel,
   overrides, and validation; verify actual dialogs/opening on native systems,
   including headless environments and Windows regression checks.
-- [ ] **P1 - Verify the readiness boundary:** Add focused tests for platform
-  paths, runtime resolution, serial-port validation, native-action availability,
-  and management-only startup. Run backend/frontend/Electron tests on native
-  Windows, Linux, and macOS runners before calling this milestone complete.
+- [ ] **P1 - Verify the readiness boundary:** The `Platform checks` GitHub Actions
+  workflow runs backend tests, frontend tests/build, and desktop module tests on
+  Windows, Ubuntu, and macOS. Tests cover platform paths, runtime resolution,
+  serial-port validation, native-action availability, management-only startup,
+  and a real bundled-FFmpeg encode/decode. Test storage is isolated before app
+  imports. Review the first hosted runs after pushing; native Linux/macOS results
+  are not yet confirmed. CI mocks GPU pipelines and USB devices; packaged desktop,
+  native dialogs, and real GPU/USB acceptance remain separate checks.
   Preserve the ESP32 LAN API, GPU serialization, and cancellation behavior.
   Windows GPU smoke check confirmed by the user after the capability refactor
   and dependency repair: video generation completed, followed by successful

@@ -1,0 +1,61 @@
+name: Platform checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: src
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      ESP_IMAGE_OPEN_BROWSER: '0'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            ci/requirements.txt
+            installer/constraints-cpu.txt
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+      - name: Install backend test dependencies (no GPU runtime)
+        run: python -m pip install -r ci/requirements.txt
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+      - name: Install desktop module dependencies
+        run: npm --prefix desktop ci
+      - name: Frontend tests
+        run: npm --prefix frontend test
+      - name: Build frontend
+        run: npm --prefix frontend run build
+      - name: Backend tests and management-only startup
+        run: python -m pytest -q
+      - name: Desktop module tests
+        run: npm --prefix desktop test
+      - name: Check desktop entry-point syntax
+        run: node --check desktop/main.mjs
