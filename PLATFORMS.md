@@ -1,8 +1,8 @@
 # Platform scope
 
 Windows remains the existing distribution. The initial Linux/macOS targets below
-define the native packaging scope. Native installer lifecycle checks passed in CI. Linux is now moving to
-automatic first-launch dependency setup; its new hosted checks are pending. Signed releases are not available yet.
+define the native packaging scope. Native installer lifecycle and Linux automatic
+first-launch dependency setup checks passed in CI. Signed releases are not available yet.
 
 | Target | Architecture | Image/video generation | Display management | Delivery |
 | --- | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ base-runtime relocation checks, packaged desktop smoke checks, and installer
 installation/replacement/repair/removal checks. The Linux installed-app smoke
 check exercises the unsupported-GPU message and its display-tools fallback.
 
-The separate **Linux automatic generation setup (x64)** job downloads the real
+The separate **Linux dependency setup checks (x64)** job downloads the real
 pinned dependencies through the same setup helper used by the desktop. It verifies
 image/LTX/Wan imports, native torchvision, FFmpeg, app startup, and no-GPU behavior.
 It also checks offline reuse across an app-version change. Only this CI helper
@@ -84,5 +84,5 @@ Only `installer-linux-x64` and `installer-darwin-arm64` artifacts, with versione
 filenames and adjacent SHA-256 checksums, are uploaded. Intermediate backend and
 desktop bundles remain build inputs and are no longer compressed/uploaded.
 Signing/notarization, automatic app updates, and cross-version settings migration
-remain separate work. Initial installer lifecycle checks passed; the new automatic
-Linux generation-setup path still needs its hosted CI run.
+remain separate work. The user confirmed that installer lifecycle and automatic
+Linux generation-setup checks passed in CI; physical GPU computation is not covered.

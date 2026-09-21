@@ -34,8 +34,8 @@ generation is disabled.
 
 Linux (Ubuntu 24.04 x64) and macOS (15 or later, Apple Silicon, display management
 only) have development packages with successful installer lifecycle checks. Linux
-automatically prepares generation dependencies on first launch; checks for this new
-setup flow are pending. See [platform scope](PLATFORMS.md) and
+automatically prepares generation dependencies on first launch; its hosted setup
+checks passed. See [platform scope](PLATFORMS.md) and
 [native installation instructions](NATIVE_INSTALL.md). Signed native releases
 are not available yet.
 

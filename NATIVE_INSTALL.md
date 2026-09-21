@@ -2,8 +2,8 @@
 
 GitHub's **Platform checks** workflow builds one Ubuntu 24.04 x64 `.deb` and one
 macOS 15+ Apple Silicon `.dmg`. These are development artifacts, not signed public
-releases. Native installer checks passed; Linux's new automatic generation setup
-checks are pending. The Windows installer is unchanged.
+releases. Native installer and Linux automatic generation setup checks passed
+in CI, confirmed by the user. The Windows installer is unchanged.
 
 ## Choose a download
 

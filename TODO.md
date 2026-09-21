@@ -344,14 +344,14 @@ Windows behavior as platform delivery progresses.
   implemented. Earlier management and CUDA bundles passed CI. Linux now ships
   only a small base installer with first-launch dependency download; macOS
   remains management-only. Windows installation is unchanged.
-- [ ] **P1 - Verify automatic Linux generation setup in CI:** The desktop now
+- [x] **P1 - Verify automatic Linux generation setup in CI:** The desktop now
   checks NVIDIA availability, automatically downloads pinned generation
   dependencies into private user storage, verifies them, and starts the service.
   The startup screen provides progress, retry, and an explicit unsupported-GPU
   fallback. Verified dependencies survive app-only updates. CI exercises actual
   downloads, offline reuse, pipeline imports and no-GPU startup; packaged checks
   exercise the GPU-unavailable UI. Local failure/retry/reuse tests pass.
-  Push and confirm the new hosted checks. No intermediate backend/desktop
+  The user confirmed the hosted checks passed. No intermediate backend/desktop
   archives or separate Linux management/CUDA installers are uploaded.
 - [x] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
