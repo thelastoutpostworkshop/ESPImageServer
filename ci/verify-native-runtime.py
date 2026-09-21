@@ -45,7 +45,10 @@ assert Path(esp_image_server.__file__).resolve().is_relative_to(bundle)
 from esp_image_server.version import APP_VERSION
 assert APP_VERSION == manifest["app_version"]
 from esp_image_server.video_library import bundled_ffmpeg_executable
-assert Path(bundled_ffmpeg_executable()).resolve().is_relative_to(bundle)
+# Dependency executables belong to the selected Python runtime. App source stays
+# in the installation, while first-launch generation dependencies live in user storage.
+ffmpeg = Path(bundled_ffmpeg_executable()).resolve()
+assert ffmpeg.is_relative_to(expected_prefix), f"FFmpeg is outside the selected runtime: {ffmpeg}"
 
 with tempfile.TemporaryDirectory(prefix="esp-bundle-check-") as temporary:
     storage = Path(temporary)

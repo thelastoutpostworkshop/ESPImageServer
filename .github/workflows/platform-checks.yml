@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   linux-generation-setup:
-    name: Linux automatic generation setup (x64)
+    name: Linux dependency setup checks (x64)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
