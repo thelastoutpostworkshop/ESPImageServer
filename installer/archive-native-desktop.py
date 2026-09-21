@@ -64,7 +64,7 @@ def build(source, output, target, mode, version):
         raise ValueError("Distribution output already exists")
     temporary = archive.with_suffix(".partial")
     try:
-        with tarfile.open(temporary, "x:gz", dereference=False) as packed:
+        with tarfile.open(temporary, "x:gz", compresslevel=1, dereference=False) as packed:
             # Disable hard-link deduplication so verification reads each file directly.
             def metadata(entry):
                 packed.inodes.clear()

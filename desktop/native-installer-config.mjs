@@ -13,6 +13,8 @@ export function nativeInstallerConfig(manifest, target, version) {
       // Both modes replace the same application; they cannot coexist in /opt.
       packageName: 'espimageserver', maintainer: 'ESPImageServer',
       compression: 'gz', recommends: [],
+      // Large CUDA libraries make high gzip levels disproportionately expensive.
+      fpm: ['--deb-compression-level', '1'],
       depends: ['libgtk-3-0t64', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6',
         'xdg-utils', 'libatspi2.0-0t64', 'libuuid1', 'libsecret-1-0', 'libasound2t64', 'udev']
     },

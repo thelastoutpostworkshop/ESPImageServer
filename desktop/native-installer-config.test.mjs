@@ -7,6 +7,7 @@ test('installer variants replace the same Linux app and declare OS serial depend
     const config = nativeInstallerConfig({ target: 'linux-x64', mode, app_version: '1.2.3' }, 'linux-x64', '1.2.3')
     assert.equal(config.deb.packageName, 'espimageserver')
     assert.ok(config.deb.depends.includes('udev'))
+    assert.deepEqual(config.deb.fpm, ['--deb-compression-level', '1'])
     assert.equal(config.artifactName, `ESPImageServer-1.2.3-linux-x64-${mode}.\${ext}`)
   }
 })

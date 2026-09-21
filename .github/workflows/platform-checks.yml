@@ -59,7 +59,7 @@ jobs:
           'dist/CUDA runtime é/backend/.venv/bin/python' -I -B -m pip check
           'dist/CUDA runtime é/backend/.venv/bin/python' -I -B ci/verify-native-runtime.py 'dist/CUDA runtime é/backend'
       - name: Archive CUDA backend
-        run: tar -czf dist/backend-linux-x64-cuda.tar.gz -C 'dist/CUDA runtime é' backend
+        run: tar -I 'gzip -1' -cf dist/backend-linux-x64-cuda.tar.gz -C 'dist/CUDA runtime é' backend
       - name: Upload CUDA backend
         uses: actions/upload-artifact@v6
         with:

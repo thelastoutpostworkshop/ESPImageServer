@@ -50,13 +50,30 @@ delete env.ELECTRON_RUN_AS_NODE
 for (const variable of ['LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
   'HF_HOME', 'HF_HUB_CACHE', 'HUGGINGFACE_HUB_CACHE', 'ESP_IMAGE_MODEL_CACHE']) env[variable] = path.join(storage, variable)
 let application
+let launchOutput = ''
 try {
   application = await _electron.launch({ executablePath, cwd: storage, env, timeout: 60000,
     args: [`--user-data-dir=${path.join(storage, 'electron')}`, ...(mac ? [] : ['--no-sandbox'])] })
-  const processInfo = await application.evaluate(({ app }) => ({ packaged: app.isPackaged, resources: process.resourcesPath }))
+  const capture = chunk => { launchOutput = (launchOutput + chunk.toString()).slice(-16000) }
+  application.process().stdout?.on('data', capture)
+  application.process().stderr?.on('data', capture)
+  // Wait for an actual window before inspecting the main-process context.
+  let window = await application.firstWindow({ timeout: 60000 })
+  let processInfo
+  for (let attempt = 0; ; attempt++) {
+    try {
+      processInfo = await application.evaluate(({ app }) => ({ packaged: app.isPackaged, resources: process.resourcesPath }))
+      break
+    } catch (error) {
+      // CDP can lose its evaluation promise during startup. Retry only this
+      // transport error; crashes, timeouts, and assertion failures still fail.
+      if (!error.message.includes('Resulting promise was garbage collected') || attempt >= 2) throw error
+      console.warn('Retrying main-process inspection after a collected CDP promise')
+      await delay(250)
+    }
+  }
   assert.equal(processInfo.packaged, true)
   assert.equal(await realpath(processInfo.resources), await realpath(resources))
-  let window = await application.firstWindow()
   async function check(page) {
     await page.waitForURL('http://127.0.0.1:8000/**', { timeout: 90000 })
     await page.locator('#app .v-application').waitFor()
@@ -109,6 +126,9 @@ try {
   }
   await portFree()
   console.log(`PASS: packaged ${expectedMode} app, backend, frontend, preload, serial binding, esptool, and server shutdown`)
+} catch (error) {
+  console.error('Packaged app output before failure:\n' + (launchOutput || '(no captured output)'))
+  throw error
 } finally {
   if (application) await application.close().catch(() => {})
   for (const name of await readdir(storage)) {
