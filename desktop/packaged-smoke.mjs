@@ -75,6 +75,11 @@ try {
   assert.equal(processInfo.packaged, true)
   assert.equal(await realpath(processInfo.resources), await realpath(resources))
   async function check(page) {
+    if (!mac && expectedMode === 'management' && page.url().startsWith('file:')) {
+      await page.getByRole('button', { name: 'Open display tools', exact: true }).waitFor({ timeout: 60000 })
+      assert.match(await page.locator('#detail').innerText(), /NVIDIA/)
+      await page.getByRole('button', { name: 'Open display tools', exact: true }).click()
+    }
     await page.waitForURL('http://127.0.0.1:8000/**', { timeout: 90000 })
     await page.locator('#app .v-application').waitFor()
     const state = await page.evaluate(() => window.espImageServerDesktop.getStartupState())

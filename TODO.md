@@ -339,25 +339,20 @@ Windows behavior as platform delivery progresses.
   CI explicitly checks Python/Node platform and architecture. The user confirmed
   the updated workflow passed on Windows x64, Ubuntu x64, and macOS ARM64.
   Linux/macOS directory bundles are implemented; final distribution formats remain.
-- [x] **P1 - Package dependencies per OS and architecture:** Replace the
-  Windows-only bootstrap and esptool preparation steps with platform-specific
-  equivalents. Add CI checks for Python, Diffusers, serialport native
-  bindings, and the imageio-ffmpeg executable on each target. Preserve runtime
-  GPU capability detection before enabling generation; avoid requiring a system Python,
-  Arduino installation, or system ffmpeg for the packaged-app workflow.
-  Management backend bundle construction is implemented for Linux x64 and macOS
-  ARM64 using pinned, checksum-verified standalone Python 3.12.14. CI builds,
-  relocates, checks HTTP startup/web assets/FFmpeg with no system Python, and
-  uploads backend artifacts. The user confirmed these hosted checks passed on
-  Linux x64 and macOS ARM64. Native Electron integration is now implemented with
-  packaged startup checks; the user confirmed both native desktop jobs passed.
-  Linux CUDA backend construction and a separate no-GPU CI job are now implemented
-  with pinned PyTorch/torchvision and Linux CUDA libraries. The job checks native
-  imports, pip consistency, relocated startup, and generation rejection without
-  a GPU, and uploads a CUDA backend artifact. The user confirmed the hosted CUDA
-  job passed; actual GPU generation was not exercised. A separately named Linux
-  CUDA desktop bundle and packaged no-GPU checks are implemented. The user
-  confirmed the hosted CUDA desktop integration checks passed.
+- [x] **P1 - Package dependencies per OS and architecture:** Native standalone
+  Python, Electron/serialport, esptool, and FFmpeg bundles and hosted tests are
+  implemented. Earlier management and CUDA bundles passed CI. Linux now ships
+  only a small base installer with first-launch dependency download; macOS
+  remains management-only. Windows installation is unchanged.
+- [ ] **P1 - Verify automatic Linux generation setup in CI:** The desktop now
+  checks NVIDIA availability, automatically downloads pinned generation
+  dependencies into private user storage, verifies them, and starts the service.
+  The startup screen provides progress, retry, and an explicit unsupported-GPU
+  fallback. Verified dependencies survive app-only updates. CI exercises actual
+  downloads, offline reuse, pipeline imports and no-GPU startup; packaged checks
+  exercise the GPU-unavailable UI. Local failure/retry/reuse tests pass.
+  Push and confirm the new hosted checks. No intermediate backend/desktop
+  archives or separate Linux management/CUDA installers are uploaded.
 - [x] **P1 - Prepare USB setup and firmware flashing:** Package the matching
   esptool executable and handle native serial-device names. Document Linux
   serial permissions/udev setup and macOS driver requirements where applicable.
@@ -378,17 +373,9 @@ Windows behavior as platform delivery progresses.
   contents, permissions, and symlinks before upload; focused tests cover archive
   extraction and reject version mismatches. The user confirmed the hosted
   archive and checksum checks passed on Linux and macOS.
-  Native Ubuntu .deb (management/CUDA) and macOS .dmg builders are implemented,
-  with version checks and SHA-256 files. CI now installs/copies each package,
-  launches it, replaces it at the same version, repairs a missing executable,
-  and removes it while preserving external data fixtures. Hosted validation is
-  pending for CUDA. Ubuntu and macOS management installer checks passed in run
-  96228808332. The CUDA installer built and installed, then its first Playwright
-  inspection failed with a collected CDP promise. The smoke check now waits for
-  a window, narrowly retries that transport error, and captures failure output.
-  Fast gzip compression reduces repeated packaging work; hosted confirmation
-  of the CUDA fix and runtime improvement is pending.
-  NATIVE_INSTALL.md documents installation and replacement behavior.
+  Native Ubuntu .deb and macOS .dmg installer lifecycle checks passed, confirmed
+  by the user. Linux packaging now uses a single base installer with automatic
+  generation setup. NATIVE_INSTALL.md documents the new download/setup behavior.
   Signing/notarization, cross-version migration, and automatic updates remain open.
 - [x] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported

@@ -1,13 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runtimePaths, requireRuntimeFile, ServerRuntime, registerWindowLifecycle } from './runtime.mjs'
 import { FirmwareInstaller, runProcess } from './firmware.mjs'
 import { identifyPort, identifyAfterFlash, serialPorts } from './identification.mjs'
 import { WifiSetup } from './wifi.mjs'
 import { FirmwareLibrary } from './firmware-library.mjs'
 import { FirmwareReleases } from './firmware-releases.mjs'
+import { GenerationSetup } from './generation-setup.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
 const runtime = runtimePaths({ desktopDirectory, resourcesPath: process.resourcesPath, packaged: app.isPackaged })
@@ -104,6 +105,41 @@ const serverRuntime = new ServerRuntime(runtime, {
     }
   }
 })
+const generationSetup = new GenerationSetup({ onStatus: updateSplash, onLog: appendServerLog })
+
+let setupChoice
+function chooseSetup(title, detail, actions) {
+  splashStatus = { title, detail, actions }
+  sendToWindow('server-status', splashStatus)
+  return new Promise(resolve => { setupChoice = resolve })
+}
+ipcMain.handle('generation-setup-action', (event, action) => {
+  if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame ||
+      event.senderFrame.url.split('?')[0] !== pathToFileURL(path.join(desktopDirectory, 'splash.html')).href ||
+      !splashStatus.actions?.some(item => item.id === action) || !setupChoice) throw new Error('Setup action is unavailable')
+  const resolve = setupChoice; setupChoice = null
+  updateSplash('Preparing generation setup', 'Please wait...')
+  resolve(action)
+})
+async function prepareGeneration(window) {
+  if (!app.isPackaged || process.platform !== 'linux') return
+  for (;;) {
+    let action
+    try {
+      const result = await generationSetup.start(runtime, path.join(app.getPath('userData'), 'generation-runtime'))
+      if (isQuitting || window.isDestroyed()) return
+      if (result.kind === 'ready') { runtime.pythonPath = result.python; return }
+      action = await chooseSetup('Generation is unavailable', result.detail,
+        [{ id: 'retry', label: 'Retry GPU check' }, { id: 'tools', label: 'Open display tools' }, { id: 'quit', label: 'Quit' }])
+    } catch (error) {
+      if (isQuitting || window.isDestroyed()) return
+      action = await chooseSetup('Generation setup could not finish', error.message,
+        [{ id: 'retry', label: 'Retry setup' }, { id: 'quit', label: 'Quit' }])
+    }
+    if (action === 'tools') return
+    if (action === 'quit' || isQuitting || window.isDestroyed()) { app.quit(); return }
+  }
+}
 
 async function waitForServer(window) {
   const deadline = performance.now() + 180_000
@@ -158,7 +194,11 @@ async function createWindow() {
   try {
     const available = await serverIsAvailable()
     if (isQuitting || window.isDestroyed()) return
-    if (!available) serverRuntime.start()
+    if (!available) {
+      await prepareGeneration(window)
+      if (isQuitting || window.isDestroyed()) return
+      serverRuntime.start()
+    }
     updateSplash('Waiting for ESPImageServer', 'Preparing the local image and video service...')
     if (await waitForServer(window)) {
       if (isQuitting || window.isDestroyed()) return
@@ -257,8 +297,9 @@ else {
     }
     if (firmwareInstaller.state.busy) { event.preventDefault(); return }
     isQuitting = true
+    setupChoice?.('quit'); setupChoice = null
     clearTimeout(saveWindowStateTimer)
     event.preventDefault()
-    void serverRuntime.stop().finally(() => { shutdownComplete = true; app.quit() })
+    void generationSetup.stop().then(() => serverRuntime.stop()).finally(() => { shutdownComplete = true; app.quit() })
   })
 }

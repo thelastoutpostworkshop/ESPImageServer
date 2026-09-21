@@ -1,14 +1,14 @@
 # Platform scope
 
 Windows remains the existing distribution. The initial Linux/macOS targets below
-define the native packaging scope. Development installers are implemented in CI;
-their first hosted installation checks are pending. Signed releases are not available yet.
+define the native packaging scope. Native installer lifecycle checks passed in CI. Linux is now moving to
+automatic first-launch dependency setup; its new hosted checks are pending. Signed releases are not available yet.
 
 | Target | Architecture | Image/video generation | Display management | Delivery |
 | --- | --- | --- | --- | --- |
 | Windows (existing target) | x64 | NVIDIA CUDA | Yes | Existing Windows installer |
-| Ubuntu 24.04 LTS | x64 | NVIDIA CUDA | Yes | Development .deb (CI validation pending) |
-| macOS 15 or later | Apple Silicon / ARM64 | Disabled | Yes | Unsigned .dmg (CI validation pending) |
+| Ubuntu 24.04 LTS | x64 | NVIDIA CUDA | Yes | One .deb with automatic generation setup |
+| macOS 15 or later | Apple Silicon / ARM64 | Disabled | Yes | Unsigned management .dmg |
 
 Ubuntu 24.04 is the initial Linux distribution baseline. Other distributions,
 older macOS versions, Intel Macs, Linux ARM64, and native Windows ARM64 packages
@@ -32,131 +32,57 @@ FFmpeg, and Electron lifecycle/preload checks. GPU pipelines and native USB work
 are mocked; folder dialogs/openers are stubbed. A passing run establishes this
 automated coverage, not availability of a packaged Linux/macOS release.
 
-## Packaging implementation scope
+## Native installation and generation setup
 
-The first backend bundle builder is implemented in
-`installer/build-native-runtime.py`. CI builds management-only bundles for Linux
-x64 and macOS ARM64 and uploads `backend-linux-x64` and `backend-darwin-arm64`
-artifacts, retained for seven days. These are backend components, not installers.
-The user confirmed that the hosted builds and relocation checks passed on both targets.
+Linux ships one `.deb` containing Electron, the web app, standalone Python, USB
+support, and the small base backend. Image/video generation is a core feature.
+First launch automatically checks NVIDIA availability, downloads the pinned
+CUDA/PyTorch and image/video dependencies, verifies them, and starts the server.
+There is no optional ?enable generation? setting or management-only Linux download.
 
-The Python runtime is pinned to CPython 3.12.14 from
-[python-build-standalone](https://github.com/astral-sh/python-build-standalone/releases/tag/20260901),
-with archive SHA-256 values recorded in `installer/native-python.json`. Its full
-prefix occupies `.venv` for compatibility with the desktop runtime contract;
-it is not a virtualenv linked to system Python. Management requirements reuse
-the existing constraints without installing Torch or Diffusers. The bundle keeps
-the standalone distribution's license files, package metadata, resolved package
-versions, application license, and runtime manifest.
+macOS currently ships a management `.dmg`; its MPS generation backend is not yet
+implemented. Windows keeps its existing installer-time dependency setup.
+See [installation instructions](NATIVE_INSTALL.md) and [USB setup](USB_SETUP.md).
 
-CI relocates the bundle into a path with spaces and Unicode and runs it with
-isolated Python flags. The server child has an empty PATH. Checks cover Python
-prefix/import locations, no GPU stack, bundled FFmpeg encode/decode, version,
-management HTTP endpoints, generation rejection, and packaged frontend assets.
-Linux CUDA dependencies use the separate variant described below.
+## Runtime storage and reuse
 
-## Linux CUDA backend
+`installer/build-native-runtime.py` bundles checksum-verified CPython 3.12.14
+from `installer/native-python.json`. Linux also includes the setup helper,
+project generation requirements, and pinned Linux CUDA constraints.
 
-`python installer/build-native-runtime.py dist/cuda-backend --mode cuda` prepares
-a Linux x64 backend with the project's image/video generation dependencies.
-It uses the existing CUDA pins (PyTorch 2.11.0+cu128 and torchvision 0.26.0+cu128),
-plus `installer/constraints-linux-cuda.txt` for Linux CUDA libraries, Triton,
-and additional dependencies. It rejects CUDA builds on macOS and other targets.
-Management-only builds and the Windows installer are unchanged.
+`installer/linux-generation-setup.py` creates a private runtime under Electron's
+user-data directory, in `generation-runtime`. The runtime key includes Python,
+base-package versions, and generation requirements/constraints, not app version.
+App-only updates reuse the dependencies; changed dependency sets get a new
+runtime. App imports point to the current installed server source.
 
-The separate `Linux CUDA desktop (x64)` CI job installs binary wheels, runs
-`pip check`, relocates the runtime, imports the actual image/LTX/Wan pipelines,
-and checks a native torchvision operation. It then verifies FFmpeg, HTTP/web
-startup, and rejection of generation with CUDA devices hidden. No model weights
-are downloaded and no image/video generation is run. This checks dependency
-compatibility and no-GPU behavior, not NVIDIA GPU computation.
+Setup streams package download/install output and phase messages to the desktop
+startup screen. Failed downloads offer retry. Closing the app stops the setup
+process group; reopening retries an incomplete setup. Only verified runtimes
+receive a ready marker. Cached downloads and completed runtimes survive updates
+and uninstall. Models and creations stay in their existing separate locations.
 
-Successful jobs upload `backend-linux-x64-cuda`, retained for three days because
-CUDA libraries make it substantially larger than the management bundle.
-The manifest records `mode: cuda` and the resolved dependency list is included.
-The user confirmed the backend checks passed. This artifact is a backend component.
-The job now also builds a separate `desktop-linux-x64-cuda` artifact, retained for
-three days, using the CUDA backend and the same Electron/esptool resources.
-The original `desktop-linux-x64` and macOS artifacts remain management-only.
-The CUDA desktop build uses `release/native-cuda`, and rejects CUDA on macOS.
-The user confirmed its hosted packaged checks passed. The host
-still needs a compatible NVIDIA driver; runtime capability detection controls
-whether generation is enabled.
+An unavailable or incompatible NVIDIA GPU is clearly reported. Retry is offered;
+users can still open display tools. Management remains a fallback, not a Linux
+installation choice. Model weights download separately when selected.
 
-Before upload, CI verifies the backend again inside the relocated desktop bundle,
-then launches the packaged app with GPU access disabled. It checks actual pipeline
-imports, disabled generation without a GPU, interface/preload/serialport, and
-server shutdown/port release. This does not perform GPU generation.
-To limit runner disk use, CI removes the already-uploaded backend archive and
-uses `--consume-backend` to move the staging backend into the desktop resources
-instead of duplicating its CUDA libraries.
+## CI and artifacts
 
-## Native desktop bundles
+The Windows/Ubuntu/macOS matrix retains source tests, native storage checks,
+base-runtime relocation checks, packaged desktop smoke checks, and installer
+installation/replacement/repair/removal checks. The Linux installed-app smoke
+check exercises the unsupported-GPU message and its display-tools fallback.
 
-See [USB setup help](USB_SETUP.md) for Ubuntu serial permissions, udev, macOS
-driver selection, and connection troubleshooting.
+The separate **Linux automatic generation setup (x64)** job downloads the real
+pinned dependencies through the same setup helper used by the desktop. It verifies
+image/LTX/Wan imports, native torchvision, FFmpeg, app startup, and no-GPU behavior.
+It also checks offline reuse across an app-version change. Only this CI helper
+invocation bypasses the physical GPU precheck; the shipped desktop never does.
+No model weights or image/video generation are run on hosted CPU-only runners.
 
-`desktop/build-native.mjs` now builds Linux x64 and macOS ARM64 directory bundles
-with the standalone backend, web assets, Electron, serialport bindings, and
-checksum-verified esptool 5.1.0. The existing Windows build remains unchanged.
-The application version comes from the backend manifest, derived from pyproject.toml.
-
-CI relocates and launches the actual packaged executable using Playwright's
-Electron driver. It checks `app.isPackaged`, backend import location, rendered
-workspace, preload IPC, serial-port enumeration, esptool version, owned-server
-shutdown, and port release. macOS also exercises window reopening. The backend
-receives only a test isolation hook through PYTHONPATH, never checkout app source;
-the test process PATH contains only Linux's `udevadm` when needed by serialport,
-with no system Python or FFmpeg. No flashing or generation is performed.
-
-After checks pass, CI uploads `desktop-linux-x64` and `desktop-darwin-arm64` tar
-archives for seven days. Linux contains an `espimageserver` executable; macOS
-contains `ESPImageServer.app`. These are unsigned management-only development
-bundles, not final installers. The user confirmed that native builds and packaged
-smoke checks passed on Linux x64 and macOS ARM64.
-Native `.deb` and `.dmg` builders now consume these tested bundles. See
-[native installation and replacement](NATIVE_INSTALL.md) for downloads, update,
-repair, removal, and data-preservation behavior. Hosted package validation is
-pending; signing/notarization and automatic updates remain unfinished.
-
-### Versioned downloads and checksums
-
-Desktop artifact uploads now contain an archive named
-`ESPImageServer-<version>-<target>-<mode>.tar.gz` and its matching `.sha256` file.
-Targets are `linux-x64` and `darwin-arm64`; modes are `management` and, on Linux,
-`cuda`. The version is read from `pyproject.toml` and must match the bundled
-runtime manifest. Artifact names in GitHub remain unchanged.
-
-The archive builder reads every archived file back and compares its contents,
-permissions, directories, and symbolic links with the tested desktop bundle
-before producing a checksum. Native CI also tests extraction of executable files
-and symbolic links. The user confirmed the hosted archive and checksum checks
-passed on Linux and macOS.
-
-Download and unzip the GitHub artifact first. In the directory containing the
-archive and checksum, verify the exact downloaded filename:
-
-```sh
-# Ubuntu (replace the filename with the downloaded .sha256 filename)
-sha256sum -c ESPImageServer-<version>-linux-x64-cuda.tar.gz.sha256
-# macOS
-shasum -a 256 -c ESPImageServer-<version>-darwin-arm64-management.tar.gz.sha256
-```
-
-Substitute the version and mode before running these commands. A checksum detects
-damaged or changed downloads; it does not replace release signing. Extract into
-a new directory, preserving the complete bundle. These remain unsigned development
-archives; automatic updates and an install/uninstall integration are not included.
-
-- Preserve the current Windows installer and runtime layout.
-- Prepare Linux x64 and macOS ARM64 Python 3.12 runtimes without requiring a
-  system Python. Keep management dependencies separate from the Linux CUDA stack;
-  the macOS package must not install CUDA or offer generation.
-- Package matching Electron/serialport native binaries, the imageio-ffmpeg
-  executable, and esptool for each target. Do not require system FFmpeg or Arduino.
-- Implement the existing non-Windows runtime layout contract in
-  `desktop/runtime.mjs`: backend under `resources/backend`, Python under
-  `.venv/bin/python`, and esptool under the platform-specific resources tool path.
-  Produce these runtimes on native CI runners; do not copy a Windows virtualenv.
-- Native bundle commands and packaged startup checks are implemented above.
-  Signing and update flows remain separate work.
+Only `installer-linux-x64` and `installer-darwin-arm64` artifacts, with versioned
+filenames and adjacent SHA-256 checksums, are uploaded. Intermediate backend and
+desktop bundles remain build inputs and are no longer compressed/uploaded.
+Signing/notarization, automatic app updates, and cross-version settings migration
+remain separate work. Initial installer lifecycle checks passed; the new automatic
+Linux generation-setup path still needs its hosted CI run.

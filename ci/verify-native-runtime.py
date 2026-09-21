@@ -15,9 +15,11 @@ import urllib.error
 
 bundle = Path(sys.argv[1]).resolve()
 manifest = json.loads((bundle / "runtime-manifest.json").read_text())
-assert Path(sys.prefix).resolve() == bundle / ".venv"
-assert Path(sys.base_prefix).resolve() == bundle / ".venv"
-if manifest["mode"] == "cuda":
+generation_runtime = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else None
+expected_prefix = generation_runtime / ".venv" if generation_runtime else bundle / ".venv"
+assert Path(sys.prefix).resolve() == expected_prefix
+assert Path(sys.base_prefix).resolve() == expected_prefix
+if manifest["mode"] == "cuda" or generation_runtime:
     assert manifest["target"] == "linux-x64"
     # Exercise missing-GPU behavior even if a future CI host has an NVIDIA device.
     os.environ["CUDA_VISIBLE_DEVICES"] = ""

@@ -33,8 +33,9 @@ Without CUDA, the app supports display management and saved creations; CPU
 generation is disabled.
 
 Linux (Ubuntu 24.04 x64) and macOS (15 or later, Apple Silicon, display management
-only) have development package builders in CI, with their first installation
-checks pending. See [platform scope](PLATFORMS.md) and
+only) have development packages with successful installer lifecycle checks. Linux
+automatically prepares generation dependencies on first launch; checks for this new
+setup flow are pending. See [platform scope](PLATFORMS.md) and
 [native installation instructions](NATIVE_INSTALL.md). Signed native releases
 are not available yet.
 

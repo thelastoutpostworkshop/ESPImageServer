@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('espImageServerDesktop', {
   installFirmware: request => ipcRenderer.invoke('firmware-install', request),
   chooseImageLibrary: () => ipcRenderer.invoke('choose-image-library'),
   revealImageLibrary: libraryPath => ipcRenderer.invoke('reveal-image-library', libraryPath),
+  generationSetupAction: action => ipcRenderer.invoke('generation-setup-action', action),
   getStartupState: () => ipcRenderer.invoke('startup-state'),
   onServerStatus: callback => ipcRenderer.on('server-status', (_, update) => callback(update)),
   onServerLog: callback => ipcRenderer.on('server-log', (_, lines) => callback(lines))

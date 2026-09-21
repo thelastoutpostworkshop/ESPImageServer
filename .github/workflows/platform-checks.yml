@@ -13,25 +13,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux-cuda:
-    name: Linux CUDA desktop (x64)
+  linux-generation-setup:
+    name: Linux automatic generation setup (x64)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       HF_HUB_OFFLINE: '1'
       TRANSFORMERS_OFFLINE: '1'
-      ESP_IMAGE_OPEN_BROWSER: '0'
       CUDA_VISIBLE_DEVICES: ''
     steps:
       - uses: actions/checkout@v6
-      - name: Free unused SDK space on the disposable CUDA runner
-        shell: bash
-        run: |
-          test "$GITHUB_ACTIONS" = 'true'
-          test "$RUNNER_ENVIRONMENT" = 'github-hosted'
-          # This job uses Python/Node, not Android, .NET, or Haskell.
-          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
-          df -h / /tmp
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -39,86 +30,14 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          architecture: x64
-          cache: npm
-          cache-dependency-path: |
-            frontend/package-lock.json
-            desktop/package-lock.json
-      - name: Verify native target
-        run: python ci/check-platform.py linux x64
       - name: Build frontend
         run: |
           npm --prefix frontend ci
           npm --prefix frontend run build
-      - name: Build Linux CUDA backend
-        run: python installer/build-native-runtime.py dist/cuda-backend --mode cuda
-      - name: Verify relocated CUDA dependencies and no-GPU startup
-        run: |
-          mkdir -p 'dist/CUDA runtime é'
-          mv dist/cuda-backend 'dist/CUDA runtime é/backend'
-          'dist/CUDA runtime é/backend/.venv/bin/python' -I -B -m pip check
-          'dist/CUDA runtime é/backend/.venv/bin/python' -I -B ci/verify-native-runtime.py 'dist/CUDA runtime é/backend'
-      - name: Archive CUDA backend
-        run: tar -I 'gzip -1' -cf dist/backend-linux-x64-cuda.tar.gz -C 'dist/CUDA runtime é' backend
-      - name: Upload CUDA backend
-        uses: actions/upload-artifact@v6
-        with:
-          name: backend-linux-x64-cuda
-          path: dist/backend-linux-x64-cuda.tar.gz
-          compression-level: 0
-          retention-days: 3
-          if-no-files-found: error
-      - name: Release uploaded backend archive space
-        run: python -c "from pathlib import Path; Path('dist/backend-linux-x64-cuda.tar.gz').unlink()"
-      - name: Install desktop build dependencies
-        run: npm --prefix desktop ci
-      - name: Prepare native esptool
-        run: python installer/prepare-native-esptool.py
-      - name: Build Linux CUDA desktop bundle
-        run: npm --prefix desktop run build:native -- "../dist/CUDA runtime é/backend" --consume-backend
-      - name: Relocate CUDA desktop bundle
-        run: |
-          mkdir -p 'dist/CUDA desktop é'
-          mv desktop/release/native-cuda/linux-unpacked 'dist/CUDA desktop é/app'
-      - name: Verify packaged CUDA backend
-        run: |
-          'dist/CUDA desktop é/app/resources/backend/.venv/bin/python' -I -B -m pip check
-          'dist/CUDA desktop é/app/resources/backend/.venv/bin/python' -I -B ci/verify-native-runtime.py 'dist/CUDA desktop é/app/resources/backend'
-      - name: Packaged CUDA desktop smoke test
-        run: xvfb-run --auto-servernum npm --prefix desktop run test:packaged -- "../dist/CUDA desktop é/app" cuda
-      - name: Archive CUDA desktop bundle
-        run: python installer/archive-native-desktop.py 'dist/CUDA desktop é/app' dist/distribution-cuda linux-x64 cuda
-      - name: Upload CUDA desktop bundle
-        uses: actions/upload-artifact@v6
-        with:
-          name: desktop-linux-x64-cuda
-          path: dist/distribution-cuda/*
-          compression-level: 0
-          retention-days: 3
-          if-no-files-found: error
-      - name: Release uploaded CUDA desktop archive space
-        run: python -c "from pathlib import Path; [p.unlink() for p in Path('dist/distribution-cuda').glob('*.tar.gz')]"
-      - name: Build Linux CUDA installer
-        run: |
-          df -h / /tmp
-          du -sh 'dist/CUDA desktop é/app'
-          npm --prefix desktop run build:native-installer -- '../dist/CUDA desktop é/app'
-      - name: Release staged CUDA bundle before installation
-        run: |
-          test -f 'dist/CUDA desktop é/app/resources/backend/runtime-manifest.json'
-          rm -r -- 'dist/CUDA desktop é/app'
-      - name: Verify CUDA installation, replacement, repair, and removal
-        run: python ci/verify-native-installer.py desktop/release/installers-cuda cuda
-      - name: Upload CUDA installer
-        uses: actions/upload-artifact@v6
-        with:
-          name: installer-linux-x64-cuda
-          path: |
-            desktop/release/installers-cuda/*.deb
-            desktop/release/installers-cuda/*.sha256
-          compression-level: 0
-          retention-days: 3
-          if-no-files-found: error
+      - name: Build small Linux base runtime
+        run: python installer/build-native-runtime.py dist/setup-backend
+      - name: Download, verify, and reuse generation dependencies
+        run: python ci/verify-generation-setup.py dist/setup-backend dist/user-generation-runtime
   tests:
     name: Tests (${{ matrix.os }}, ${{ matrix.arch }})
     strategy:
@@ -189,15 +108,6 @@ jobs:
           mkdir -p 'dist/runtime-check é'
           mv dist/native-backend 'dist/runtime-check é/backend'
           'dist/runtime-check é/backend/.venv/bin/python' -I -B ci/verify-native-runtime.py 'dist/runtime-check é/backend'
-          tar -czf dist/backend-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz -C 'dist/runtime-check é' backend
-      - name: Upload management backend bundle
-        if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v6
-        with:
-          name: backend-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/backend-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
-          if-no-files-found: error
-          retention-days: 7
       - name: Desktop module tests
         run: npm --prefix desktop test
       - name: Check desktop entry-point syntax
@@ -230,17 +140,6 @@ jobs:
       - name: Packaged desktop smoke test (macOS)
         if: runner.os == 'macOS'
         run: npm --prefix desktop run test:packaged -- "../dist/Desktop bundles é/app"
-      - name: Archive native desktop bundle
-        if: runner.os != 'Windows'
-        run: python installer/archive-native-desktop.py 'dist/Desktop bundles é/app' dist/distribution ${{ matrix.platform }}-${{ matrix.arch }} management
-      - name: Upload native desktop bundle
-        if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v6
-        with:
-          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/distribution/*
-          if-no-files-found: error
-          retention-days: 7
       - name: Build native installer
         if: runner.os != 'Windows'
         run: npm --prefix desktop run build:native-installer -- '../dist/Desktop bundles é/app'
@@ -251,7 +150,7 @@ jobs:
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v6
         with:
-          name: installer-${{ matrix.platform }}-${{ matrix.arch }}-management
+          name: installer-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             desktop/release/installers/*.deb
             desktop/release/installers/*.dmg

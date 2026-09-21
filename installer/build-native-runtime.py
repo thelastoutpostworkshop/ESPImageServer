@@ -80,6 +80,13 @@ def build(destination, mode="management"):
         shutil.copytree(web, bundle / "web")
         shutil.copy2(PROJECT / "LICENSE", bundle / "LICENSE")
         shutil.copy2(PROJECT / "pyproject.toml", bundle / "pyproject.toml")
+        if target == "linux-x64" and mode == "management":
+            setup = bundle / "setup"
+            setup.mkdir()
+            for name in ("linux-generation-setup.py", "constraints-linux-cuda.txt", "constraints-cuda.txt"):
+                shutil.copy2(PROJECT / "installer" / name, setup / name)
+            requirements = tomllib.loads((PROJECT / "pyproject.toml").read_text())["project"]["dependencies"]
+            (setup / "generation-requirements.txt").write_text("\n".join(["torch", "setuptools", *requirements]) + "\n")
         site = bundle / ".venv/lib/python3.12/site-packages"
         (site / "esp-image-server.pth").write_text("../../../../src\n", encoding="utf-8")
         resolved = subprocess.check_output([str(python), "-I", "-m", "pip", "freeze", "--all"], text=True)

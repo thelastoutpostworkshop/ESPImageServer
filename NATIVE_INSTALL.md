@@ -1,18 +1,14 @@
 # Native installation and replacement
 
-GitHub's **Platform checks** workflow now builds Ubuntu 24.04 x64 `.deb` packages
-and a macOS 15+ Apple Silicon `.dmg`. Their first hosted installation checks are
-pending. These are development artifacts, not signed public releases. The Windows
-installer is unchanged. See [platform scope](PLATFORMS.md) and [USB help](USB_SETUP.md).
+GitHub's **Platform checks** workflow builds one Ubuntu 24.04 x64 `.deb` and one
+macOS 15+ Apple Silicon `.dmg`. These are development artifacts, not signed public
+releases. Native installer checks passed; Linux's new automatic generation setup
+checks are pending. The Windows installer is unchanged.
 
 ## Choose a download
 
-- `installer-linux-x64-cuda`: Ubuntu with NVIDIA generation dependencies.
-  Generation still requires a compatible NVIDIA GPU and driver.
-- `installer-linux-x64-management`: Ubuntu display, library, SD-card, and USB
-  management without image/video generation dependencies.
-- `installer-darwin-arm64-management`: macOS display management. Generation is
-  disabled on macOS, including CPU and Apple Metal/MPS.
+- `installer-linux-x64`: Ubuntu with automatic image/video generation setup.
+- `installer-darwin-arm64`: macOS management app. MPS generation is not implemented yet.
 
 Download and unzip the GitHub artifact. Each contains a versioned installer and
 a matching `.sha256` file. Verify it using `sha256sum -c` on Ubuntu or
@@ -26,24 +22,31 @@ changing the installation. From the download directory, run the following,
 replacing the quoted filename with the actual download:
 
 ```sh
-sudo apt install './ESPImageServer-<version>-linux-x64-cuda.deb'
+sudo apt install './ESPImageServer-<version>-linux-x64.deb'
 ```
 
 Launch **ESPImageServer** from the applications menu or run `espimageserver` as
 your normal user. The package installs application files under
 `/opt/ESPImageServer`, with a launcher and declared OS dependencies including udev.
-Do not run the app with sudo. Models are downloaded separately when selected;
-the installer does not install NVIDIA drivers.
+Do not run the app with sudo. On first launch, setup checks the NVIDIA driver and automatically downloads several
+GB of pinned generation components into your user profile. The startup screen
+shows setup phases and package download/install details. Internet access and
+sufficient free disk space are required; NVIDIA drivers are not installed by the
+app. Libraries are verified before the server starts. Model weights download
+separately when selected.
 
-To update, install the newer `.deb` with the same command. To repair or switch
-between management and CUDA at the same version, use:
+A failed download offers **Retry setup**. Closing the app stops setup; reopening
+retries it. If no compatible GPU is available, setup explains the problem and
+offers **Retry GPU check** or **Open display tools**. There is no generation opt-in.
+
+To update, quit the app and install the newer `.deb` using the same command.
+App-only updates reuse verified generation dependencies. For app-file repair:
 
 ```sh
-sudo apt install --reinstall './ESPImageServer-<version>-linux-x64-cuda.deb'
+sudo apt install --reinstall './ESPImageServer-<version>-linux-x64.deb'
 ```
 
-Both variants have the package name `espimageserver` and replace each other;
-they do not install two apps. To remove application files:
+To remove application files:
 
 ```sh
 sudo apt remove espimageserver
@@ -72,7 +75,8 @@ user profile. Explicitly configured external library/model paths are preserved.
 
 Keep personal files outside the installation directory and `.app` bundle. Files
 placed inside application files can be replaced or removed with the application.
-Removing the app does not reclaim downloaded models or delete saved creations.
+Generation dependencies and cached setup downloads also remain in the desktop
+user profile (`generation-runtime`). Removing the app does not reclaim downloaded models or delete saved creations.
 Automatic updates, migration across incompatible settings versions, signing, and
 notarization are not implemented by these packages.
 

@@ -2,11 +2,12 @@ import { nativeBundleVariant } from './native-bundle.mjs'
 
 export function nativeInstallerConfig(manifest, target, version) {
   nativeBundleVariant(manifest, target)
+  if (manifest.mode !== 'management') throw new Error('Installers ship the base runtime; generation dependencies download during setup')
   if (manifest.app_version !== version || !/^\d+\.\d+\.\d+$/.test(version)) {
     throw new Error('Installer version must match pyproject.toml and the backend manifest')
   }
   return {
-    artifactName: `ESPImageServer-${version}-${target}-${manifest.mode}.\${ext}`,
+    artifactName: `ESPImageServer-${version}-${target}.\${ext}`,
     extraMetadata: { version, homepage: 'https://github.com/thelastoutpostworkshop/ESPImageServer' },
     linux: { executableName: 'espimageserver', category: 'Graphics' },
     deb: {
