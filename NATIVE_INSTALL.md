@@ -82,10 +82,24 @@ notarization are not implemented by these packages.
 
 ## Automated package checks
 
-Native hosted jobs verify checksums, install/copy the package, launch the installed
-app, replace it at the same version, repair a removed executable, and remove it.
+Native hosted jobs verify checksums, install/copy an older-version fixture, save
+settings and content, upgrade to the current package, and load the preserved data
+through the current backend. They also launch the upgraded desktop, reinstall at
+the same version, repair a removed executable, and remove it.
 External data fixtures must remain unchanged. Ubuntu exercises apt and the actual
 `/opt` installation; macOS mounts the image read-only and uses an isolated
 Applications directory. These checks do not establish signed-download behavior,
 cross-version settings migration, or NVIDIA computation. Existing native storage
 tests separately cover persisted settings and media across backend restarts.
+
+The older-version fixture uses current source with version `0.0.1`; there are no
+published older native releases in this test. These new upgrade checks await
+their first hosted run. They test replacement and preservation with the current
+schema, not historical schema migrations.
+
+Windows CI compiles the real Inno script into two isolated fixture installers,
+checks registered versions and persisted app settings/content, and checks that
+an existing runtime marker survives. Dependency bootstrap and the desktop binary
+are lightweight fixtures; the test does not build a Windows release installer
+or redownload CUDA. Linux additionally attempts an intentionally unresolvable
+dependency update and verifies that its previously downloaded runtime still works.

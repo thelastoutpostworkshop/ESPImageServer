@@ -11,7 +11,7 @@ helper = backend / "setup/linux-generation-setup.py"
 command = [str(backend / ".venv/bin/python"), "-I", "-u", str(helper), str(backend), str(storage), "--ci-no-gpu"]
 
 
-def run(environment):
+def run(environment, expect_success=True):
     ready = None
     with subprocess.Popen(command, stdout=subprocess.PIPE, text=True, env=environment) as child:
         for line in child.stdout:
@@ -19,7 +19,11 @@ def run(environment):
             event = json.loads(line)
             if event["kind"] == "ready":
                 ready = Path(event["python"])
-        assert child.wait() == 0 and ready
+        code = child.wait()
+        if expect_success:
+            assert code == 0 and ready
+        else:
+            assert code != 0 and ready is None, "A failed dependency update must not publish a runtime"
     return ready
 
 
@@ -36,5 +40,18 @@ try:
     assert (python.parents[2] / "ready.json").stat().st_mtime_ns == stamp
 finally:
     manifest_path.write_text(original)
+# Exercise a changed dependency set that cannot be resolved offline. It must
+# leave the verified previous environment intact and usable after restoration.
+requirements = backend / "setup/generation-requirements.txt"
+original_requirements = requirements.read_text()
+old_marker = (python.parents[2] / "ready.json").read_bytes()
+try:
+    requirements.write_text(original_requirements + "\nespimageserver-upgrade-fixture-missing==0.0.0\n")
+    run({**os.environ, "PIP_NO_INDEX": "1", "PIP_DISABLE_PIP_VERSION_CHECK": "1"}, expect_success=False)
+    assert (python.parents[2] / "ready.json").read_bytes() == old_marker
+    assert len(list(storage.glob("*/ready.json"))) == 1
+finally:
+    requirements.write_text(original_requirements)
+assert run({**os.environ, "PIP_NO_INDEX": "1"}) == python
 subprocess.run([str(python), "-I", "-B", "ci/verify-native-runtime.py", str(backend), str(python.parents[2])], check=True)
-print("PASS: generation dependencies installed, verified, reused offline, and served the current app")
+print("PASS: dependencies installed, reused offline, survived a failed dependency update, and served the current app")

@@ -80,6 +80,14 @@ It also checks offline reuse across an app-version change. Only this CI helper
 invocation bypasses the physical GPU precheck; the shipped desktop never does.
 No model weights or image/video generation are run on hosted CPU-only runners.
 
+Upgrade checks now use a synthetic `0.0.1` baseline and the current version on all
+three OS runners. They verify persisted settings, image/library metadata, video
+file fixtures, and model-cache fixtures through fresh backend processes. Windows
+uses the production Inno script with fixture bootstrap/desktop payloads; Linux
+uses apt package replacement; macOS replaces a copied app. Linux dependency tests
+also cover an unsuccessful dependency update followed by reuse of the old runtime.
+The first hosted upgrade run is pending; historical schema migrations are not covered.
+
 Only `installer-linux-x64` and `installer-darwin-arm64` artifacts, with versioned
 filenames and adjacent SHA-256 checksums, are uploaded. Intermediate backend and
 desktop bundles remain build inputs and are no longer compressed/uploaded.

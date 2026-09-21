@@ -36,7 +36,7 @@ jobs:
           npm --prefix frontend run build
       - name: Build small Linux base runtime
         run: python installer/build-native-runtime.py dist/setup-backend
-      - name: Download, verify, and reuse generation dependencies
+      - name: Download, verify, reuse, and recover generation dependencies
         run: python ci/verify-generation-setup.py dist/setup-backend dist/user-generation-runtime
   tests:
     name: Tests (${{ matrix.os }}, ${{ matrix.arch }})
@@ -98,6 +98,17 @@ jobs:
         run: python -m pytest -q --ignore=tests/test_native_storage.py
       - name: Native storage persistence and read-only installation
         run: python -m pytest tests/test_native_storage.py -v
+      - name: Ensure Inno Setup is available for the Windows upgrade fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Could not install the CI Inno Setup compiler.' }
+          }
+      - name: Windows installer upgrade and user-data preservation
+        if: runner.os == 'Windows'
+        run: python ci/verify-windows-upgrade.py
       - name: Build standalone management backend
         if: runner.os != 'Windows'
         run: python installer/build-native-runtime.py dist/native-backend
@@ -143,7 +154,7 @@ jobs:
       - name: Build native installer
         if: runner.os != 'Windows'
         run: npm --prefix desktop run build:native-installer -- '../dist/Desktop bundles é/app'
-      - name: Verify native installation, replacement, repair, and removal
+      - name: Verify native upgrade, user-data preservation, repair, and removal
         if: runner.os != 'Windows'
         run: python ci/verify-native-installer.py desktop/release/installers management
       - name: Upload native installer

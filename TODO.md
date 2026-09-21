@@ -377,6 +377,13 @@ Windows behavior as platform delivery progresses.
   by the user. Linux packaging now uses a single base installer with automatic
   generation setup. NATIVE_INSTALL.md documents the new download/setup behavior.
   Signing/notarization, cross-version migration, and automatic updates remain open.
+- [ ] **P1 - Confirm automated upgrade preservation checks:** Implemented a
+  synthetic 0.0.1-to-current upgrade on Windows (real Inno script with fixture
+  bootstrap/desktop payload), Ubuntu (apt), and macOS (app replacement). Verify
+  the installed version and load saved settings/content with the current backend.
+  Linux also tests failed dependency updates without losing the previous runtime.
+  Local storage and dependency recovery tests pass; confirm the hosted action.
+  This is package replacement coverage, not historical schema migration coverage.
 - [x] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported
   architectures. Keep Windows manual acceptance checks.

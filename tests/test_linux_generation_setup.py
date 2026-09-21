@@ -83,3 +83,23 @@ def test_broken_cached_runtime_is_repairable(setup_fixture, monkeypatch):
     monkeypatch.setitem(scope, "command", lambda args, env: calls.append(args))
     module["setup"](backend, storage, check_gpu=False)
     assert events[-1]["kind"] == "ready"
+
+
+def test_failed_changed_dependencies_preserve_old_runtime_then_retry(setup_fixture, monkeypatch):
+    module, scope, backend, storage, calls, events = setup_fixture
+    module["setup"](backend, storage, check_gpu=False)
+    old_runtime = Path(events[-1]["python"]).parents[2]
+    marker = (old_runtime / "ready.json").read_bytes()
+    (backend / "setup/generation-requirements.txt").write_text("changed-dependency==2\n")
+    def fail(*args):
+        raise RuntimeError("Dependency download unavailable")
+    monkeypatch.setitem(scope, "command", fail)
+    with pytest.raises(RuntimeError, match="unavailable"):
+        module["setup"](backend, storage, check_gpu=False)
+    assert (old_runtime / "ready.json").read_bytes() == marker
+    assert len(list(storage.glob("*/ready.json"))) == 1
+    monkeypatch.setitem(scope, "command", lambda args, env: calls.append(args))
+    module["setup"](backend, storage, check_gpu=False)
+    assert Path(events[-1]["python"]).parents[2] != old_runtime
+    assert (old_runtime / "ready.json").read_bytes() == marker
+    assert not list(storage.glob("*.partial"))

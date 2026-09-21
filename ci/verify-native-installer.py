@@ -7,6 +7,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import plistlib
+import re
+
+from upgrade_support import OLD_VERSION, set_backend_version, storage_probe, snapshot, assert_preserved
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -57,8 +61,33 @@ def main(directory, mode):
             installed = Path("/opt/ESPImageServer")
             if installed.exists():
                 raise RuntimeError("Refusing to replace an existing application directory")
+            version = subprocess.check_output(["dpkg-deb", "-f", str(package), "Version"], text=True).strip()
+            assert version != OLD_VERSION
+            previous = root / "previous-package"
+            run("dpkg-deb", "--raw-extract", str(package), str(previous))
+            control = previous / "DEBIAN/control"
+            control.write_text(re.sub(r"^Version: .*$", f"Version: {OLD_VERSION}", control.read_text(), flags=re.M))
+            set_backend_version(previous / "opt/ESPImageServer/resources/backend", OLD_VERSION)
+            sums = previous / "DEBIAN/md5sums"
+            if sums.exists():
+                entries = []
+                for line in sums.read_text().splitlines():
+                    _, name = line.split(maxsplit=1)
+                    with (previous / name).open("rb") as stream:
+                        entries.append(f"{hashlib.file_digest(stream, 'md5').hexdigest()}  {name}")
+                sums.write_text("\n".join(entries) + "\n")
+            old_package = root / "previous.deb"
+            run("dpkg-deb", "--build", "--root-owner-group", str(previous), str(old_package))
             try:
+                run("sudo", "apt-get", "install", "-y", "--no-install-recommends", str(old_package))
+                assert subprocess.check_output(["dpkg-query", "-W", "-f=${Version}", "espimageserver"], text=True) == OLD_VERSION
+                backend = installed / "resources/backend"
+                storage_probe(backend, root / "user", "save", OLD_VERSION)
+                saved = snapshot(root / "user")
                 run("sudo", "apt-get", "install", "-y", "--no-install-recommends", str(package))
+                assert subprocess.check_output(["dpkg-query", "-W", "-f=${Version}", "espimageserver"], text=True) == version
+                assert_preserved(root / "user", saved)
+                storage_probe(backend, root / "user", "restart", version)
                 assert Path("/usr/bin/espimageserver").resolve() == installed / "espimageserver"
                 smoke(installed, mode)
                 preserved()
@@ -85,9 +114,15 @@ def main(directory, mode):
                 applications.mkdir()
                 destination = applications / "ESPImageServer.app"
 
-                def replace():
+                def replace(version=None):
                     staging = applications / "new.app"
                     run("ditto", str(mount / "ESPImageServer.app"), str(staging))
+                    if version:
+                        set_backend_version(staging / "Contents/Resources/backend", version)
+                        info = staging / "Contents/Info.plist"
+                        data = plistlib.loads(info.read_bytes())
+                        data["CFBundleShortVersionString"] = data["CFBundleVersion"] = version
+                        info.write_bytes(plistlib.dumps(data))
                     if destination.exists():
                         backup = applications / "previous.app"
                         destination.rename(backup)
@@ -96,7 +131,16 @@ def main(directory, mode):
                     else:
                         staging.rename(destination)
 
+                current_version = plistlib.loads((mount / "ESPImageServer.app/Contents/Info.plist").read_bytes())["CFBundleShortVersionString"]
+                assert current_version != OLD_VERSION
+                replace(OLD_VERSION)
+                backend = destination / "Contents/Resources/backend"
+                storage_probe(backend, root / "user", "save", OLD_VERSION)
+                saved = snapshot(root / "user")
                 replace()
+                assert plistlib.loads((destination / "Contents/Info.plist").read_bytes())["CFBundleShortVersionString"] == current_version
+                assert_preserved(root / "user", saved)
+                storage_probe(backend, root / "user", "restart", current_version)
                 smoke(applications, mode)
                 preserved()
                 replace()
@@ -109,7 +153,7 @@ def main(directory, mode):
                 preserved()
             finally:
                 run("hdiutil", "detach", str(mount))
-    print("Native installer checksum, installation, replacement, repair, and removal checks passed")
+    print("Native installer checksum, older-version upgrade, data preservation, repair, and removal checks passed")
 
 
 if __name__ == "__main__":

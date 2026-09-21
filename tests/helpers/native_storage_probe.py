@@ -61,6 +61,12 @@ from esp_image_server.app_settings import AppSettingsStore
 from esp_image_server.models import model_cache_roots
 from esp_image_server.video_generator import video_model_cache_dir
 
+if expected_version := os.environ.get("ESP_UPGRADE_EXPECTED_VERSION"):
+    from esp_image_server.version import APP_VERSION
+    import esp_image_server
+    assert APP_VERSION == expected_version, (APP_VERSION, expected_version)
+    assert Path(esp_image_server.__file__).resolve().is_relative_to(Path(os.environ["ESP_UPGRADE_SOURCE"]).resolve())
+
 home = Path.home()
 if sys.platform == "win32":
     expected_config = expected_data = expected_cache = Path(os.environ["LOCALAPPDATA"]) / "ESPImageServer"
@@ -96,6 +102,11 @@ with TestClient(app) as client:
         app.state.image_library.save(jpeg.getvalue(), {"prompt": "Persistence é 日本語"})
         expected_models.mkdir(parents=True, exist_ok=True)
         (expected_models / "storage-probe.txt").write_text("model cache writable", encoding="utf-8")
+        if expected_version:
+            videos = library / "videos"
+            videos.mkdir(exist_ok=True)
+            (videos / "upgrade-fixture.mp4").write_bytes(b"saved video preservation fixture")
+            (videos / "upgrade-fixture.json").write_text('{"prompt":"upgrade preservation"}', encoding="utf-8")
     else:
         settings = client.get("/app-settings").json()
         assert Path(settings["image_library_location"]) == library
@@ -111,6 +122,9 @@ with TestClient(app) as client:
             image.load()
             assert image.size == (16, 16)
         assert (expected_models / "storage-probe.txt").read_text() == "model cache writable"
+        if expected_version:
+            assert (library / "videos/upgrade-fixture.mp4").read_bytes() == b"saved video preservation fixture"
+            assert (library / "videos/upgrade-fixture.json").read_text() == '{"prompt":"upgrade preservation"}'
     assert AppSettingsStore().get()["video_jpeg_quality"] == 17
     assert (expected_data / "displays.sqlite3").is_file()
     assert app.state.mjpeg_cache.path.is_dir()
