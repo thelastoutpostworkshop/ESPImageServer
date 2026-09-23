@@ -385,11 +385,12 @@ Windows behavior as platform delivery progresses.
   Local tests and the hosted Windows, Ubuntu, macOS, and Linux dependency recovery
   checks passed; hosted success confirmed by the user.
   This is package replacement coverage, not historical schema migration coverage.
-- [ ] **P1 - Confirm draft release workflow:** Added the manually dispatched
+- [x] **P1 - Confirm draft release workflow:** Added the manually dispatched
   **Prepare draft release** workflow, reusing platform checks and building the
   production Windows installer alongside Linux/macOS packages. It validates all
   three installers and checksums, then creates an unpublished draft at the tested
-  commit. Local validation tests pass; confirm the first hosted run. See
+  commit. Local validation tests and the hosted action passed, with hosted
+  success confirmed by the user. See
   RELEASING.md. Signing/notarization and automatic updates remain separate work.
 - [x] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported
