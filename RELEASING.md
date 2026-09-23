@@ -4,8 +4,8 @@ The **Prepare draft release** GitHub Actions workflow builds one installer for
 Windows x64 and Ubuntu 24.04 x64. macOS release delivery is deferred; its existing
 platform checks and development artifacts remain in CI. The workflow creates an
 unpublished GitHub release only after all reused platform checks and the Linux
-dependency setup checks pass. Normal pushes still run **Platform checks** and
-do not create a release or build the full Windows installer.
+dependency setup checks pass. Ordinary branch pushes do not trigger this pipeline.
+Platform checks remain available for pull requests and manual runs.
 
 1. Set the intended version in `pyproject.toml` to an unused `major.minor.patch`.
    Commit and push the version change and workflow changes. Build scripts
@@ -19,9 +19,10 @@ do not create a release or build the full Windows installer.
    ```
 
    This automatically starts **Prepare draft release**. A tag that does not
-   match the project version fails before the installers are built. Branch
-   pushes continue running normal Platform checks; tag pushes use those checks
-   through the release workflow without starting a duplicate standalone run.
+   match the project version fails before the installers are built. Tag pushes
+   run platform checks through the release workflow without starting a duplicate
+   standalone run. Pushing to a branch with an open pull request can still run
+   the pull-request checks.
 3. When it passes, open **Releases** and review the unpublished draft named
    **ESPImageServer <version>**. Add the user-facing changes to its notes.
 4. Publish using GitHub's release editor when you choose to make it public.
