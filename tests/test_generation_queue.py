@@ -152,3 +152,21 @@ def test_orphan_cleanup_keeps_the_output_path_of_an_active_video_job(tmp_path) -
     finally:
         release.set()
         queue.close()
+
+
+def test_orphan_scan_keeps_completed_job_with_old_file_timestamp(tmp_path):
+    import os
+    output = tmp_path / "ltx-video-result.mp4"
+    queue = GenerationQueue(RetentionPolicy(5, 60, 1024), video_result_root=tmp_path)
+    try:
+        def work(_progress, _cancelled):
+            output.write_bytes(b"video")
+            os.utime(output, (1, 1))
+            return output
+        job = queue.create("video", work, temporary_media_path=output)
+        wait_for_status(queue, job.job_id, "complete")
+        assert queue.cleanup_temporary_video_results() == 0
+        assert output.read_bytes() == b"video"
+        assert queue.get(job.job_id) is not None
+    finally:
+        queue.close()

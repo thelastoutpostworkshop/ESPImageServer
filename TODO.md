@@ -230,12 +230,15 @@ pinned library state were restored after testing.
 
 ## Backend and installer hardening
 
-1. **P1 — Bound completed-job, command, and conversion-cache retention.**
-   Generation results, display-command acknowledgements, and converted MJPEG
-   files accumulate in memory or on disk until a user clears them or removes
-   files manually. Add size/count/age limits, safe cleanup at startup and
-   shutdown, and tests proving active jobs and referenced media are never
-   removed prematurely.
+1. **Completed - Bound temporary-data retention.** Completed generation jobs
+   use 50-item, 12-hour, and 512 MiB limits; completed display commands use
+   200-item, 24-hour, and 2 MiB limits. MJPEG conversions use 64-file, seven-day,
+   and 1 GiB limits. Cleanup runs at startup, shutdown, during work, and every
+   minute while idle. Active/leased work can temporarily exceed these limits.
+   Retained video results and pending display-command conversions are protected;
+   saved creations and model downloads are untouched. Automated tests cover
+   retention and idle cleanup. Concurrent conversion publication remains the
+   separate P2 task below.
 
 2. **P1 — Apply input-size and media-validation limits at API boundaries.**
    Several endpoints read full request bodies or open untrusted image files

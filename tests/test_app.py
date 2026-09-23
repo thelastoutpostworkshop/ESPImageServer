@@ -1386,3 +1386,25 @@ def test_folder_opener_failure_returns_readable_error_without_changing_library(m
         assert response.status_code == 500
         assert "Could not open the image library folder" in response.json()["detail"]
         assert client.get("/app-settings").json()["image_library_location"] == original
+
+
+def test_idle_server_periodically_cleans_stale_conversions(tmp_path, monkeypatch):
+    from threading import Event
+    import importlib
+    app_module = importlib.import_module("esp_image_server.app")
+    monkeypatch.setattr(app_module, "TEMPORARY_CLEANUP_INTERVAL_SECONDS", 0.01)
+    cache = MjpegConversionCache(tmp_path / "cache", RetentionPolicy(2, 0, 1024))
+    cleaned = Event()
+    original_cleanup = cache.cleanup
+    def observed_cleanup(*args, **kwargs):
+        count = original_cleanup(*args, **kwargs)
+        if count:
+            cleaned.set()
+        return count
+    monkeypatch.setattr(cache, "cleanup", observed_cleanup)
+    app = create_app(Settings(), FakeGenerator(), mjpeg_cache=cache, enable_mdns=False)
+    with TestClient(app):
+        stale = cache.output_path("idle", 1, 1, 1, 1)
+        stale.write_bytes(b"temporary")
+        assert cleaned.wait(3)
+        assert not stale.exists()

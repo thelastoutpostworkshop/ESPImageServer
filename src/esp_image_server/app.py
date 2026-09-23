@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import hashlib
@@ -57,6 +58,8 @@ from .video_library import VideoLibrary, bundled_ffmpeg_executable
 from .version import APP_VERSION
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+TEMPORARY_CLEANUP_INTERVAL_SECONDS = 60
+
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEVELOPMENT_WEB_BUILD = PROJECT_ROOT / "frontend" / "dist"
@@ -339,9 +342,24 @@ def create_app(
         logger.info("Image model will download and load when the user selects it; device=%s", generator.device)
         if os.getenv("ESP_IMAGE_OPEN_BROWSER") == "1":
             Timer(0.5, lambda: webbrowser.open_new_tab(f"http://127.0.0.1:{settings.port}/")).start()
+        cleanup_stop = asyncio.Event()
+
+        async def periodic_cleanup() -> None:
+            while not cleanup_stop.is_set():
+                try:
+                    await asyncio.wait_for(cleanup_stop.wait(), timeout=TEMPORARY_CLEANUP_INTERVAL_SECONDS)
+                except TimeoutError:
+                    try:
+                        await run_in_threadpool(cleanup_temporary_data)
+                    except Exception:
+                        logger.exception("Periodic temporary-data cleanup failed")
+
+        cleanup_task = asyncio.create_task(periodic_cleanup())
         try:
             yield
         finally:
+            cleanup_stop.set()
+            await cleanup_task
             if mdns is not None:
                 mdns.close()
             cleanup_temporary_data()
@@ -1404,6 +1422,7 @@ def create_app(
             raise HTTPException(status_code=503, detail="Bundled FFmpeg is unavailable")
         output_path = mjpeg_cache.output_path(video_id, width, height, fps, video_jpeg_quality)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        mjpeg_cache.acquire(output_path)
         try:
             if not output_path.is_file() or output_path.stat().st_mtime < video_path.stat().st_mtime:
                 subprocess.run(
@@ -1412,9 +1431,11 @@ def create_app(
                      "-q:v", str(video_jpeg_quality), "-f", "mjpeg", str(output_path)],
                     capture_output=True, check=True, timeout=300,
                 )
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise HTTPException(status_code=500, detail=f"Could not prepare video for the display: {exc}") from exc
-        mjpeg_cache.acquire(output_path)
+        except BaseException as exc:
+            mjpeg_cache.release(output_path)
+            if isinstance(exc, (OSError, subprocess.SubprocessError)):
+                raise HTTPException(status_code=500, detail=f"Could not prepare video for the display: {exc}") from exc
+            raise
 
         def release_conversion() -> None:
             mjpeg_cache.release(output_path)

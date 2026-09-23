@@ -28,3 +28,30 @@ def test_cache_cleanup_keeps_referenced_conversion_and_never_touches_saved_media
     assert cache.cleanup(now=2) == 1
     assert not conversion.exists()
     assert saved_video.is_file()
+
+
+def test_cleanup_enforces_byte_limit_oldest_first(tmp_path):
+    cache = MjpegConversionCache(tmp_path, RetentionPolicy(10, 1000, 8))
+    old = cache.output_path("old", 1, 1, 1, 1)
+    recent = cache.output_path("recent", 1, 1, 1, 1)
+    for path, modified in ((old, 1), (recent, 2)):
+        path.write_bytes(b"123456")
+        os.utime(path, (modified, modified))
+    assert cache.cleanup(now=3) == 1
+    assert not old.exists()
+    assert recent.exists()
+
+
+def test_cache_does_not_follow_symlinks(tmp_path):
+    import pytest
+    saved = tmp_path / "saved.mp4"
+    saved.write_bytes(b"saved creation")
+    cache = MjpegConversionCache(tmp_path / "cache", RetentionPolicy(1, 0, 1))
+    cache.path.mkdir()
+    link = cache.path / "linked.mjpeg"
+    try:
+        link.symlink_to(saved)
+    except OSError:
+        pytest.skip("Symlink creation is unavailable")
+    assert cache.cleanup(now=10_000_000_000) == 0
+    assert saved.read_bytes() == b"saved creation"

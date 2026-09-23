@@ -50,11 +50,14 @@ class MjpegConversionCache:
 
     def cleanup(self, referenced_paths: Iterable[Path] = (), now: float | None = None) -> int:
         """Discard only unreferenced, stale or over-limit cache entries."""
+        with self._lock:
+            return self._cleanup_locked(referenced_paths, now)
+
+    def _cleanup_locked(self, referenced_paths: Iterable[Path], now: float | None) -> int:
         now = time() if now is None else now
         self.path.mkdir(parents=True, exist_ok=True)
         protected = {self._resolve(path) for path in referenced_paths}
-        with self._lock:
-            protected.update(path for path, count in self._references.items() if count > 0)
+        protected.update(path for path, count in self._references.items() if count > 0)
 
         entries = self._entries()
         deletable = [entry for entry in entries if entry[0] not in protected]
@@ -93,6 +96,8 @@ class MjpegConversionCache:
         entries: list[tuple[Path, float, int]] = []
         for candidate in self.path.glob("*.mjpeg"):
             try:
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
                 stat = candidate.stat()
             except OSError:
                 continue

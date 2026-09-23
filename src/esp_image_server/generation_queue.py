@@ -196,18 +196,20 @@ class GenerationQueue:
 
     def cleanup_temporary_video_results(self, now: float | None = None) -> int:
         """Remove orphaned generated MP4s without touching active or leased results."""
+        with self._lock:
+            return self._cleanup_temporary_video_results_locked(now)
+
+    def _cleanup_temporary_video_results_locked(self, now: float | None) -> int:
         if self._video_result_root is None or not self._video_result_root.is_dir():
             return 0
         now = time() if now is None else now
-        with self._lock:
-            protected_paths = {
-                self._temporary_path(job)
-                for job in self._jobs.values()
-                if job.status in {"queued", "running", "cancelling"} or job.media_references
-            }
+        # Every retained job must keep a usable result, including completed jobs.
+        protected_paths = {self._temporary_path(job) for job in self._jobs.values()}
         entries: list[tuple[Path, float, int]] = []
         for path in self._video_result_root.glob("ltx-video-*.mp4"):
             try:
+                if path.is_symlink() or not path.is_file():
+                    continue
                 stat = path.stat()
             except OSError:
                 continue
@@ -258,7 +260,10 @@ class GenerationQueue:
                 job.status, job.stage, job.step, job.steps = "running", stage, step, steps
 
         with self._lock:
-            job = self._jobs[job_id]
+            job = self._jobs.get(job_id)
+            if job is None or job.status == "cancelled":
+                return
+            job.status = "running"
             kind = job.kind
             work = job.work
             job.started_at = perf_counter()
