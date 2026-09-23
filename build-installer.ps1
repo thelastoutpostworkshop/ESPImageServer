@@ -8,16 +8,13 @@ Builds the ESPImageServer Windows installer from the repository root.
 
 [CmdletBinding()]
 param(
-    [switch]$SynchronizeOnly
+    [switch]$SynchronizeOnly,
+    [string]$InnoSetupPath
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
-$innoSetup = 'C:\Users\charles\AppData\Local\Programs\Inno Setup 6\ISCC.exe'
-
-if (-not (Test-Path -LiteralPath $innoSetup)) {
-    throw "Inno Setup compiler was not found at: $innoSetup"
-}
+$innoSetup = $InnoSetupPath
 
 function Invoke-BuildStep([string]$Name, [scriptblock]$Command, [int]$RetryCount = 0) {
     for ($attempt = 0; $attempt -le $RetryCount; $attempt++) {
@@ -101,6 +98,18 @@ try {
         return
     }
 
+    if (-not $innoSetup) {
+        $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+        )
+        $innoSetup = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    }
+    if (-not $innoSetup -or -not (Test-Path -LiteralPath $innoSetup)) {
+        throw 'Inno Setup compiler was not found. Install Inno Setup 6 or pass -InnoSetupPath.'
+    }
+
+    Invoke-BuildStep 'Preparing the bundled flashing tool' { npm --prefix desktop run prepare:esptool }
     Invoke-BuildStep 'Building the web app' { npm --prefix frontend run build }
     # Build to a fresh staging directory every time. This avoids an antivirus
     # scanner or previous Electron run keeping the old app.asar locked.

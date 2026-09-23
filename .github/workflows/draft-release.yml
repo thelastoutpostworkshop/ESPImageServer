@@ -1,0 +1,37 @@
+name: Prepare draft release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: draft-release
+  cancel-in-progress: false
+
+jobs:
+  checks-and-installers:
+    uses: ./.github/workflows/platform-checks.yml
+    with:
+      build_windows_installer: true
+
+  draft:
+    needs: checks-and-installers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: installer-*
+          path: release-assets
+      - name: Validate installers and create unpublished draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python ci/draft_release.py release-assets

@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      build_windows_installer:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -166,6 +171,29 @@ jobs:
             desktop/release/installers/*.deb
             desktop/release/installers/*.dmg
             desktop/release/installers/*.sha256
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+      - name: Build Windows release installer
+        if: runner.os == 'Windows' && inputs.build_windows_installer == true
+        shell: pwsh
+        run: |
+          $compiler = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe" | Select-Object -First 1
+          if (-not $compiler) { throw 'Inno Setup compiler is missing.' }
+          ./build-installer.ps1 -InnoSetupPath $compiler.FullName
+          $installers = @(Get-ChildItem dist/ESPImageServer-Setup-*.exe)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows installer.' }
+          $installer = $installers[0]
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText("$($installer.FullName).sha256", "$hash  $($installer.Name)`n")
+      - name: Upload Windows installer
+        if: runner.os == 'Windows' && inputs.build_windows_installer == true
+        uses: actions/upload-artifact@v6
+        with:
+          name: installer-win32-x64
+          path: |
+            dist/ESPImageServer-Setup-*.exe
+            dist/ESPImageServer-Setup-*.exe.sha256
           compression-level: 0
           retention-days: 7
           if-no-files-found: error

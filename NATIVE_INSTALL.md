@@ -1,5 +1,8 @@
 # Native installation and replacement
 
+For versioned draft downloads containing all three operating-system installers,
+see [Preparing a release](RELEASING.md). Publishing remains an explicit action.
+
 GitHub's **Platform checks** workflow builds one Ubuntu 24.04 x64 `.deb` and one
 macOS 15+ Apple Silicon `.dmg`. These are development artifacts, not signed public
 releases. Native installer and Linux automatic generation setup checks passed
