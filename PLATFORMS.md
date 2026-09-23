@@ -86,7 +86,8 @@ file fixtures, and model-cache fixtures through fresh backend processes. Windows
 uses the production Inno script with fixture bootstrap/desktop payloads; Linux
 uses apt package replacement; macOS replaces a copied app. Linux dependency tests
 also cover an unsuccessful dependency update followed by reuse of the old runtime.
-The first hosted upgrade run is pending; historical schema migrations are not covered.
+The hosted upgrade and dependency recovery checks passed, confirmed by the user;
+historical schema migrations are not covered.
 
 Only `installer-linux-x64` and `installer-darwin-arm64` artifacts, with versioned
 filenames and adjacent SHA-256 checksums, are uploaded. Intermediate backend and

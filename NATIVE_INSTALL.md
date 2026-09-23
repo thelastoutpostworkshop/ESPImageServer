@@ -93,8 +93,8 @@ cross-version settings migration, or NVIDIA computation. Existing native storage
 tests separately cover persisted settings and media across backend restarts.
 
 The older-version fixture uses current source with version `0.0.1`; there are no
-published older native releases in this test. These new upgrade checks await
-their first hosted run. They test replacement and preservation with the current
+published older native releases in this test. The hosted upgrade checks passed
+on Windows, Ubuntu, and macOS, confirmed by the user. They test replacement and preservation with the current
 schema, not historical schema migrations.
 
 Windows CI compiles the real Inno script into two isolated fixture installers,
