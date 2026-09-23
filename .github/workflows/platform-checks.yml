@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   linux-generation-setup:
-    name: Linux dependency setup checks (x64)
+    name: Linux — Verify generation setup
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -43,18 +43,21 @@ jobs:
       - name: Download, verify, reuse, and recover generation dependencies
         run: python ci/verify-generation-setup.py dist/setup-backend dist/user-generation-runtime
   tests:
-    name: Tests (${{ matrix.os }}, ${{ matrix.arch }})
+    name: ${{ matrix.label }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-2025
+            label: Windows — Validate and build installer
             platform: win32
             arch: x64
           - os: ubuntu-24.04
+            label: Linux — Validate and build installer
             platform: linux
             arch: x64
           - os: macos-15
+            label: macOS — Compatibility checks
             platform: darwin
             arch: arm64
     runs-on: ${{ matrix.os }}

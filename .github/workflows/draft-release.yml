@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   validate-tag:
+    name: Validate release tag
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -25,12 +26,14 @@ jobs:
         run: python ci/draft_release.py --check-tag
 
   checks-and-installers:
+    name: Release preparation
     needs: validate-tag
     uses: ./.github/workflows/platform-checks.yml
     with:
       build_windows_installer: true
 
   draft:
+    name: Create draft release
     needs: checks-and-installers
     runs-on: ubuntu-24.04
     timeout-minutes: 10
