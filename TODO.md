@@ -230,72 +230,30 @@ pinned library state were restored after testing.
 
 ## Backend and installer hardening
 
-1. **Completed - Bound temporary-data retention.** Completed generation jobs
-   use 50-item, 12-hour, and 512 MiB limits; completed display commands use
-   200-item, 24-hour, and 2 MiB limits. MJPEG conversions use 64-file, seven-day,
-   and 1 GiB limits. Cleanup runs at startup, shutdown, during work, and every
-   minute while idle. Active/leased work can temporarily exceed these limits.
-   Retained video results and pending display-command conversions are protected;
-   saved creations and model downloads are untouched. Automated tests cover
-   retention and idle cleanup. Concurrent conversion publication remains the
-   separate P2 task below.
-
-2. **P1 — Apply input-size and media-validation limits at API boundaries.**
+1. **P1 — Apply input-size and media-validation limits at API boundaries.**
    Several endpoints read full request bodies or open untrusted image files
    without a shared maximum byte/pixel policy. Enforce request-size limits,
    validate JPEG decoding and dimensions before storing or processing files,
    and return clear 4xx errors. Test oversized, truncated, and decompression-
    bomb-style images.
 
-3. **P2 — Serialize and atomically publish display MJPEG conversions.**
+2. **P2 — Serialize and atomically publish display MJPEG conversions.**
    Concurrent requests for the same saved video can run FFmpeg twice and write
    the same cache file. Add a keyed conversion lock, write to a temporary file
    then rename it, and remove partial files after failure or cancellation.
 
-4. **P2 — Sign and verify release artifacts.** Add Windows code signing for
+3. **P2 — Sign and verify release artifacts.** Add Windows code signing for
    the installer and packaged executable, then document verification of the
    published SHA-256 checksum. This reduces SmartScreen friction and makes a
    downloaded installer verifiable.
 
-## Linux and macOS support preparation
+## Platform delivery - remaining work
 
-Preparation only: retain Windows support and the current no-CPU-generation
-policy. Keep display management available independently of AI generation.
+Prioritize the Windows x64 and Ubuntu 24.04 x64 release. macOS release delivery
+is deferred. Keep the no-CPU-generation policy and preserve Windows behavior.
 
-### First milestone: code readiness
+### Windows verification
 
-Complete this milestone before starting native installers or announcing support.
-The platform abstractions and hosted CI checks below are implemented. Preserve
-Windows behavior as platform delivery progresses.
-
-- [x] **P1 - Automated desktop runtime and lifecycle validation:**
-  Runtime/tool resolution is isolated in `desktop/runtime.mjs`; Windows paths
-  are preserved, with explicit missing-runtime errors, owned-server shutdown,
-  and macOS window reopening. Automated tests cover these behaviors. User-confirmed
-  Windows desktop checks passed: startup with saved content, owned-server shutdown
-  and restart, preserving an independently started server, and focusing the
-  existing window on a second launch. Real Electron/Python smoke tests passed
-  on Windows 2025, Ubuntu 24.04, and macOS 15 hosted runners, confirmed by the
-  user for commit `069b500`. These cover actual startup/quit, Vue
-  rendering, preload IPC, owned-server exit/port release, external-server
-  preservation, and macOS activation after closing the window. Both server
-  ownership scenarios also passed locally on Windows. The local
-  run logged an mDNS advertisement timeout but completed startup; this does not
-  establish LAN discovery behavior.
-  Non-Windows runtime/tool bundles and installers remain a later milestone.
-- [x] **P1 - Validate writable paths on native Linux/macOS:** Shared path
-  resolution is implemented in `paths.py`, with Windows locations preserved and
-  unit coverage for all three platforms, XDG overrides, Unicode/spaces, and
-  explicit library/model-cache paths. Hosted checks verified persistence using
-  native filesystem behavior and a read-only installation directory on Linux/macOS.
-  A native-storage CI check now saves settings and a fixture image, then verifies
-  them in a fresh backend process using actual host path rules, spaces/Unicode,
-  and isolated user storage. Linux also exercises custom XDG directories.
-  Linux/macOS enforce read-only permissions on a copied source installation;
-  all platforms guard Python file writes and verify the installation is unchanged.
-  Windows persistence passed locally. The user confirmed the hosted action passed
-  on Windows, Ubuntu, and macOS after correcting the test's null-device handling.
-  These checks do not exercise packaged installation or real model downloads.
 - [ ] **P1 - Complete Windows USB UI verification:** Shared
   `desktop/serial-ports.mjs` now enumerates Windows, Linux, and macOS serial paths
   through SerialPort.list(), replacing PowerShell enumeration. Selection checks
@@ -320,81 +278,14 @@ Windows behavior as platform delivery progresses.
   API/manual-path fallback, and opener failures/timeouts. The user confirmed this
   added coverage passed in CI on Windows, Ubuntu, and macOS.
   Use CONTRIBUTING.md's folder checklist for the remaining Windows checks.
-- [x] **P1 - Verify the readiness boundary:** The `Platform checks` GitHub Actions
-  workflow runs backend tests, frontend tests/build, and desktop module tests on
-  Windows, Ubuntu, and macOS. Tests cover platform paths, runtime resolution,
-  serial-port validation, native-action availability, management-only startup,
-  and a real bundled-FFmpeg encode/decode. Test storage is isolated before app
-  imports. The user confirmed a successful hosted CI run on Windows, Ubuntu,
-  and macOS. CI mocks GPU pipelines and USB devices; it does not establish
-  packaged desktop, native-dialog, or real GPU/USB behavior.
-  Preserve the ESP32 LAN API, GPU serialization, and cancellation behavior.
-  Windows GPU smoke check confirmed by the user after the capability refactor
-  and dependency repair: video generation completed, followed by successful
-  image generation, validating MP4 export and the video-to-image GPU handoff.
+### Release and updates
 
-### Later milestone: platform delivery
-
-- [x] **P1 - Define the support matrix:** Initial scope is documented in
-  PLATFORMS.md: retain Windows x64, target Ubuntu 24.04 x64 with NVIDIA CUDA and
-  display management, and macOS 15+ Apple Silicon with display management only.
-  Intel Macs and Linux ARM64 are deferred; CPU/MPS generation stays disabled.
-  CI explicitly checks Python/Node platform and architecture. The user confirmed
-  the updated workflow passed on Windows x64, Ubuntu x64, and macOS ARM64.
-  Linux/macOS directory bundles are implemented; final distribution formats remain.
-- [x] **P1 - Package dependencies per OS and architecture:** Native standalone
-  Python, Electron/serialport, esptool, and FFmpeg bundles and hosted tests are
-  implemented. Earlier management and CUDA bundles passed CI. Linux now ships
-  only a small base installer with first-launch dependency download; macOS
-  remains management-only. Windows installation is unchanged.
-- [x] **P1 - Verify automatic Linux generation setup in CI:** The desktop now
-  checks NVIDIA availability, automatically downloads pinned generation
-  dependencies into private user storage, verifies them, and starts the service.
-  The startup screen provides progress, retry, and an explicit unsupported-GPU
-  fallback. Verified dependencies survive app-only updates. CI exercises actual
-  downloads, offline reuse, pipeline imports and no-GPU startup; packaged checks
-  exercise the GPU-unavailable UI. Local failure/retry/reuse tests pass.
-  The user confirmed the hosted checks passed. No intermediate backend/desktop
-  archives or separate Linux management/CUDA installers are uploaded.
-- [x] **P1 - Prepare USB setup and firmware flashing:** Package the matching
-  esptool executable and handle native serial-device names. Document Linux
-  serial permissions/udev setup and macOS driver requirements where applicable.
-  Keep automated identification, flashing, and port-lifecycle coverage.
-  Keep permissions narrowly scoped; do not require running the whole app as root.
-  Pinned esptool 5.1.0 archives for Linux x64/macOS ARM64 are now verified and
-  included by the native bundle build. CI checks the bundled version and actual
-  serialport enumeration. The user confirmed both native jobs passed.
-  USB_SETUP.md now covers Ubuntu group permissions, device-specific udev rules,
-  the udevadm dependency, macOS driver selection, and connection troubleshooting.
-- [ ] **P2 - Add native distribution and update flows:** Choose Linux package
-  formats and macOS application packaging, icons, signing/notarization, and
-  permissions. Build on appropriate native runners. Define install, update,
-  repair, and uninstall behavior that preserves settings and user creations.
-  Keep pyproject.toml as the version source and publish per-platform checksums.
-  Versioned desktop tar archives and adjacent SHA-256 files are implemented for
-  Linux management/CUDA and macOS management bundles. CI verifies archived
-  contents, permissions, and symlinks before upload; focused tests cover archive
-  extraction and reject version mismatches. The user confirmed the hosted
-  archive and checksum checks passed on Linux and macOS.
-  Native Ubuntu .deb and macOS .dmg installer lifecycle checks passed, confirmed
-  by the user. Linux packaging now uses a single base installer with automatic
-  generation setup. NATIVE_INSTALL.md documents the new download/setup behavior.
-  Signing/notarization, cross-version migration, and automatic updates remain open.
-- [x] **P1 - Confirm automated upgrade preservation checks:** Implemented a
-  synthetic 0.0.1-to-current upgrade on Windows (real Inno script with fixture
-  bootstrap/desktop payload), Ubuntu (apt), and macOS (app replacement). Verify
-  the installed version and load saved settings/content with the current backend.
-  Linux also tests failed dependency updates without losing the previous runtime.
-  Local tests and the hosted Windows, Ubuntu, macOS, and Linux dependency recovery
-  checks passed; hosted success confirmed by the user.
-  This is package replacement coverage, not historical schema migration coverage.
-- [x] **P1 - Confirm draft release workflow:** Added the
-  **Prepare draft release** workflow, reusing platform checks and building the
-  production Windows installer alongside Linux/macOS packages. It validates all
-  installers and checksums, then creates an unpublished draft at the tested
-  commit. Local validation tests and the hosted action passed, with hosted
-  success confirmed by the user. See
-  RELEASING.md. Signing/notarization and automatic updates remain separate work.
+- [ ] **P2 - Finish native distribution and update flows:** Complete native
+  icons, signing/notarization, historical settings-schema migration, and
+  automatic updates. Preserve settings and user creations. Keep pyproject.toml
+  as the version source and publish per-platform checksums. macOS release
+  delivery remains deferred; Windows code signing is tracked under Backend and
+  installer hardening.
 - [ ] **P1 - Finish Windows and Linux release:** Release collection now includes
   only the Windows x64 .exe and Ubuntu 24.04 x64 .deb with their checksums.
   macOS release delivery is deferred while its CI coverage remains. Run the
@@ -402,12 +293,6 @@ Windows behavior as platform delivery progresses.
   user-facing release notes, then publish when ready. Existing drafts are not
   modified by these source changes; use an unused version for a fresh draft.
   Tag-trigger validation passes locally; confirm the first hosted tag run.
-- [x] **P1 - Add automated cross-platform release checks:** Extend the existing
-  backend/frontend/Electron CI matrix to packaged-app startup and supported
-  architectures. Keep Windows manual acceptance checks.
-  Native directory-bundle build, relocation, and packaged Electron smoke checks
-  passed for Linux x64 and macOS ARM64, confirmed by the user.
-
 ## Plan the Hugging Face major-version upgrade
 
 Do not upgrade `transformers` 5.x or `huggingface-hub` 1.x independently.
