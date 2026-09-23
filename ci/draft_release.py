@@ -23,7 +23,6 @@ def validate_assets(root: Path, version: str) -> list[Path]:
     expected = {
         "installer-win32-x64": f"ESPImageServer-Setup-{version}.exe",
         "installer-linux-x64": f"ESPImageServer-{version}-linux-x64.deb",
-        "installer-darwin-arm64": f"ESPImageServer-{version}-darwin-arm64.dmg",
     }
     wanted = {f"{folder}/{name}{suffix}" for folder, name in expected.items()
               for suffix in ("", ".sha256")}
@@ -44,29 +43,43 @@ def validate_assets(root: Path, version: str) -> list[Path]:
     return assets
 
 
-def ensure_unused_version(repo: str, tag: str) -> None:
+def release_tag(version: str) -> str:
+    if (os.environ.get("GITHUB_ACTIONS") != "true"
+            or os.environ.get("GITHUB_EVENT_NAME") != "push"
+            or os.environ.get("GITHUB_REF_TYPE") != "tag"):
+        raise RuntimeError("Release workflow requires a pushed version tag")
+    tag = os.environ.get("GITHUB_REF_NAME", "")
+    if tag != f"v{version}":
+        raise ValueError(f"Tag must be v{version} to match pyproject.toml; got {tag!r}")
+    return tag
+
+
+def ensure_unused_version(repo: str, tag: str, sha: str) -> None:
     pages = json.loads(subprocess.check_output(
         ["gh", "api", f"repos/{repo}/releases", "--paginate", "--slurp"], text=True))
     if any(release["tag_name"] == tag for page in pages for release in page):
         raise ValueError(f"Release {tag} already exists. Review it or choose a new version; no assets were changed.")
-    result = subprocess.run(["git", "ls-remote", "--exit-code", "--tags", "origin", f"refs/tags/{tag}"],
+    result = subprocess.run(["git", "ls-remote", "--exit-code", "--tags", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"],
                             capture_output=True, text=True)
-    if result.returncode == 0:
-        raise ValueError(f"Tag {tag} already exists. Choose an unused version.")
-    if result.returncode != 2:
+    if result.returncode != 0:
         raise RuntimeError(f"Could not check existing tags: {result.stderr}")
+    refs = dict(line.split()[::-1] for line in result.stdout.splitlines())
+    remote_sha = refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
+    if remote_sha != sha:
+        raise ValueError(f"Tag {tag} no longer points to the tested commit")
 
 
 def main() -> None:
-    if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
-        raise RuntimeError("Run through the manually dispatched Prepare draft release workflow")
     version = project_version(Path("pyproject.toml"))
+    tag = release_tag(version)
+    if sys.argv[1:] == ["--check-tag"]:
+        print(f"Release tag {tag} matches pyproject.toml")
+        return
     assets = validate_assets(Path(sys.argv[1]), version)
     repo, sha = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Expected the full tested commit SHA")
-    tag = f"v{version}"
-    ensure_unused_version(repo, tag)
+    ensure_unused_version(repo, tag, sha)
     notes = f"""Draft for review — ESPImageServer {version}
 
 Built from `{sha}` after automated platform, installer lifecycle, and Linux dependency setup checks.
@@ -75,9 +88,8 @@ Built from `{sha}` after automated platform, installer lifecycle, and Linux depe
 | --- | --- | --- |
 | `.exe` | Windows x64 | Image and video generation with a supported NVIDIA GPU; setup downloads dependencies |
 | `.deb` | Ubuntu 24.04 x64 | Image and video generation with a supported NVIDIA GPU; first launch downloads dependencies |
-| `.dmg` | macOS 15+ Apple Silicon | Display management only; generation is not available yet |
 
-Installers are unsigned; the macOS app is not notarized. SHA-256 files accompany each installer.
+Installers are unsigned. SHA-256 files accompany each installer. macOS is deferred from this release.
 The automated checks do not run generation on a physical GPU. Windows upgrade checks use fixture payloads.
 
 Before publishing, add the user-facing changes for this version and review the attached downloads.
@@ -86,10 +98,10 @@ Before publishing, add the user-facing changes for this version and review the a
         body = Path(temporary) / "release-notes.md"
         body.write_text(notes, encoding="utf-8")
         subprocess.run(["gh", "release", "create", tag, *map(str, assets), "--repo", repo,
-                        "--draft", "--target", sha, "--title", f"ESPImageServer {version}",
+                        "--draft", "--verify-tag", "--target", sha, "--title", f"ESPImageServer {version}",
                         "--notes-file", str(body)], check=True)
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
-        stream.write(f"Created **{tag}** as an unpublished draft with three installers and three checksums.\n"
+        stream.write(f"Created **{tag}** as an unpublished draft with two installers and two checksums.\n"
                      f"Review it under [Releases](https://github.com/{repo}/releases). Nothing was published.\n")
 
 

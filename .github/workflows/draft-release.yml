@@ -1,7 +1,9 @@
 name: Prepare draft release
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
@@ -11,7 +13,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Check tag against project version before building
+        run: python ci/draft_release.py --check-tag
+
   checks-and-installers:
+    needs: validate-tag
     uses: ./.github/workflows/platform-checks.yml
     with:
       build_windows_installer: true
@@ -29,8 +43,12 @@ jobs:
           python-version: '3.12'
       - uses: actions/download-artifact@v6
         with:
-          pattern: installer-*
-          path: release-assets
+          name: installer-win32-x64
+          path: release-assets/installer-win32-x64
+      - uses: actions/download-artifact@v6
+        with:
+          name: installer-linux-x64
+          path: release-assets/installer-linux-x64
       - name: Validate installers and create unpublished draft
         env:
           GH_TOKEN: ${{ github.token }}

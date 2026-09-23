@@ -388,13 +388,20 @@ Windows behavior as platform delivery progresses.
   Local tests and the hosted Windows, Ubuntu, macOS, and Linux dependency recovery
   checks passed; hosted success confirmed by the user.
   This is package replacement coverage, not historical schema migration coverage.
-- [x] **P1 - Confirm draft release workflow:** Added the manually dispatched
+- [x] **P1 - Confirm draft release workflow:** Added the
   **Prepare draft release** workflow, reusing platform checks and building the
   production Windows installer alongside Linux/macOS packages. It validates all
-  three installers and checksums, then creates an unpublished draft at the tested
+  installers and checksums, then creates an unpublished draft at the tested
   commit. Local validation tests and the hosted action passed, with hosted
   success confirmed by the user. See
   RELEASING.md. Signing/notarization and automatic updates remain separate work.
+- [ ] **P1 - Finish Windows and Linux release:** Release collection now includes
+  only the Windows x64 .exe and Ubuntu 24.04 x64 .deb with their checksums.
+  macOS release delivery is deferred while its CI coverage remains. Run the
+  tag-triggered draft workflow for a matching v<version> tag, review its downloads and
+  user-facing release notes, then publish when ready. Existing drafts are not
+  modified by these source changes; use an unused version for a fresh draft.
+  Tag-trigger validation passes locally; confirm the first hosted tag run.
 - [x] **P1 - Add automated cross-platform release checks:** Extend the existing
   backend/frontend/Electron CI matrix to packaged-app startup and supported
   architectures. Keep Windows manual acceptance checks.

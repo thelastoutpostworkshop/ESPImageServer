@@ -1,6 +1,6 @@
 # Native installation and replacement
 
-For versioned draft downloads containing all three operating-system installers,
+For versioned draft downloads containing Windows and Linux installers,
 see [Preparing a release](RELEASING.md). Publishing remains an explicit action.
 
 GitHub's **Platform checks** workflow builds one Ubuntu 24.04 x64 `.deb` and one
