@@ -3619,7 +3619,7 @@ onUnmounted(() => {
                 </v-col>
               </v-row>
               <div class="generation-form-actions">
-                <v-btn type="submit" color="primary" :disabled="health?.device !== 'cuda' || models.length === 0 || Boolean(displays.length && !hasDisplayTargets)" prepend-icon="mdi-image-plus">
+                <v-btn type="submit" color="primary" :disabled="health?.device !== 'cuda' || models.length === 0" prepend-icon="mdi-image-plus">
                   {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
                 </v-btn>
                 <v-btn v-if="generating" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">
