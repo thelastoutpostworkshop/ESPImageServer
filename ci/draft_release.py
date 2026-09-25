@@ -80,14 +80,15 @@ def main() -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Expected the full tested commit SHA")
     ensure_unused_version(repo, tag, sha)
+    download_base = f"https://github.com/{repo}/releases/download/{tag}"
     notes = f"""Draft for review — ESPImageServer {version}
 
 Built from `{sha}` after automated platform, installer lifecycle, and Linux dependency setup checks.
 
 | Download | Platform | Generation |
 | --- | --- | --- |
-| `.exe` | Windows x64 | Image and video generation with a supported NVIDIA GPU; setup downloads dependencies |
-| `.deb` | Ubuntu 24.04 x64 | Image and video generation with a supported NVIDIA GPU; first launch downloads dependencies |
+| [Download Windows installer (.exe)]({download_base}/ESPImageServer-Setup-{version}.exe) | Windows x64 | Image and video generation with a supported NVIDIA GPU; setup downloads dependencies |
+| [Download Linux installer (.deb)]({download_base}/ESPImageServer-{version}-linux-x64.deb) | Ubuntu 24.04 x64 | Image and video generation with a supported NVIDIA GPU; first launch downloads dependencies |
 
 Installers are unsigned. SHA-256 files accompany each installer. macOS is deferred from this release.
 The automated checks do not run generation on a physical GPU. Windows upgrade checks use fixture payloads.

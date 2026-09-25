@@ -28,8 +28,11 @@ Platform checks remain available for pull requests and manual runs.
 4. Publish using GitHub's release editor when you choose to make it public.
    Pushing the tag creates a draft; it does not automatically publish it.
 
-The draft contains two installers and two adjacent `.sha256` files. The
-collector requires exactly that set, checks the version in every filename, and
+The draft contains two installers and two adjacent `.sha256` files. The release
+notes include direct Windows and Linux download links in their table.
+These version-specific links are intended for the published release; while it
+remains a draft, review the files through its attached assets.
+The collector requires exactly that set, checks the version in every filename, and
 recomputes each checksum before uploading. All builds use the workflow's commit;
 the draft targets that same commit. The remote tag must still point to the tested commit (annotated and lightweight
 tags are supported). Existing releases with that version are rejected without

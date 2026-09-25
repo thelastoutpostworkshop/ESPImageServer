@@ -101,7 +101,11 @@ def test_create_is_draft_for_tested_commit(assets, monkeypatch):
     monkeypatch.setattr(release.sys, "argv", ["draft_release.py", str(payload)])
     monkeypatch.setattr(release, "ensure_unused_version", lambda *a: None)
     commands = []
-    monkeypatch.setattr(release.subprocess, "run", lambda args, **kwargs: commands.append(args))
+    notes = []
+    def capture_release(args, **kwargs):
+        commands.append(args)
+        notes.append(Path(args[args.index("--notes-file") + 1]).read_text(encoding="utf-8"))
+    monkeypatch.setattr(release.subprocess, "run", capture_release)
     release.main()
     assert len(commands) == 1
     command = commands[0]
@@ -109,3 +113,6 @@ def test_create_is_draft_for_tested_commit(assets, monkeypatch):
     assert "--verify-tag" in command
     assert "--draft" in command
     assert command[command.index("--target") + 1] == "a" * 40
+    base = "https://github.com/owner/repo/releases/download/v1.2.3"
+    assert f"[Download Windows installer (.exe)]({base}/ESPImageServer-Setup-1.2.3.exe)" in notes[0]
+    assert f"[Download Linux installer (.deb)]({base}/ESPImageServer-1.2.3-linux-x64.deb)" in notes[0]
