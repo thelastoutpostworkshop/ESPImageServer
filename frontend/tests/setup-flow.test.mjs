@@ -73,7 +73,7 @@ test('GitHub is the default source and download ends at an unconfirmed installat
   })
   assert.equal(form.source,'github'); assert.equal(form.update.kind,'update')
   await form.reviewUpdate(); await flush()
-  assert.deepEqual(selections,[{id:'42',board:'JC4827W543',port:'COM8',allowPrerelease:false}])
+  assert.deepEqual(selections,[{id:'42',board:'JC4827W543',port:'COM8'}])
   assert.equal(form.panel,'install'); assert.equal(form.confirmed,false); assert.equal(form.canInstall,false); assert.equal(installs(),0)
 })
 

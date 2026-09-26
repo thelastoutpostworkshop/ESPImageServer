@@ -6,11 +6,11 @@ test('firmware versions compare numerically, including prereleases and build met
     ['1.1.4-rc','1.1.4',-1], ['2.0.0','10.0.0',-1], ['invalid','1.1.4',null]]) assert.equal(compareVersions(a,b), expected)
 })
 
-test('GitHub preview flag is excluded by default even when the version looks stable', () => {
+test('GitHub preview flag is always excluded even when the version looks stable', () => {
   const identity = { board_target: 'CHEAP_YELLOW_DISPLAY', firmware_version: '1.1.4' }
   const releases = { checkedAt: 'today', packages: [{ board: identity.board_target, version: '1.1.5', prerelease: true }] }
   assert.equal(firmwareStatus(identity, releases).kind, 'missing')
-  assert.equal(firmwareStatus(identity, { ...releases, includePrereleases: true }).kind, 'update')
+  assert.equal(firmwareStatus(identity, { ...releases, includePrereleases: true }).kind, 'missing')
 })
 test('update status uses only validated stable packages for the identified board', () => {
   const identity = { board_target:'JC4827W543', firmware_version:'1.1.3' }

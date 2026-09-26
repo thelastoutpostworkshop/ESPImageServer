@@ -46,6 +46,16 @@ function Assert-Rejected([string]$Label, [string]$Arguments, [string]$Board = 'J
 }
 
 Write-Output 'PASS: valid package metadata and SHA-256 hashes'
+foreach ($version in @('1.2.3-beta', '1.2.3+build')) {
+    $rejected = $false
+    try { $null = & $packager -PackageDirectory $fixture -BoardTarget JC4827W543 -FirmwareVersion $version }
+    catch { $rejected = $true }
+    if (-not $rejected) { throw "Unsupported version accepted: $version" }
+    if ((Get-FileHash -LiteralPath $manifestPath).Hash -ne $manifestHash) {
+        throw 'Rejected version changed the existing manifest.'
+    }
+    Write-Output "PASS: rejected version $version"
+}
 Assert-Rejected 'wrong chip' $flashArgs 'ESP32_C6_LCD_147'
 Assert-Rejected 'missing binary' ($flashArgs.Replace('Test.ino.bin', 'Missing.ino.bin'))
 Assert-Rejected 'overlapping regions' ($flashArgs.Replace('0x10000', '0xe000'))

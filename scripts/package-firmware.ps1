@@ -15,7 +15,7 @@ param(
     [ValidateSet('JC4827W543', 'ST7701_320X820', 'ESP32_C6_LCD_147', 'CHEAP_YELLOW_DISPLAY', 'ESP32_S3_AMOLED_143')]
     [string]$BoardTarget,
     [Parameter(Mandatory)]
-    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$')]
+    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')]
     [string]$FirmwareVersion,
     [ValidateLength(0, 2000)][string]$ReleaseNotes = ''
 )

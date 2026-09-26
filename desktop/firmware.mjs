@@ -27,7 +27,7 @@ export async function validatePackage(directory) {
   const m = JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, ''))
   requireValue(m.schema_version === 1 && m.package_type === 'esp-image-display-firmware' && m.installation_type === 'first_install', 'Unsupported firmware manifest.')
   requireValue(Object.hasOwn(boards, m.board_target) && boards[m.board_target] === m.chip, 'Board and chip do not match.')
-  requireValue(typeof m.firmware_version === 'string' && /^\d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/i.test(m.firmware_version), 'Invalid firmware version.')
+  requireValue(typeof m.firmware_version === 'string' && /^\d+\.\d+\.\d+$/i.test(m.firmware_version), 'Invalid firmware version.')
   requireValue(['dio', 'dout', 'qio', 'qout'].includes(m.flash?.mode) && ['20m', '26m', '40m', '80m', '120m'].includes(m.flash?.frequency), 'Unsupported flash settings.')
   requireValue([1, 2, 4, 8, 16, 32, 64, 128].map(n => n * 1048576).includes(m.flash.size_bytes), 'Invalid flash capacity.')
   requireValue(Array.isArray(m.segments) && m.segments.length === 4, 'First installation requires four binary segments.')

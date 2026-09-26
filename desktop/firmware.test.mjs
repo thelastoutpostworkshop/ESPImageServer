@@ -54,6 +54,8 @@ test('valid package keeps binary hashes and uses structured arguments without fu
   assert.deepEqual(args.slice(-2), ['0x10000', 'app.bin'])
 })
 for (const [name, change, message] of [
+  ['prerelease version', m => { m.firmware_version = '1.2.0-beta' }, /version/],
+  ['build suffix', m => { m.firmware_version = '1.2.0+build' }, /version/],
   ['unsafe path', m => { m.segments[0].file = '../boot.bin' }, /filename/],
   ['overlap', m => { m.segments[3].offset = '0xe000' }, /overlap/],
   ['overflow', m => { m.segments[3].offset = '0x400000' }, /capacity/],

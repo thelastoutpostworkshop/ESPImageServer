@@ -17,7 +17,9 @@ From the ESPImageServer repository, run:
   -FirmwareVersion 1.1.2
 ```
 
-Set the board/version to those actually compiled. Accepted board targets are
+Set the board/version to those actually compiled. Versions must use plain
+major.minor.patch numbers (for example, 1.1.14); prerelease and build suffixes
+are not supported. Accepted board targets are
 `JC4827W543`, `ST7701_320X820`, `ESP32_C6_LCD_147`, and
 `CHEAP_YELLOW_DISPLAY`, and `ESP32_S3_AMOLED_143`. The script checks the chip family against the board
 selection, but two boards can share a chip. Board and version remain explicit

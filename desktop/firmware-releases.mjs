@@ -58,7 +58,7 @@ export function releasePackages(releases) {
   requireValue(Array.isArray(releases), 'GitHub returned an invalid release list.')
   const packages = []
   for (const release of releases) {
-    if (release.draft || !/^v\d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/i.test(release.tag_name)) continue
+    if (release.draft || release.prerelease || !/^v\d+\.\d+\.\d+$/i.test(release.tag_name)) continue
     const version = release.tag_name.slice(1), assets = release.assets || []
     if (!Array.isArray(assets)) continue
     const assetURL = name => `${DOWNLOAD}${encodeURIComponent(release.tag_name)}/${encodeURIComponent(name)}`
@@ -71,7 +71,7 @@ export function releasePackages(releases) {
       const asset = matching[0]
       if (!Number.isSafeInteger(asset.id) || asset.browser_download_url !== assetURL(filename) ||
           !Number.isSafeInteger(asset.size) || asset.size < 1 || asset.size > MAX_ZIP) continue
-      packages.push({ id: String(asset.id), board, version, source: 'github', prerelease: Boolean(release.prerelease),
+      packages.push({ id: String(asset.id), board, version, source: 'github',
         notes: typeof release.body === 'string' ? release.body.slice(0, 12000) : '',
         filename, url: assetURL(filename), checksumURL: assetURL('SHA256SUMS.txt'), size: asset.size,
         digest: /^sha256:[a-f0-9]{64}$/.test(asset.digest) ? asset.digest.slice(7) : null })
@@ -142,10 +142,10 @@ export class FirmwareReleases {
     return this.snapshot()
   }
   cancel() { this.controller?.abort(); return this.snapshot() }
-  async select({ id, board, port, allowPrerelease = false } = {}, installer) {
+  async select({ id, board, port } = {}, installer) {
     requireValue(!this.state.busy && !installer.state.busy, 'Wait for the current operation to finish.')
     const pkg = this.state.packages.find(p => p.id === id)
-    requireValue(pkg && pkg.board === board && (!pkg.prerelease || allowPrerelease === true), 'Choose a matching firmware release.')
+    requireValue(pkg && pkg.board === board && !pkg.prerelease && /^\d+\.\d+\.\d+$/.test(pkg.version), 'Choose a matching firmware release.')
     const identity = installer.state.identity, hardware = identity?.hardware_id
     const matchingBoard = () => installer.state.selectedPort === port && isSerialPortPath(port) &&
       (!installer.state.identity || (installer.state.identity.port === port && installer.state.identity.board_target === board)) &&

@@ -73,10 +73,11 @@ async function setup(t, overrides = {}) {
   return {root,f,calls,service,installer,request}
 }
 
-test('catalog excludes drafts, wrong repository URLs and incomplete releases; preserves preview label',()=> {
+test('catalog excludes drafts, wrong repository URLs and incomplete releases and prereleases',()=> {
   const {release:r} = fixture()
   assert.equal(releasePackages([r])[0].board,'CHEAP_YELLOW_DISPLAY')
-  assert.equal(releasePackages([{...r,prerelease:true}])[0].prerelease,true)
+  assert.deepEqual(releasePackages([{...r,prerelease:true}]),[])
+  assert.deepEqual(releasePackages([{...r,tag_name:'v1.1.5-beta'}]),[])
   assert.deepEqual(releasePackages([{...r,draft:true}]),[])
   assert.deepEqual(releasePackages([{...r,assets:r.assets.slice(0,1)}]),[])
   assert.deepEqual(releasePackages([{...r,assets:r.assets.map(a=>({...a,browser_download_url:a.browser_download_url.replace(REPOSITORY,'attacker/repo')}))}]),[])
@@ -115,12 +116,12 @@ test('board change during download prevents selection',async t=> {
   await assert.rejects(s.service.select(s.request,s.installer),/USB display changed/)
   assert.equal(s.installer.selected,undefined)
 })
-test('preview firmware requires explicit opt in and a matching physical board',async t=> {
+test('preview firmware cannot be selected even with a legacy opt in',async t=> {
   const {service,installer,request} = await setup(t)
   service.state.packages[0].prerelease = true
   await assert.rejects(service.select(request,installer),/matching firmware release/)
   await assert.rejects(service.select({...request,board:'JC4827W543',allowPrerelease:true},installer),/matching firmware release/)
-  await service.select({...request,allowPrerelease:true},installer)
+  await assert.rejects(service.select({...request,allowPrerelease:true},installer),/matching firmware release/)
 })
 test('cancellation resets busy state without selecting or flashing',async t=> {
   const s = await setup(t)
