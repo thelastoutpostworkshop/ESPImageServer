@@ -28,10 +28,11 @@ const panel = computed(() => showInstall.value ? 'install' : !identity.value ? '
 const step = computed(() => ({ connect: 1, install: 2, firmware: 2, wifi: 3, connection: 4 }[panel.value]))
 const canInstall = computed(() => available && !locked.value && confirmed.value && port.value && state.value.package && board.value === state.value.package.board)
 const boardItems = [
-  { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543' }, { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820' },
-  { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY' },
-  { title: 'Waveshare ESP32-S3 AMOLED 1.43 (466 × 466)', value: 'ESP32_S3_AMOLED_143' }
+  { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543', image: '/board-catalog/JC4827W543.png' }, { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820', image: '/board-catalog/ST7701_320X820.png' },
+  { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147', image: '/board-catalog/ESP32_C6_LCD_147.png' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY', image: '/board-catalog/CHEAP_YELLOW_DISPLAY.png' },
+  { title: 'Waveshare ESP32-S3 AMOLED 1.43 (466 × 466)', value: 'ESP32_S3_AMOLED_143', image: '/board-catalog/ESP32_S3_AMOLED_143.png' }
 ]
+const detectedBoard = computed(() => boardItems.find(item => item.value === identity.value?.board_target))
 const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Ready to install',
   connecting: 'Connecting to your display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
   identifying: 'Checking firmware startup', boot_verified: 'Firmware installed and startup verified',
@@ -152,6 +153,10 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
       <v-alert v-if="!available" type="info" variant="tonal">Open the updated ESPImageServer desktop app to set up a USB display. Your browser can manage displays already on the network.</v-alert>
       <template v-else>
         <div v-if="identity && panel !== 'connect'" class="setup-summary mb-5"><span>USB connected · {{ identity.board_name }}</span><v-btn variant="text" size="small" :disabled="locked" @click="port = ''; selectPort()">Change display</v-btn></div>
+        <figure v-if="detectedBoard && ['firmware', 'install'].includes(panel)" class="detected-board mb-5">
+          <img :src="detectedBoard.image" :alt="detectedBoard.title" class="board-photo" />
+          <figcaption class="text-body-2 mt-2">{{ detectedBoard.title }}</figcaption>
+        </figure>
         <v-alert v-if="error || state.error || state.identityError" type="error" variant="tonal" class="mb-4">{{ error || state.error || state.identityError }}</v-alert>
         <v-sheet v-if="download.busy" border rounded class="pa-4 mb-4" role="status" aria-live="polite">
           <p class="mb-3">{{ download.download?.stage === 'validating' ? 'Checking downloaded firmware…' : 'Downloading firmware from GitHub…' }}</p>
@@ -181,7 +186,16 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         </section>
         <section v-if="panel === 'install'">
           <h2 class="text-h6 mb-4">{{ state.busy ? stageLabel : 'Review firmware installation' }}</h2>
-          <v-select v-if="!identity" v-model="board" :items="boardItems" label="Physical display model" :disabled="locked" @update:model-value="confirmed = false" /><p v-else class="mb-3">{{ identity.board_name }} · Installed {{ identity.firmware_version }}</p>
+          <fieldset v-if="!identity" class="board-picker mb-4" :disabled="locked">
+            <legend class="text-subtitle-1 mb-2">Choose your physical display model</legend>
+            <p class="text-body-2 text-medium-emphasis mb-3">Match the photo and model name to your board.</p>
+            <div class="board-grid">
+              <label v-for="item in boardItems" :key="item.value" class="board-option" :class="{ selected: board === item.value }">
+                <img :src="item.image" :alt="item.title" class="board-photo" />
+                <span class="board-option-label"><input v-model="board" type="radio" name="firmware-board" :value="item.value" @change="confirmed = false" /><span>{{ item.title }}</span></span>
+              </label>
+            </div>
+          </fieldset><p v-else class="mb-3">{{ identity.board_name }} · Installed {{ identity.firmware_version }}</p>
           <p v-if="!identity" class="mb-3">USB port: {{ port || 'Not selected' }}. Choose the physical display model above before installing.</p>
           <div v-if="source === 'github' && !state.busy" class="mb-4">
             <v-btn v-if="update.latest && !(state.package?.source === 'github' && state.package?.board === update.latest.board && state.package?.version === update.latest.version)" color="primary" variant="tonal" :disabled="locked || libraryBusy" @click="reviewUpdate">Download firmware {{ update.latest.version }}</v-btn>
@@ -223,6 +237,18 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 </template>
 
 <style scoped>
+.board-picker { border: 0; min-width: 0; }
+.board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.board-option { display: flex; flex-direction: column; border: 2px solid rgba(var(--v-theme-on-surface), .2); border-radius: 8px; padding: 10px; cursor: pointer; }
+.board-option.selected { border-color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), .08); }
+.board-option:focus-within { outline: 2px solid rgb(var(--v-theme-primary)); outline-offset: 3px; }
+.board-picker:disabled .board-option { opacity: .6; cursor: default; }
+.board-photo { display: block; width: 100%; height: 160px; object-fit: contain; background: white; border-radius: 4px; }
+.board-option-label { display: flex; align-items: baseline; gap: 8px; padding-top: 10px; font-size: .875rem; }
+.board-option-label input { accent-color: rgb(var(--v-theme-primary)); flex-shrink: 0; }
+.detected-board { max-width: 420px; }
+.detected-board .board-photo { height: 200px; }
+@media (max-width: 480px) { .board-grid { grid-template-columns: 1fr; } }
 .setup-steps { display: flex; gap: 12px; justify-content: space-between; list-style: none; padding: 0; }
 .setup-steps li { display: flex; align-items: center; gap: 8px; color: rgb(var(--v-theme-on-surface), .6); }
 .setup-steps span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgb(var(--v-theme-on-surface), .08); }
