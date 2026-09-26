@@ -1736,7 +1736,10 @@ async function refreshDisplaySdCardInventory() {
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not refresh its SD card list')
       if (result.status !== 'complete') continue
       const requiredVersion = Number(result.report_version) || previousVersion + 1
-      for (let reportAttempt = 0; reportAttempt < 20; reportAttempt += 1) {
+      // The acknowledgement starts an incremental scan; it does not mean the
+      // inventory has arrived. Large cards can exceed the old five-second wait.
+      // Keep requiring a fresh report before deciding whether to reuse a file.
+      for (let reportAttempt = 0; reportAttempt < 120; reportAttempt += 1) {
         checkDisplay()
         const report = await fetchDisplaySdCardReport()
         checkDisplay()
@@ -1745,9 +1748,9 @@ async function refreshDisplaySdCardInventory() {
           if (!report.available) throw new Error('The display reported that no SD card is available')
           return report
         }
-        await new Promise(resolve => window.setTimeout(resolve, 250))
+        await new Promise(resolve => window.setTimeout(resolve, 500))
       }
-      throw new Error('The display confirmed the refresh, but has not sent its updated SD card list')
+      throw new Error('The display has not finished reporting its SD card list. Wait a moment, then try again.')
     }
     throw new Error('The display did not confirm the SD card refresh. Keep it connected and try again.')
   } finally {

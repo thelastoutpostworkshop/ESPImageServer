@@ -46,3 +46,29 @@ for (const switchAt of ['initial inventory', 'command polling']) {
     assert.equal(context.displaySdCardLoading.value, false)
   })
 }
+
+for (const delay of [12000, Infinity]) {
+  test(`SD refresh waits for fresh inventory after acknowledgement (delay ${delay})`, async () => {
+    let elapsed = 0, reports = 0
+    const context = {
+      activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} },
+      selectedDisplayEndpoint: suffix => '/displays/original' + suffix,
+      sdSaveCommandEndpoint,
+      fetchDisplaySdCardReport: async () => ({ available: true, report_version: ++reports > 1 && elapsed >= delay ? 2 : 1 }),
+      fetch: async (url, options) => ({ ok: true, json: async () => options?.method === 'POST'
+        ? { id: 'refresh', display_id: 'original' }
+        : { status: 'complete', report_version: 2 } }),
+      window: { setTimeout: (callback, ms) => { elapsed += ms; callback() } },
+    }
+    const refresh = vm.runInNewContext(`(${refreshFunction.trim()})`, context)
+    if (Number.isFinite(delay)) {
+      assert.equal((await refresh()).report_version, 2)
+      assert.ok(elapsed >= delay)
+    } else {
+      await assert.rejects(refresh(), /has not finished reporting/)
+      assert.ok(elapsed >= 60000 && elapsed < 62000)
+      assert.equal(context.displaySdCard.value.report_version, 1)
+    }
+    assert.equal(context.displaySdCardLoading.value, false)
+  })
+}
