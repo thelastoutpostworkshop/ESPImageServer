@@ -28,9 +28,9 @@ const panel = computed(() => showInstall.value ? 'install' : !identity.value ? '
 const step = computed(() => ({ connect: 1, install: 2, firmware: 2, wifi: 3, connection: 4 }[panel.value]))
 const canInstall = computed(() => available && !locked.value && confirmed.value && port.value && state.value.package && board.value === state.value.package.board)
 const boardItems = [
-  { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543', image: '/board-catalog/JC4827W543.png' }, { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820', image: '/board-catalog/ST7701_320X820.png' },
-  { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147', image: '/board-catalog/ESP32_C6_LCD_147.png' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY', image: '/board-catalog/CHEAP_YELLOW_DISPLAY.png' },
-  { title: 'Waveshare ESP32-S3 AMOLED 1.43 (466 × 466)', value: 'ESP32_S3_AMOLED_143', image: '/board-catalog/ESP32_S3_AMOLED_143.png' }
+  { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543', image: '/ui/board-catalog/JC4827W543.png' }, { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820', image: '/ui/board-catalog/ST7701_320X820.png' },
+  { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147', image: '/ui/board-catalog/ESP32_C6_LCD_147.png' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY', image: '/ui/board-catalog/CHEAP_YELLOW_DISPLAY.png' },
+  { title: 'Waveshare ESP32-S3 AMOLED 1.43 (466 × 466)', value: 'ESP32_S3_AMOLED_143', image: '/ui/board-catalog/ESP32_S3_AMOLED_143.png' }
 ]
 const detectedBoard = computed(() => boardItems.find(item => item.value === identity.value?.board_target))
 const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Ready to install',
