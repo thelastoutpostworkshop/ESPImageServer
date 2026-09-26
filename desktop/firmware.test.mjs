@@ -210,3 +210,16 @@ test('selecting another USB port clears setup state and cannot interrupt a flash
   installer.state.busy = true
   assert.throws(() => installer.selectPort('COM8'), /Wait for USB/)
 })
+
+
+test('AMOLED packages validate as ESP32-S3 and reject a different physical board', async t => {
+  const f = await fixture(t)
+  f.manifest.board_target = 'ESP32_S3_AMOLED_143'
+  f.manifest.flash.size_bytes = 16 * 1048576
+  await f.save()
+  const pkg = await validatePackage(f.directory)
+  assert.equal(pkg.manifest.chip, 'esp32s3')
+  const installer = new FirmwareInstaller('unused')
+  await installer.select(f.directory)
+  assert.throws(() => installer.start('COM3', 'JC4827W543', 115200), /matching physical board/)
+})

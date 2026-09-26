@@ -12,7 +12,7 @@ that binaries are credential-free. It never compiles, flashes, or erases a board
 param(
     [Parameter(Mandatory)][string]$PackageDirectory,
     [Parameter(Mandatory)]
-    [ValidateSet('JC4827W543', 'ST7701_320X820', 'ESP32_C6_LCD_147', 'CHEAP_YELLOW_DISPLAY')]
+    [ValidateSet('JC4827W543', 'ST7701_320X820', 'ESP32_C6_LCD_147', 'CHEAP_YELLOW_DISPLAY', 'ESP32_S3_AMOLED_143')]
     [string]$BoardTarget,
     [Parameter(Mandatory)]
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$')]
@@ -44,21 +44,32 @@ $boardChips = @{
     ST7701_320X820 = 'esp32s3'
     ESP32_C6_LCD_147 = 'esp32c6'
     CHEAP_YELLOW_DISPLAY = 'esp32'
+    ESP32_S3_AMOLED_143 = 'esp32s3'
 }
 $metadataFile = Get-PackageFile 'build.options.json'
 $metadata = [IO.File]::ReadAllText($metadataFile.FullName) | ConvertFrom-Json
 $fqbn = [string]$metadata.fqbn
-if ($fqbn -notmatch '^esp32:esp32:(esp32s3|esp32c6|esp32):(.+)$') {
+if ($fqbn -notmatch '^esp32:esp32:(esp32s3|esp32c6|esp32|waveshare_esp32_s3_touch_amoled_143):(.+)$') {
     throw 'Unsupported or missing ESP32 FQBN in build.options.json.'
 }
-$chip = $Matches[1]
+$boardId = $Matches[1]
+$optionText = $Matches[2]
+$chip = if ($boardId -eq 'waveshare_esp32_s3_touch_amoled_143') { 'esp32s3' } else { $boardId }
 $boardOptions = @{}
-foreach ($option in ($Matches[2] -split ',')) {
+foreach ($option in ($optionText -split ',')) {
     $pair = $option -split '=', 2
     if ($pair.Count -ne 2 -or $boardOptions.ContainsKey($pair[0])) {
         throw 'Invalid or repeated FQBN option.'
     }
     $boardOptions[$pair[0]] = $pair[1]
+}
+if ($boardId -eq 'waveshare_esp32_s3_touch_amoled_143') {
+    if ($BoardTarget -ne 'ESP32_S3_AMOLED_143') { throw 'AMOLED board profile requires the AMOLED target.' }
+    # This named Arduino board has fixed 16 MB flash, without a FlashSize menu.
+    if ($boardOptions.ContainsKey('FlashSize') -and $boardOptions['FlashSize'] -ne '16M') {
+        throw 'AMOLED board requires 16 MB flash.'
+    }
+    $boardOptions['FlashSize'] = '16M'
 }
 if ($chip -ne $boardChips[$BoardTarget]) {
     throw "Board $BoardTarget requires $($boardChips[$BoardTarget]); export uses $chip."

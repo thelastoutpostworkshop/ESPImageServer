@@ -150,3 +150,16 @@ test('download bounds bytes without content-length and explains GitHub rate limi
   await assert.rejects(downloadBytes(base+filename,3,{fetcher:async()=>new Response('1234')}),/size limit/)
   await assert.rejects(downloadBytes(base+filename,3,{fetcher:async()=>new Response('',{status:403})}),/limiting requests/)
 })
+
+
+test('AMOLED release discovery uses its exact target filename', () => {
+  const tag = 'v1.1.14'
+  const base = `https://github.com/thelastoutpostworkshop/ESPImageFirmware/releases/download/${tag}/`
+  const name = 'ESPImageDisplay-ESP32_S3_AMOLED_143-1.1.14.zip'
+  const packages = releasePackages([{ tag_name: tag, assets: [
+    { id: 1, name, state: 'uploaded', size: 100, browser_download_url: base + name },
+    { id: 2, name: 'SHA256SUMS.txt', state: 'uploaded', size: 100, browser_download_url: base + 'SHA256SUMS.txt' }
+  ] }])
+  assert.equal(packages.length, 1)
+  assert.equal(packages[0].board, 'ESP32_S3_AMOLED_143')
+})

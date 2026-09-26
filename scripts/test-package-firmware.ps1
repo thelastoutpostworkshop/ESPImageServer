@@ -94,6 +94,19 @@ if ($manifest.chip -ne 'esp32' -or $manifest.board_target -ne 'CHEAP_YELLOW_DISP
 Write-Output 'PASS: ESP32 QIO preset exports DIO with bootloader at 0x1000'
 $manifestHash = (Get-FileHash -LiteralPath $manifestPath).Hash
 Assert-Rejected 'ESP32 QIO preset rejects conflicting flash mode' ($esp32FlashArgs.Replace('--flash-mode dio', '--flash-mode qout')) 'CHEAP_YELLOW_DISPLAY'
+[IO.File]::WriteAllText((Join-Path $fixture 'build.options.json'),
+    '{"fqbn":"esp32:esp32:waveshare_esp32_s3_touch_amoled_143:FlashMode=qio,PSRAM=enabled,PartitionScheme=app3M_fat9M_16MB"}', $utf8)
+$amoledFlashArgs = $flashArgs.Replace('4MB', '16MB')
+[IO.File]::WriteAllText((Join-Path $fixture 'flash_args'), $amoledFlashArgs, $utf8)
+$null = & $packager -PackageDirectory $fixture -BoardTarget ESP32_S3_AMOLED_143 -FirmwareVersion 1.1.14
+$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+if ($manifest.board_target -ne 'ESP32_S3_AMOLED_143' -or $manifest.chip -ne 'esp32s3' -or $manifest.flash.size_bytes -ne 16MB) {
+    throw 'Named AMOLED profile was not packaged with fixed 16 MB flash.'
+}
+Write-Output 'PASS: named AMOLED profile with fixed 16 MB flash'
+$manifestHash = (Get-FileHash -LiteralPath $manifestPath).Hash
+Assert-Rejected 'AMOLED profile rejects another S3 board target' $amoledFlashArgs 'JC4827W543'
+Assert-Rejected 'AMOLED profile rejects incorrect flash capacity' ($amoledFlashArgs.Replace('16MB', '4MB')) 'ESP32_S3_AMOLED_143'
 # Remove only this explicitly created, verified temporary directory.
 $resolvedFixture = [IO.Path]::GetFullPath($fixture)
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

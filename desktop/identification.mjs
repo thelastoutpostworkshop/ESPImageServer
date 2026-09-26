@@ -34,7 +34,7 @@ export function validateIdentity(message) {
   if (message.protocol !== 1 || !message.ok) throw new Error('Unsupported USB identification protocol.')
   const r = message.result
   if (!r || r.protocol_version !== 1 || !/^[a-f0-9]{12}$/.test(r.hardware_id) ||
-      !['JC4827W543', 'ST7701_320X820', 'ESP32_C6_LCD_147', 'CHEAP_YELLOW_DISPLAY'].includes(r.board_target) ||
+      !['JC4827W543', 'ST7701_320X820', 'ESP32_C6_LCD_147', 'CHEAP_YELLOW_DISPLAY', 'ESP32_S3_AMOLED_143'].includes(r.board_target) ||
       typeof r.board_name !== 'string' || r.board_name.length > 100 ||
       typeof r.firmware_version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/i.test(r.firmware_version) ||
       !Array.isArray(r.capabilities) || !r.capabilities.includes('hello') || !r.capabilities.includes('status') ||

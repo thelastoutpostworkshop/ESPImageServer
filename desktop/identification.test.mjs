@@ -83,3 +83,13 @@ test('automatic post-flash check validates board, version and prior hardware ID'
   await assert.rejects(identifyAfterFlash(original, { board: result.board_target, version: '1.1.1' }, options), /does not match/)
   await assert.rejects(identifyAfterFlash(original, { board: result.board_target, version: result.firmware_version, hardwareId: '000000000000' }, options), /does not match/)
 })
+
+
+test('AMOLED identity preserves its board target and square native dimensions', () => {
+  const amoled = { ...message('amoled'), result: { ...result, board_target: 'ESP32_S3_AMOLED_143',
+    board_name: 'Waveshare 1.43inch AMOLED', width: 466, height: 466 } }
+  const identity = validateIdentity(amoled)
+  assert.equal(identity.board_target, 'ESP32_S3_AMOLED_143')
+  assert.equal(identity.width, 466)
+  assert.equal(identity.height, 466)
+})

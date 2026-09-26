@@ -7,7 +7,8 @@ import { spawn } from 'node:child_process'
 
 export const boards = {
   JC4827W543: 'esp32s3', ST7701_320X820: 'esp32s3',
-  ESP32_C6_LCD_147: 'esp32c6', CHEAP_YELLOW_DISPLAY: 'esp32'
+  ESP32_C6_LCD_147: 'esp32c6', CHEAP_YELLOW_DISPLAY: 'esp32',
+  ESP32_S3_AMOLED_143: 'esp32s3'
 }
 const hash = data => createHash('sha256').update(data).digest('hex')
 const requireValue = (ok, message) => { if (!ok) throw new Error(message) }

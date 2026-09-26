@@ -19,7 +19,7 @@ From the ESPImageServer repository, run:
 
 Set the board/version to those actually compiled. Accepted board targets are
 `JC4827W543`, `ST7701_320X820`, `ESP32_C6_LCD_147`, and
-`CHEAP_YELLOW_DISPLAY`. The script checks the chip family against the board
+`CHEAP_YELLOW_DISPLAY`, and `ESP32_S3_AMOLED_143`. The script checks the chip family against the board
 selection, but two boards can share a chip. Board and version remain explicit
 publisher declarations in the package; USB identification checks the running
 firmware's board/version after flashing when supported by that firmware.
@@ -64,3 +64,12 @@ Run the hardware-free packaging checks with:
 ```powershell
 & .\scripts\test-package-firmware.ps1
 ```
+
+
+For the Waveshare AMOLED 1.43, select `ESP32-S3-AMOLED-1.43` in the firmware
+project and export the four binaries plus build metadata as above. Use
+`-BoardTarget ESP32_S3_AMOLED_143`. The named Arduino FQBN
+`waveshare_esp32_s3_touch_amoled_143` has a fixed 16 MB flash capacity, which the
+packager validates even though it has no FlashSize menu option. It cannot be
+relabeled as another ESP32-S3 display. The app version used for installation
+must include AMOLED target support; older installers will reject this target.

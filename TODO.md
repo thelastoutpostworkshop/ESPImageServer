@@ -75,6 +75,14 @@ video playback. The user builds and flashes firmware manually.
 
 ### Hardware validation
 
+- [ ] **AMOLED 1.43 board acceptance:** Manually compile and flash the new
+  `ESP32-S3-AMOLED-1.43` profile with target `ESP32_S3_AMOLED_143`. Verify
+  SH8601/CO5300 detection on the available hardware, round-screen status text,
+  466 x 466 JPEG colors/edges, FT3168 touch, USB identity/Wi-Fi setup, SD saves,
+  thumbnails, video playback, and offline recovery. Prepare fresh packages with
+  the updated manifest/release tools; no binary has been built or published.
+
+
 - [ ] **Connected experience and save interruption:** Boot with an experience
   saved and ESPImageServer running. Confirm the display waits for commands and
   accepts image saves. Stop the server for over 5 seconds to start fallback;
