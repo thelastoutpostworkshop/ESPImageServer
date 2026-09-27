@@ -51,22 +51,6 @@ Keep SD access and drawing coordinated; some targets share an SPI bus. The
 command interruption, USB setup, and card-removal checks below also apply during
 video playback. The user builds and flashes firmware manually.
 
-### Updates and distribution
-
-- [ ] **Settings-preserving updates:** Define update packages separately from
-  first-install packages. Preserve Wi-Fi/display settings and NVS, account for
-  merged-binary padding, detect partition-layout changes, and explain required
-  migrations or resets. Test settings preservation and interrupted-update
-  recovery; keep full erase/factory reset an explicit choice.
-- [ ] **Offline release bundle:** Bundle tested firmware packages for all four
-  boards. Verify the packaged esptool and serial dependencies on Windows without
-  a separate Arduino/Python installation, including driver, charge-only cable,
-  port-change, and port-in-use cases. GitHub downloads are available; an offline bundle remains optional.
-- [ ] **Board and release documentation:** Document the tested connector,
-  BOOT/RESET procedure, drivers, and build profile for each board; add model
-  pictures for manual selection. Publish versioned firmware packages with
-  accurate release notes and complete a packaged-app hardware pass. The user
-  compiles firmware manually; rebuild the desktop installer only when requested.
 
 ## Browser UX review — 2026-09-06
 
