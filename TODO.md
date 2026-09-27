@@ -58,22 +58,6 @@ Reviewed the running app reporting v1.0.62 at `http://127.0.0.1:8000`,
 including desktop and 390×844 phone layouts. These are observed behavior and
 design follow-ups; implementation causes have not been verified.
 
-1. **P1 — Validate empty image prompts and show readable API errors.**
-   Submitting an empty image prompt through **Add image to queue** displayed
-   `Could not generate the image: [object Object]`. Prevent empty/whitespace
-   submissions, show “Enter an image description” beside the prompt, and
-   translate structured API errors into useful messages. Verify that an
-   invalid submission adds no job and does not obscure an existing job's
-   progress or cancellation state.
-
-2. **P1 — Reconcile SD-card refresh acknowledgements, results, and errors.**
-   Refreshing the active display's SD card produced a completed status in the
-   header, followed by an error saying the updated list had not arrived. The
-   error remained after the list timestamp updated and also appeared on the
-   Generate image page. Distinguish “request acknowledged” from “list
-   updated,” clear resolved errors when a fresh list arrives, and scope
-   feedback to the relevant display and operation. Verify delayed list
-   delivery and timeout recovery.
 
 3. **P2 — Make desktop Creation Library filters readable.** With the library
    pinned at its observed width, all three filter labels were truncated to
@@ -81,25 +65,6 @@ design follow-ups; implementation causes have not been verified.
    or stack filters when the pane is narrow. Keep the active display context
    available without putting its full name inside every narrow field. Check
    selected values and clear controls at desktop and phone widths.
-
-4. **P2 — Label SD-card actions and use consistent library terminology.**
-   The SD-card row action buttons exposed no accessible names. Add specific
-   names such as “Show on display” and “Delete file,” with tooltips and enough
-   row context to distinguish files for assistive technology. Rename visible
-   “Creation Gallery” references, including automatic-save controls, to
-   **Creation Library**. Verify keyboard and screen-reader discoverability.
-
-5. **P2 — Put the prompt first and simplify generation settings.** The
-   image form puts model, rotation, and automatic saving before the prompt;
-   steps and seed also lengthen the phone workflow. Move the prompt to the
-   beginning and group secondary controls such as seed, steps, and rotation
-   in an expandable settings area. Keep selected settings discoverable and
-   make the primary generation action easy to reach on phones. This is a
-   design recommendation, not a reproduced functional failure.
-
-Library filtering, saved-image previews, and Escape-to-close worked during
-the review. The original prompt, thumbnail view, desktop viewport, and
-pinned library state were restored after testing.
 
 ## Mobile frontend review
 
