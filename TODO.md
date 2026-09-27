@@ -1,27 +1,5 @@
 # TODO
 
-## Firmware and USB setup — remaining work
-
-### Firmware reliability review — 2026-09-12
-
-Source review of the separate ESPImageDisplay repository. The three P1 source
-changes are implemented for firmware 1.1.6 and app 1.0.76, with transaction/parser
-assertions and app tests. The four P2 reliability improvements are implemented for
-firmware 1.1.7: content restoration after recovery, checked atomic offline
-settings, persistent SD save ordering, and rollover-safe
-scheduling. Board selection remains manual in FirmwareTarget.h with the matching
-Arduino Maker Workshop profile, as requested by the user. Completed source items have
-been removed from this list. Their hardware acceptance checks remain below;
-automated checks do not establish recovery on a real board/card.
-Settings-preserving updates remain under Updates and distribution.
-
-Current firmware waits for server contact at startup and activates a saved
-experience after a 5-second grace period once failed contact is detected. Previous
-Waveshare ST7701 320x820 logs confirmed activation with the old 30-second delay
-and return to server control on reconnection. The shorter delay, video playback during an outage,
-interrupted operations, and equivalent behavior on other boards still need
-hardware validation below.
-
 ### Video playback performance - remaining work
 
 The completed instrumentation, background HTTP/mDNS worker, buffered SD reads,
