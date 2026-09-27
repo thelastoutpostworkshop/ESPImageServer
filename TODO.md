@@ -66,37 +66,6 @@ design follow-ups; implementation causes have not been verified.
    available without putting its full name inside every narrow field. Check
    selected values and clear controls at desktop and phone widths.
 
-## Mobile frontend review
-
-1. **P2 — Add a mobile visual/regression test pass.** Check at 390×844
-   portrait, 844×390 landscape, and a notched iPhone Safari view. Cover
-   opening and closing the Creation Library, navigation, long display names,
-   and the Queue, Diagnostics, and result-action layouts.
-
-## Multi-display UX follow-ups
-
-5. **P2 — Improve physical display identification.** Support friendly room
-   names and expose a short hardware/MAC suffix in the chooser for displays
-   with similar names.
-
-## Backend and installer hardening
-
-1. **P1 — Apply input-size and media-validation limits at API boundaries.**
-   Several endpoints read full request bodies or open untrusted image files
-   without a shared maximum byte/pixel policy. Enforce request-size limits,
-   validate JPEG decoding and dimensions before storing or processing files,
-   and return clear 4xx errors. Test oversized, truncated, and decompression-
-   bomb-style images.
-
-2. **P2 — Serialize and atomically publish display MJPEG conversions.**
-   Concurrent requests for the same saved video can run FFmpeg twice and write
-   the same cache file. Add a keyed conversion lock, write to a temporary file
-   then rename it, and remove partial files after failure or cancellation.
-
-3. **P2 — Sign and verify release artifacts.** Add Windows code signing for
-   the installer and packaged executable, then document verification of the
-   published SHA-256 checksum. This reduces SmartScreen friction and makes a
-   downloaded installer verifiable.
 
 ## Platform delivery - remaining work
 
