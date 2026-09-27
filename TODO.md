@@ -72,49 +72,6 @@ design follow-ups; implementation causes have not been verified.
 Prioritize the Windows x64 and Ubuntu 24.04 x64 release. macOS release delivery
 is deferred. Keep the no-CPU-generation policy and preserve Windows behavior.
 
-### Windows verification
-
-- [ ] **P1 - Complete Windows USB UI verification:** Shared
-  `desktop/serial-ports.mjs` now enumerates Windows, Linux, and macOS serial paths
-  through SerialPort.list(), replacing PowerShell enumeration. Selection checks
-  the detected list; identification, flashing, and Wi-Fi setup recheck presence
-  before opening. Automated tests cover native path formats, firmware release
-  selection, simulated flashing/setup, disappearance, and device identity checks.
-  Windows hardware checks passed through the shared desktop modules on COM26
-  (Waveshare 3.16inch, firmware 1.1.13): enumeration, physical unplug/replug,
-  identification, identity refresh, Wi-Fi scanning, and reopening after scanning.
-  Initial access denial cleared after releasing the port; identification then
-  timed out until a USB reconnect. The timeout cause remains unconfirmed.
-  Still verify the Windows Electron UI flow (native UI automation was unavailable).
-- [ ] **P1 - Complete Windows native folder-action verification:** Folder actions
-  are isolated in `folder_actions.py`, with capability reporting, Windows chooser,
-  Windows/macOS/Linux folder opening, and explicit unsupported-action errors.
-  Electron retains its native dialogs. Settings allows manual server-side path
-  entry when a chooser is unavailable. Adapter/API tests cover fallback, cancel,
-  overrides, and validation. Actual Windows dialogs/opening remain to be checked.
-  Added desktop smoke coverage through real preload/IPC for selection, cancel,
-  native errors, and preservation of the saved library path; OS dialog/opener
-  calls are stubbed. Backend checks cover Wayland, missing macOS opener, headless
-  API/manual-path fallback, and opener failures/timeouts. The user confirmed this
-  added coverage passed in CI on Windows, Ubuntu, and macOS.
-  Use CONTRIBUTING.md's folder checklist for the remaining Windows checks.
-### Release and updates
-
-- [ ] **P2 - Finish native distribution and update flows:** Complete native
-  icons, signing/notarization, historical settings-schema migration, and
-  automatic updates. Preserve settings and user creations. Keep pyproject.toml
-  as the version source and publish per-platform checksums. macOS release
-  delivery remains deferred; Windows code signing is tracked under Backend and
-  installer hardening.
-- [ ] **P1 - Finish Windows and Linux release:** Release collection now includes
-  only the Windows x64 .exe and Ubuntu 24.04 x64 .deb with their checksums.
-  macOS release delivery is deferred while its CI coverage remains. Run the
-  tag-triggered draft workflow for a matching v<version> tag, review its downloads and
-  user-facing release notes, then publish when ready. Existing drafts are not
-  modified by these source changes; use an unused version for a fresh draft.
-  Tag-trigger validation passes locally; confirm the first hosted tag run.
-## Plan the Hugging Face major-version upgrade
-
 Do not upgrade `transformers` 5.x or `huggingface-hub` 1.x independently.
 Treat them as one planned upgrade with Diffusers and the supported image/video
 models.
