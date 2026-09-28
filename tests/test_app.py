@@ -1408,3 +1408,34 @@ def test_idle_server_periodically_cleans_stale_conversions(tmp_path, monkeypatch
         stale.write_bytes(b"temporary")
         assert cleaned.wait(3)
         assert not stale.exists()
+
+
+def test_firmware_checks_default_on_and_disabled_setting_survives_restart(tmp_path):
+    from esp_image_server.firmware_updates import FirmwareUpdateChecker
+    from esp_image_server.display_registry import DisplayRegistry
+    calls = []
+    checker = FirmwareUpdateChecker(lambda: calls.append(True) or [])
+    store = AppSettingsStore(tmp_path / "settings.json")
+    registry = DisplayRegistry(tmp_path / "displays.sqlite3")
+    registry.register("test-firmware", "My display", 480, 272, "1.1.0")
+    app = create_app(Settings(), FakeGenerator(), app_settings_store=store,
+                     display_registry=registry, firmware_update_checker=checker, enable_mdns=False)
+    with TestClient(app) as client:
+        assert client.get("/app-settings").json()["auto_check_firmware_updates"] is True
+        assert client.get("/firmware-updates").json()["enabled"] is True
+        assert len(calls) == 1
+        assert client.put("/app-settings", json={"auto_check_firmware_updates": False}).status_code == 200
+        checker.next_check = 0
+        assert client.get("/firmware-updates").json()["enabled"] is False
+        assert len(calls) == 1
+        client.put("/app-settings", json={"jpeg_quality": 80})
+        assert store.get()["auto_check_firmware_updates"] is False
+    restarted = create_app(Settings(), FakeGenerator(), app_settings_store=store,
+                           display_registry=registry, firmware_update_checker=checker, enable_mdns=False)
+    with TestClient(restarted) as client:
+        assert client.get("/app-settings").json()["auto_check_firmware_updates"] is False
+        assert client.get("/firmware-updates").json()["updates"] == []
+        assert len(calls) == 1
+        client.put("/app-settings", json={"auto_check_firmware_updates": True})
+        client.get("/firmware-updates")
+        assert len(calls) == 2

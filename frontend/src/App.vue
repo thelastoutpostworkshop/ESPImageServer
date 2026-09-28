@@ -4,6 +4,7 @@ import { useDisplay } from 'vuetify'
 import QRCode from 'qrcode'
 import { generationJobDetail, generationHasMeasuredProgress } from './generationStatus.js'
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
+import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
 
@@ -213,6 +214,8 @@ const videoJpegQuality = ref(10)
 const autoSaveImages = ref(true)
 const autoSaveVideos = ref(true)
 const confirmDeletion = ref(true)
+const autoCheckFirmwareUpdates = ref(true)
+const firmwareChecksEnabled = ref(false)
 const autoSaveSaving = ref(false)
 const autoSaveVideoSaving = ref(false)
 const settingsSaving = ref(false)
@@ -2079,6 +2082,8 @@ async function loadAppSettings() {
     autoSaveImages.value = settings.auto_save_images !== false
     autoSaveVideos.value = settings.auto_save_videos !== false
     confirmDeletion.value = settings.confirm_deletion !== false
+    autoCheckFirmwareUpdates.value = settings.auto_check_firmware_updates !== false
+    firmwareChecksEnabled.value = autoCheckFirmwareUpdates.value
   } catch {
     // The rest of the app remains usable while settings are unavailable.
   }
@@ -2098,7 +2103,8 @@ async function saveAppSettings() {
         video_jpeg_quality: Number(videoJpegQuality.value),
         auto_save_images: autoSaveImages.value,
         auto_save_videos: autoSaveVideos.value,
-        confirm_deletion: confirmDeletion.value
+        confirm_deletion: confirmDeletion.value,
+        auto_check_firmware_updates: autoCheckFirmwareUpdates.value
       })
     })
     if (!response.ok) {
@@ -2114,6 +2120,8 @@ async function saveAppSettings() {
     autoSaveImages.value = settings.auto_save_images !== false
     autoSaveVideos.value = settings.auto_save_videos !== false
     confirmDeletion.value = settings.confirm_deletion !== false
+    autoCheckFirmwareUpdates.value = settings.auto_check_firmware_updates !== false
+    firmwareChecksEnabled.value = autoCheckFirmwareUpdates.value
     await loadSavedImages()
     settingsStatus.value = 'Settings saved. Image and video quality settings apply to future exports.'
   } catch (requestError) {
@@ -3430,6 +3438,7 @@ onUnmounted(() => {
 
     <v-main class="app-shell">
       <v-container class="app-container py-4 py-sm-7">
+        <FirmwareUpdateNotice :displays="displays" :enabled="firmwareChecksEnabled" @setup="navigate('firmware')" />
         <v-alert v-if="!compact && !mobileAccessPromptDismissed" type="info" variant="tonal" icon="mdi-cellphone-link" class="mb-4">
           <div class="font-weight-medium">Use ESPImageServer from your phone</div>
           <div class="text-body-2 mt-1">Control generation and your display from another device on the same Wi-Fi network.</div>
@@ -4337,6 +4346,14 @@ onUnmounted(() => {
               <div class="text-body-2 text-medium-emphasis mb-5">
                 Used when saving videos to the display SD card. Lower values retain more detail but create larger files; 10 is recommended.
               </div>
+              <v-switch
+                v-model="autoCheckFirmwareUpdates"
+                label="Automatically check for firmware updates"
+                hint="Notify me when newer firmware is available for a connected board. Checks GitHub once an hour; updates are installed manually by USB."
+                persistent-hint
+                color="primary"
+                class="mb-4"
+              />
               <v-switch
                 v-model="confirmDeletion"
                 label="Ask before deleting saved images, videos, and SD card files"

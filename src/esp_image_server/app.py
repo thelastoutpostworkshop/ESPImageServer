@@ -31,6 +31,7 @@ from . import folder_actions
 from .config import Settings
 from .generation_capabilities import GenerationCapabilities
 from .app_settings import AppSettingsStore
+from .firmware_updates import FirmwareUpdateChecker
 from .display import ActiveDisplayStore
 from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandStore
 from .display_registry import (
@@ -187,6 +188,7 @@ class AppSettingsRequest(BaseModel):
     auto_save_images: bool | None = None
     auto_save_videos: bool | None = None
     confirm_deletion: bool | None = None
+    auto_check_firmware_updates: bool | None = None
 
 
 class RegisterDeviceRequest(BaseModel):
@@ -257,6 +259,7 @@ def create_app(
     mjpeg_cache: MjpegConversionCache | None = None,
     video_generator: LTXVideoGenerator | None = None,
     enable_mdns: bool = True,
+    firmware_update_checker: FirmwareUpdateChecker | None = None,
 ) -> FastAPI:
     supplied_settings = settings is not None
     settings = settings or Settings.from_env()
@@ -290,7 +293,9 @@ def create_app(
     mjpeg_cache = mjpeg_cache or MjpegConversionCache(video_output_path / "display-mjpeg")
     sd_thumbnail_path = cache_dir() / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
+    firmware_update_checker = firmware_update_checker or FirmwareUpdateChecker()
     persisted_app_settings = app_settings_store.get()
+    auto_check_firmware_updates = persisted_app_settings.get("auto_check_firmware_updates") is not False
     library_location = persisted_app_settings.get("image_library_location")
     image_library = image_library or ImageLibrary(Path(library_location) if isinstance(library_location, str) else None)
     video_library = VideoLibrary(image_library.path)
@@ -1272,6 +1277,15 @@ def create_app(
             "default_height": settings.output_height,
         }
 
+    @app.get("/firmware-updates")
+    def get_firmware_updates() -> dict[str, object]:
+        if not auto_check_firmware_updates:
+            return {"enabled": False, "updates": [], "checked_at": None, "error": ""}
+        result = firmware_update_checker.check([device.as_dict() for device in display_registry.list()])
+        if not auto_check_firmware_updates:
+            return {"enabled": False, "updates": [], "checked_at": None, "error": ""}
+        return {"enabled": True, **result}
+
     @app.get("/app-settings")
     def get_app_settings() -> dict[str, object]:
         return {
@@ -1282,11 +1296,13 @@ def create_app(
             "auto_save_images": auto_save_images,
             "auto_save_videos": auto_save_videos,
             "confirm_deletion": confirm_deletion,
+            "auto_check_firmware_updates": auto_check_firmware_updates,
         }
 
     @app.put("/app-settings")
     def update_app_settings(request: AppSettingsRequest) -> dict[str, object]:
         nonlocal jpeg_quality, video_jpeg_quality, auto_save_images, auto_save_videos, confirm_deletion
+        nonlocal auto_check_firmware_updates
         if request.image_library_location is not None:
             location = Path(request.image_library_location)
             if not location.is_absolute():
@@ -1306,6 +1322,8 @@ def create_app(
             auto_save_videos = request.auto_save_videos
         if request.confirm_deletion is not None:
             confirm_deletion = request.confirm_deletion
+        if request.auto_check_firmware_updates is not None:
+            auto_check_firmware_updates = request.auto_check_firmware_updates
         app_settings_store.set({
             "image_library_location": str(image_library.path),
             "jpeg_quality": jpeg_quality,
@@ -1313,6 +1331,7 @@ def create_app(
             "auto_save_images": auto_save_images,
             "auto_save_videos": auto_save_videos,
             "confirm_deletion": confirm_deletion,
+            "auto_check_firmware_updates": auto_check_firmware_updates,
         })
         return get_app_settings()
 
