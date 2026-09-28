@@ -169,6 +169,16 @@ async function createWindow() {
     }
   })
   const window = mainWindow
+  // Store and other HTTPS links belong in the user's browser, not a new app window.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const destination = new URL(url)
+      if (destination.protocol === 'https:' && !destination.username && !destination.password) {
+        shell.openExternal(destination.href).catch(error => console.warn('Could not open browser link:', error.message))
+      }
+    } catch { /* Invalid URLs must not open a desktop window. */ }
+    return { action: 'deny' }
+  })
   window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
   if (savedPositionIsVisible(windowState)) mainWindow.setPosition(windowState.x, windowState.y)
   mainWindow.on('resize', scheduleWindowStateSave)

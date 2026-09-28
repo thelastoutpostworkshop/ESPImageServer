@@ -4,6 +4,7 @@ import { useDisplay } from 'vuetify'
 import QRCode from 'qrcode'
 import { generationJobDetail, generationHasMeasuredProgress } from './generationStatus.js'
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
+import BoardShopping from './components/BoardShopping.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
@@ -4016,6 +4017,7 @@ onUnmounted(() => {
             <v-progress-linear v-if="displayCardsLoading" indeterminate color="primary" class="mb-4" />
             <v-alert v-if="!displays.some(target => target.online)" type="info" variant="tonal" class="mb-4">
               Waiting for a display. Saved displays and their settings are kept; connection status reflects this server session.
+              <BoardShopping compact />
             </v-alert>
             <v-row v-if="displays.length">
               <v-col v-for="target in displays" :key="target.id" cols="12" md="6">

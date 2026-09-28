@@ -1,4 +1,5 @@
 <script setup>
+import BoardShopping from './BoardShopping.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UsbWifiSetup from './UsbWifiSetup.vue'
 import SetupConnection from './SetupConnection.vue'
@@ -147,6 +148,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
     <v-card-text class="pa-6">
       <div class="d-flex align-center ga-3 mb-2"><v-icon icon="mdi-monitor" size="28" /><h1 class="text-h5">Set up display</h1></div>
       <p class="text-medium-emphasis mb-6">{{ identity ? identity.board_name : 'Connect your display. We’ll guide you through the rest.' }}</p>
+      <BoardShopping v-if="!identity && !locked" />
       <ol class="setup-steps mb-6" aria-label="Display setup progress">
         <li v-for="(title, index) in ['Connect', 'Firmware', 'Wi-Fi', 'Ready']" :key="title" :aria-current="step === index + 1 ? 'step' : undefined" :class="{ current: step === index + 1, complete: step > index + 1 }"><span>{{ step > index + 1 ? '✓' : index + 1 }}</span>{{ title }}</li>
       </ol>
