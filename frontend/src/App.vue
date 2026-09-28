@@ -537,8 +537,8 @@ function creationDisplayName(creation) {
 
 const creationSdCardInventoryConfirmed = computed(() => Number(displaySdCard.value?.report_version) > 0)
 const creationSdCardFilterOptions = computed(() => [
-  { title: onDisplaySdCardLabel.value, value: 'on_sd_card' },
-  { title: display.value?.connected ? `Not on ${display.value.name}'s SD card` : 'Not on display SD card', value: 'not_on_sd_card' }
+  { title: 'Yes', value: 'on_sd_card' },
+  { title: 'No', value: 'not_on_sd_card' }
 ])
 
 function displaySdCardFiles() {
@@ -3057,62 +3057,65 @@ onUnmounted(() => {
           class="mb-5"
         />
         <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
+        <div class="creation-library-context text-body-2 mb-3">
+          <strong>Active display:</strong> {{ display?.connected ? display.name : 'No display selected' }}
+        </div>
         <div class="d-flex align-center flex-wrap ga-2 mb-3">
           <v-chip v-if="creationSdCardInventoryConfirmed && displaySdCard.available" size="small" color="success" variant="tonal" prepend-icon="mdi-sd">
-            {{ displaySdCardLabel }} status reported
+            SD card status reported
           </v-chip>
           <v-chip v-else-if="creationSdCardInventoryConfirmed" size="small" color="warning" variant="tonal" prepend-icon="mdi-sd-off">
-            No SD card reported by {{ display?.name || 'this display' }}
+            No SD card reported
           </v-chip>
           <v-chip v-else size="small" variant="tonal" prepend-icon="mdi-help-circle-outline">
-            {{ displaySdCardLabel }} status not checked
+            SD card status not checked
           </v-chip>
           <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="refreshCreationLibrarySdCardStatus">
-            Refresh {{ displaySdCardLabel }} status
+            Refresh SD card status
           </v-btn>
         </div>
         <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-3">
           Last reported by {{ display?.name || 'the display' }}: {{ formatDateTime(displaySdCard.reported_at) }}
         </div>
-        <v-row dense class="mb-3">
-          <v-col cols="12" md="4">
+        <div class="creation-library-filters mb-3">
             <v-select
               v-model="creationModelFilter"
               :items="creationModelOptions"
-              label="Filter by model"
-              prepend-inner-icon="mdi-brain"
+              label="Model"
+              persistent-clear
               clearable
               hide-details
               density="compact"
               variant="outlined"
-            />
-          </v-col>
-          <v-col cols="12" md="4">
+            >
+              <template #selection="{ item }"><span class="creation-library-filter-value">{{ item.title }}</span></template>
+            </v-select>
             <v-select
               v-model="creationDisplayFilter"
               :items="creationDisplayOptions"
-              label="Filter by display"
-              prepend-inner-icon="mdi-monitor-dashboard"
+              label="Display"
+              persistent-clear
               clearable
               hide-details
               density="compact"
               variant="outlined"
-            />
-          </v-col>
-          <v-col cols="12" md="4">
+            >
+              <template #selection="{ item }"><span class="creation-library-filter-value">{{ item.title }}</span></template>
+            </v-select>
             <v-select
               v-model="creationSdCardFilter"
               :items="creationSdCardFilterOptions"
-              :label="`Filter by ${displaySdCardLabel}`"
-              prepend-inner-icon="mdi-sd"
+              label="On SD card"
+              persistent-clear
               clearable
               :disabled="!creationSdCardInventoryConfirmed"
               hide-details
               density="compact"
               variant="outlined"
-            />
-          </v-col>
-        </v-row>
+            >
+              <template #selection="{ item }"><span class="creation-library-filter-value">{{ item.title }}</span></template>
+            </v-select>
+        </div>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
         <div v-if="!savedImagesLoading && filteredSavedImages.length && imageLibraryView === 'thumbnails'" class="saved-image-library">
           <section v-for="group in savedImageGroups" :key="group.modelName" class="saved-image-group">

@@ -52,21 +52,6 @@ command interruption, USB setup, and card-removal checks below also apply during
 video playback. The user builds and flashes firmware manually.
 
 
-## Browser UX review — 2026-09-06
-
-Reviewed the running app reporting v1.0.62 at `http://127.0.0.1:8000`,
-including desktop and 390×844 phone layouts. These are observed behavior and
-design follow-ups; implementation causes have not been verified.
-
-
-3. **P2 — Make desktop Creation Library filters readable.** With the library
-   pinned at its observed width, all three filter labels were truncated to
-   “Filt…”. Use short labels such as **Model**, **Display**, and **On SD card**,
-   or stack filters when the pane is narrow. Keep the active display context
-   available without putting its full name inside every narrow field. Check
-   selected values and clear controls at desktop and phone widths.
-
-
 ## Platform delivery - remaining work
 
 Prioritize the Windows x64 and Ubuntu 24.04 x64 release. macOS release delivery

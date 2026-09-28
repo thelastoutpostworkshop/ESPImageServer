@@ -110,3 +110,16 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
   white-space: normal;
   -webkit-line-clamp: unset;
 }
+
+/* Size filters by the resizable library pane, not the browser breakpoint. */
+.creation-library-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+}
+.creation-library-filters .v-input { min-width: 0; }
+.creation-library-filters .v-select__selection { max-width: 100%; }
+.creation-library-filter-value, .creation-library-context {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
