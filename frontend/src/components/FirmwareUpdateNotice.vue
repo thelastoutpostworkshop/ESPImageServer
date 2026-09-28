@@ -7,7 +7,7 @@ const updates = ref([])
 const dismissed = ref(new Set())
 const canInstall = Boolean(window.espImageServerDesktop?.firmwareReleases)
 const visible = computed(() => props.enabled ? updates.value.filter(update =>
-  props.displays.some(display => display.id === update.display_id && display.online && display.firmware_version === update.installed_version) &&
+  props.displays.some(display => display.id === update.display_id && display.board_target === update.board && display.online && display.firmware_version === update.installed_version) &&
   !dismissed.value.has(`${update.display_id}:${update.version}`)) : [])
 let timer, controller
 
@@ -27,7 +27,7 @@ async function check() {
   } catch { /* A failed check must not interrupt normal use. */ }
 }
 
-watch(() => `${props.enabled}:${props.displays.map(d => `${d.id}:${d.online}:${d.firmware_version}`).sort().join('|')}`, check)
+watch(() => `${props.enabled}:${props.displays.map(d => `${d.id}:${d.online}:${d.firmware_version}:${d.board_target}`).sort().join('|')}`, check)
 onMounted(() => { check(); timer = window.setInterval(check, 60000) })
 onUnmounted(() => { window.clearInterval(timer); controller?.abort() })
 </script>

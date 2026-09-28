@@ -152,7 +152,7 @@ Run `npm --prefix desktop test` for hardware-free installer tests.
 
 ## Connect your display
 
-Start your ESP32 display on the same Wi-Fi network as the computer. The board registers its name and screen size automatically. Once connected, ESPImageServer shows the display name and resolution near the top of the app.
+Start your ESP32 display on the same Wi-Fi network as the computer. Firmware 1.1.39 and later registers its compiled board target, firmware version, name, and screen size automatically. Update the app and firmware together: registration requires an explicit `board_target`. Automatic firmware update notifications use this identifier, never screen dimensions or a user-assigned name. Once connected, ESPImageServer shows the display name and resolution near the top of the app.
 
 Generated images are automatically sized for the physical display. No manual image-size setup is needed.
 

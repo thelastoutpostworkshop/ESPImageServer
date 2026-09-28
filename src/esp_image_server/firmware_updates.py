@@ -9,14 +9,9 @@ from urllib.request import Request, urlopen
 
 REPOSITORY = "https://github.com/thelastoutpostworkshop/ESPImageFirmware"
 API = "https://api.github.com/repos/thelastoutpostworkshop/ESPImageFirmware/releases"
-# Native dimensions distinguish the currently supported profiles, even after renaming.
-# This is only a notification hint, never authority to choose or flash a binary.
-BOARD_PROFILES = {
-    (480, 272): "JC4827W543",
-    (320, 820): "ST7701_320X820",
-    (172, 320): "ESP32_C6_LCD_147",
-    (240, 320): "CHEAP_YELLOW_DISPLAY",
-    (466, 466): "ESP32_S3_AMOLED_143",
+SUPPORTED_BOARD_TARGETS = {
+    "JC4827W543", "ST7701_320X820", "ESP32_C6_LCD_147",
+    "CHEAP_YELLOW_DISPLAY", "ESP32_S3_AMOLED_143",
 }
 
 
@@ -70,7 +65,7 @@ def latest_releases(releases):
 
         if not has_asset("SHA256SUMS.txt", 65536):
             continue
-        for board in BOARD_PROFILES.values():
+        for board in SUPPORTED_BOARD_TARGETS:
             if has_asset(f"ESPImageDisplay-{board}-{version}.zip", 32 * 1024 * 1024):
                 if board not in latest or key > version_key(latest[board]["version"]):
                     latest[board] = {"version": version, "release_url": f"{REPOSITORY}/releases/tag/{tag}"}
@@ -89,7 +84,7 @@ class FirmwareUpdateChecker:
 
     def check(self, displays):
         candidates = [d for d in displays if d.get("online")
-                      and (d.get("width"), d.get("height")) in BOARD_PROFILES
+                      and d.get("board_target") in SUPPORTED_BOARD_TARGETS
                       and version_key(d.get("firmware_version")) is not None]
         if not candidates:
             return {"updates": [], "checked_at": self.checked_at, "error": ""}
@@ -105,7 +100,7 @@ class FirmwareUpdateChecker:
                     self.next_check = self.clock() + 900
             updates = []
             for display in candidates:
-                board = BOARD_PROFILES[(display["width"], display["height"])]
+                board = display["board_target"]
                 release = self.latest.get(board)
                 if release and version_key(release["version"]) > version_key(display["firmware_version"]):
                     updates.append({"display_id": display["id"], "name": display["name"],

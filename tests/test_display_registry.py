@@ -12,7 +12,7 @@ def test_display_registry_persists_mac_profiles_and_per_display_rotation(tmp_pat
         480,
         272,
         "1.2.3",
-        {"sd_card": True},
+        {"sd_card": True}, board_target="JC4827W543",
     )
     registry.set_rotation(display.id, 90)
     registry.set_video_rotation(display.id, 270)
@@ -21,6 +21,8 @@ def test_display_registry_persists_mac_profiles_and_per_display_rotation(tmp_pat
     restored = restarted_registry.get(display.id)
 
     assert restored.name == "Kitchen display"
+    assert restored.board_target == "JC4827W543"
+    assert restored.as_dict()["board_target"] == "JC4827W543"
     assert restored.hardware_id == "aa:bb:cc:dd:ee:ff"
     assert restored.rotation == 90
     assert restored.video_rotation == 270
@@ -40,12 +42,13 @@ def test_display_registry_persists_mac_profiles_and_per_display_rotation(tmp_pat
 
 def test_registering_a_hardware_id_keeps_its_display_id_and_rotation(tmp_path) -> None:
     registry = DisplayRegistry(tmp_path / "displays.sqlite3")
-    first_display = registry.register("123456", "Office", 320, 820, "1.0.0")
+    first_display = registry.register("123456", "Office", 320, 820, "1.0.0", board_target="JC4827W543")
     registry.set_rotation(first_display.id, 270)
     registry.set_video_rotation(first_display.id, 90)
-    second_display = registry.register("123456", "Office screen", 320, 820, "1.1.0")
+    second_display = registry.register("123456", "Office screen", 320, 820, "1.1.0", board_target="ST7701_320X820")
 
     assert second_display.id == first_display.id
+    assert second_display.board_target == "ST7701_320X820"
     assert second_display.name == "Office screen"
     assert second_display.rotation == 270
     assert second_display.video_rotation == 90
@@ -55,7 +58,7 @@ def test_registering_a_hardware_id_keeps_its_display_id_and_rotation(tmp_path) -
 def test_display_activity_is_persisted_with_the_display_profile(tmp_path) -> None:
     path = tmp_path / "displays.sqlite3"
     registry = DisplayRegistry(path)
-    display = registry.register("abcdef", "Office", 320, 820, "1.0.0")
+    display = registry.register("abcdef", "Office", 320, 820, "1.0.0", board_target="JC4827W543")
 
     updated = registry.record_activity(display.id, "SD-card list received")
 
@@ -68,8 +71,8 @@ def test_display_activity_is_persisted_with_the_display_profile(tmp_path) -> Non
 
 def test_firmware_contact_marks_a_restored_display_seen(tmp_path) -> None:
     path = tmp_path / "displays.sqlite3"
-    DisplayRegistry(path).register("abcdef", "Office", 320, 820, "1.0.0")
+    DisplayRegistry(path).register("abcdef", "Office", 320, 820, "1.0.0", board_target="JC4827W543")
     registry = DisplayRegistry(path)
     assert registry.record_activity("abcdef", "SD-card list received").as_dict()["online"] is True
     registry = DisplayRegistry(path)
-    assert registry.register("abcdef", "Office", 320, 820, "1.0.0").as_dict()["seen_this_session"] is True
+    assert registry.register("abcdef", "Office", 320, 820, "1.0.0", board_target="JC4827W543").as_dict()["seen_this_session"] is True

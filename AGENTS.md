@@ -30,6 +30,8 @@
 
 ## ESP32 display contract
 
+- LAN registration at `POST /displays/register` requires `board_target` from the compiled firmware target (shared with USB identification), starting with firmware 1.1.39. Store and return it unchanged. Firmware update matching must use this identifier, never dimensions or display names. USB identity remains mandatory for installation.
+
 - There is currently one active display. A board registers itself with `POST /display` using its name and native `width` and `height`.
 - ESP32 boards poll `GET /latest.jpg` and use the ETag to avoid re-downloading unchanged images.
 - Keep `/latest.jpg` a baseline JPEG at the announced native display dimensions. ESP32 firmware should not need to transform it.

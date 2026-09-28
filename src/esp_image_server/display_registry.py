@@ -33,6 +33,7 @@ class DisplayDevice:
     width: int
     height: int
     firmware_version: str
+    board_target: str
     rotation: int
     video_rotation: int
     capabilities: dict[str, bool]
@@ -51,6 +52,7 @@ class DisplayDevice:
             "width": self.width,
             "height": self.height,
             "firmware_version": self.firmware_version,
+            "board_target": self.board_target,
             "rotation": self.rotation,
             "video_rotation": self.video_rotation,
             "capabilities": dict(self.capabilities),
@@ -88,6 +90,8 @@ class DisplayRegistry:
         height: int,
         firmware_version: str,
         capabilities: dict[str, bool] | None = None,
+        *,
+        board_target: str,
     ) -> DisplayDevice:
         """Create or refresh a display profile identified by its hardware MAC."""
         normalized_hardware_id = hardware_id.strip().lower()
@@ -102,20 +106,21 @@ class DisplayRegistry:
                 """
                 INSERT INTO displays (
                     id, hardware_id, token_digest, name, width, height,
-                    firmware_version, rotation, capabilities, paired_at, last_seen,
+                    firmware_version, board_target, rotation, capabilities, paired_at, last_seen,
                     last_activity_message, last_activity_at
-                ) VALUES (?, ?, '', ?, ?, ?, ?, 0, ?, ?, ?, 'Connected to ESPImageServer', ?)
+                ) VALUES (?, ?, '', ?, ?, ?, ?, ?, 0, ?, ?, ?, 'Connected to ESPImageServer', ?)
                 ON CONFLICT(hardware_id) DO UPDATE SET
                     name = excluded.name,
                     width = excluded.width,
                     height = excluded.height,
                     firmware_version = excluded.firmware_version,
+                    board_target = excluded.board_target,
                     capabilities = excluded.capabilities,
                     last_seen = excluded.last_seen
                 """,
                 (
                     display_id, normalized_hardware_id, name.strip(), width, height,
-                    firmware_version, json.dumps(normalized_capabilities, separators=(",", ":")), now, now, now,
+                    firmware_version, board_target, json.dumps(normalized_capabilities, separators=(",", ":")), now, now, now,
                 ),
             )
             row = connection.execute("SELECT * FROM displays WHERE id = ?", (display_id,)).fetchone()
@@ -227,6 +232,7 @@ class DisplayRegistry:
                     width INTEGER NOT NULL,
                     height INTEGER NOT NULL,
                     firmware_version TEXT NOT NULL,
+                    board_target TEXT NOT NULL DEFAULT '',
                     rotation INTEGER NOT NULL DEFAULT 0,
                     video_rotation INTEGER NOT NULL DEFAULT 0,
                     capabilities TEXT NOT NULL DEFAULT '{}',
@@ -238,6 +244,8 @@ class DisplayRegistry:
                 """
             )
             columns = {str(row["name"]) for row in connection.execute("PRAGMA table_info(displays)")}
+            if "board_target" not in columns:
+                connection.execute("ALTER TABLE displays ADD COLUMN board_target TEXT NOT NULL DEFAULT ''")
             if "video_rotation" not in columns:
                 connection.execute("ALTER TABLE displays ADD COLUMN video_rotation INTEGER NOT NULL DEFAULT 0")
             if "last_activity_message" not in columns:
@@ -291,6 +299,7 @@ class DisplayRegistry:
             width=int(row["width"]),
             height=int(row["height"]),
             firmware_version=str(row["firmware_version"]),
+            board_target=str(row["board_target"]),
             rotation=int(row["rotation"]),
             video_rotation=int(row["video_rotation"]),
             capabilities={str(key): bool(value) for key, value in capabilities.items()},

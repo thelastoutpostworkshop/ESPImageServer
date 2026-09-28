@@ -807,7 +807,7 @@ def test_queued_jobs_record_the_registered_display_id() -> None:
     app = create_app(Settings(), generator, video_generator=FakeVideoGenerator(), enable_mdns=False)
 
     with TestClient(app) as client:
-        display = client.post("/displays/register", json={
+        display = client.post("/displays/register", json={"board_target": "JC4827W543",
             "hardware_id": "aa:bb:cc:dd:ee:20",
             "name": "Kitchen",
             "width": 480,
@@ -1014,7 +1014,7 @@ def test_registered_displays_keep_settings_commands_and_sd_card_reports_isolated
     def register(
         client: TestClient, hardware_id: str, name: str, width: int, height: int,
     ) -> dict[str, object]:
-        response = client.post("/displays/register", json={
+        response = client.post("/displays/register", json={"board_target": "JC4827W543",
             "hardware_id": hardware_id,
             "name": name,
             "width": width,
@@ -1107,14 +1107,14 @@ def test_registered_displays_receive_native_renditions_with_independent_etags() 
     generator = FakeGenerator()
     app = create_app(Settings(), generator, enable_mdns=False)
     with TestClient(app) as client:
-        kitchen = client.post("/displays/register", json={
+        kitchen = client.post("/displays/register", json={"board_target": "JC4827W543",
             "hardware_id": "aa:bb:cc:dd:ee:03",
             "name": "Kitchen",
             "width": 480,
             "height": 272,
             "firmware_version": "1.0.0",
         }).json()
-        office = client.post("/displays/register", json={
+        office = client.post("/displays/register", json={"board_target": "JC4827W543",
             "hardware_id": "aa:bb:cc:dd:ee:04",
             "name": "Office",
             "width": 320,
@@ -1211,14 +1211,14 @@ def test_saved_image_can_target_registered_displays_and_use_their_rendition_rout
     app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
 
     with TestClient(app) as client:
-        kitchen = client.post("/displays/register", json={
+        kitchen = client.post("/displays/register", json={"board_target": "JC4827W543",
             "hardware_id": "aa:bb:cc:dd:ee:05",
             "name": "Kitchen",
             "width": 480,
             "height": 272,
             "firmware_version": "1.0.0",
         }).json()
-        office = client.post("/displays/register", json={
+        office = client.post("/displays/register", json={"board_target": "JC4827W543",
             "hardware_id": "aa:bb:cc:dd:ee:06",
             "name": "Office",
             "width": 320,
@@ -1263,7 +1263,7 @@ def test_registered_media_save_progress_cancel_and_validation() -> None:
     with TestClient(app) as client:
         ids = []
         for hardware in ('screen-a', 'screen-b'):
-            response = client.post('/displays/register', json={
+            response = client.post('/displays/register', json={"board_target": "JC4827W543",
                 'hardware_id': hardware, 'name': hardware, 'width': 240, 'height': 320,
                 'firmware_version': '1.1.6', 'capabilities': {'sd_card': True},
             })
@@ -1305,7 +1305,7 @@ def test_missing_ffmpeg_rejects_video_save_before_replacing_display_command(tmp_
     app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
     with TestClient(app) as client:
         if registered:
-            result = client.post('/displays/register', json={'hardware_id': 'test-screen', 'name': 'Test display', 'width': 480, 'height': 272, 'firmware_version': '1.1.6'})
+            result = client.post('/displays/register', json={"board_target": "JC4827W543", 'hardware_id': 'test-screen', 'name': 'Test display', 'width': 480, 'height': 272, 'firmware_version': '1.1.6'})
             assert result.status_code == 201
             display_id = result.json()['id']
             prefix = f'/displays/{display_id}'
@@ -1417,7 +1417,7 @@ def test_firmware_checks_default_on_and_disabled_setting_survives_restart(tmp_pa
     checker = FirmwareUpdateChecker(lambda: calls.append(True) or [])
     store = AppSettingsStore(tmp_path / "settings.json")
     registry = DisplayRegistry(tmp_path / "displays.sqlite3")
-    registry.register("test-firmware", "My display", 480, 272, "1.1.0")
+    registry.register("test-firmware", "My display", 480, 272, "1.1.0", board_target="JC4827W543")
     app = create_app(Settings(), FakeGenerator(), app_settings_store=store,
                      display_registry=registry, firmware_update_checker=checker, enable_mdns=False)
     with TestClient(app) as client:
@@ -1439,3 +1439,18 @@ def test_firmware_checks_default_on_and_disabled_setting_survives_restart(tmp_pa
         client.put("/app-settings", json={"auto_check_firmware_updates": True})
         client.get("/firmware-updates")
         assert len(calls) == 2
+
+
+def test_registration_requires_explicit_board_target(tmp_path):
+    from esp_image_server.display_registry import DisplayRegistry
+    app = create_app(Settings(), FakeGenerator(), display_registry=DisplayRegistry(tmp_path / "boards.sqlite3"), enable_mdns=False)
+    payload = {"hardware_id": "target-test", "name": "Any name", "width": 480, "height": 272, "firmware_version": "1.1.39"}
+    with TestClient(app) as client:
+        assert client.post("/displays/register", json=payload).status_code == 422
+        for invalid in (None, "", "a board", "../JC4827W543"):
+            assert client.post("/displays/register", json={**payload, "board_target": invalid}).status_code == 422
+        for board in ("JC4827W543", "ST7701_320X820", "ESP32_C6_LCD_147", "CHEAP_YELLOW_DISPLAY", "ESP32_S3_AMOLED_143"):
+            response = client.post("/displays/register", json={**payload, "board_target": board})
+            assert response.status_code == 201
+            assert response.json()["board_target"] == board
+            assert client.get("/displays/target-test").json()["board_target"] == board

@@ -1,5 +1,5 @@
 from esp_image_server.firmware_updates import (
-    BOARD_PROFILES, REPOSITORY, FirmwareUpdateChecker, latest_releases,
+    SUPPORTED_BOARD_TARGETS, REPOSITORY, FirmwareUpdateChecker, latest_releases,
 )
 
 
@@ -13,11 +13,11 @@ def release(version, boards=("JC4827W543",), **extra):
 
 def display(version="1.1.9", **extra):
     return {"id": "one", "name": "Renamed board", "width": 480, "height": 272,
-            "online": True, "firmware_version": version, **extra}
+            "online": True, "firmware_version": version, "board_target": "JC4827W543", **extra}
 
 
 def test_latest_is_numeric_and_per_board_with_stable_complete_assets_only():
-    releases = [release("1.1.9", BOARD_PROFILES.values()), release("1.1.38"),
+    releases = [release("1.1.9", SUPPORTED_BOARD_TARGETS), release("1.1.38"),
                 release("1.2.0", prerelease=True), release("1.3.0", draft=True),
                 release("2.0.0-rc.1"), release("3.0.0", assets=[])]
     wrong_url = release("4.0.0")
@@ -39,7 +39,7 @@ def test_only_online_supported_older_versions_notify_and_cache_is_shared():
     assert checker.check([display(online=False)])["updates"] == []
     assert not calls
     targets = [display(), display("1.1.38", id="same"), display("2.0.0", id="newer"),
-               display("unknown", id="unknown"), display(width=333, id="unsupported")]
+               display("unknown", id="unknown"), display(board_target="UNSUPPORTED", id="unsupported"), display(board_target=None, id="missing")]
     updates = checker.check(targets)["updates"]
     assert [u["display_id"] for u in updates] == ["one"]
     assert updates[0]["name"] == "Renamed board"
@@ -68,3 +68,13 @@ def test_failure_retries_without_repeated_requests_or_losing_last_success():
     now[0] += 900
     checker.check([display()])
     assert len(calls) == 3
+
+
+def test_board_identifier_wins_over_matching_dimensions_and_name():
+    checker = FirmwareUpdateChecker(lambda: [release("1.1.38"), release("1.1.20", ("ST7701_320X820",))])
+    result = checker.check([display(board_target="ST7701_320X820"),
+                            display(id="missing", board_target=""),
+                            display(id="unknown", board_target="FUTURE_BOARD")])
+    assert len(result["updates"]) == 1
+    assert result["updates"][0]["board"] == "ST7701_320X820"
+    assert result["updates"][0]["version"] == "1.1.20"

@@ -149,6 +149,7 @@ class DisplaySettingsRequest(BaseModel):
 
 class RegisterDisplayRequest(DisplayAnnouncement):
     model_config = ConfigDict(extra="forbid")
+    board_target: str = Field(min_length=1, max_length=64, pattern=r"^[A-Z][A-Z0-9_]*$")
     hardware_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9:._-]+$")
     capabilities: dict[str, bool] = Field(default_factory=dict)
 
@@ -718,6 +719,7 @@ def create_app(
             request.height,
             request.firmware_version,
             request.capabilities,
+            board_target=request.board_target,
         ).as_dict()
 
     @app.get("/displays")

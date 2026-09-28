@@ -12,8 +12,8 @@ component.render = () => null
 const renderer = createRenderer({ createComment: () => ({}), insert() {}, remove() {}, parentNode: () => null,
   nextSibling: () => null, createElement: () => ({}), createText: () => ({}), setText() {}, setElementText() {}, patchProp() {} })
 const flush = async () => { await nextTick(); await new Promise(resolve => setImmediate(resolve)) }
-const board = { id: 'one', online: true, firmware_version: '1.1.9' }
-const update = { display_id: 'one', installed_version: '1.1.9', version: '1.1.38' }
+const board = { board_target: 'JC4827W543', id: 'one', online: true, firmware_version: '1.1.9' }
+const update = { board: 'JC4827W543', display_id: 'one', installed_version: '1.1.9', version: '1.1.38' }
 function mount(t, fetcher, enabled = true) {
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window
   globalThis.fetch = fetcher
@@ -56,4 +56,12 @@ test('a reply arriving after automatic checking is disabled cannot restore a not
   await flush()
   assert.equal(view.state.visible.length, 0)
   assert.equal(view.state.updates.length, 0)
+})
+
+
+test('a different board target cannot display a stale update for the same device', async t => {
+  const view = mount(t, async () => ({ ok: true, json: async () => ({ enabled: true, updates: [update] }) }))
+  await flush(); assert.equal(view.state.visible.length, 1)
+  view.props.displays[0].board_target = 'ST7701_320X820'
+  await flush(); assert.equal(view.state.visible.length, 0)
 })
