@@ -41,7 +41,7 @@ Image and video generation require a working NVIDIA graphics card with CUDA.
 Without CUDA, the app supports display management and saved creations; CPU
 generation is disabled.
 
-See [platform scope](PLATFORMS.md) and [native installation instructions](NATIVE_INSTALL.md) for platform details. The app is free to use; you supply the computer, display hardware, storage, and electricity.
+See [native installation instructions](NATIVE_INSTALL.md) for platform details. The app is free to use; you supply the computer, display hardware, storage, and electricity.
 
 ## Windows installation
 

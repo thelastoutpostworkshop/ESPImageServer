@@ -240,7 +240,7 @@ dispatch. It uses Windows 2025, Ubuntu 24.04, and macOS 15 hosted runners with
 Python 3.12 and Node.js 22. See the [GitHub runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 for runner architectures and availability. The explicit targets are Windows x64,
 Ubuntu x64, and macOS ARM64; Python and Node architectures are checked in CI.
-See [platform scope](PLATFORMS.md) for the initial delivery targets. These source
+See [native installation instructions](NATIVE_INSTALL.md) for delivery targets. These source
 checks do not imply that Linux/macOS packages are available.
 
 Each runner installs JavaScript dependencies with `npm ci`, runs frontend tests
@@ -297,7 +297,7 @@ and copies the backend and built web app. It does not build an installer.
 
 Platform CI moves the output, launches its own Python, and verifies the relocated
 bundle before uploading a tar archive that preserves executable permissions and
-symlinks. See [platform scope](PLATFORMS.md) for contents and remaining work.
+symlinks. See [native installation instructions](NATIVE_INSTALL.md) for packaging details.
 Changes to dependency constraints or the Python pin must pass these native jobs.
 
 For a Linux x64 CUDA backend, add `--mode cuda` and use a new output directory.
@@ -305,8 +305,7 @@ This uses application requirements from pyproject.toml with Linux CUDA constrain
 the management requirements are kept separate. The dedicated CUDA job imports
 actual generation pipeline classes and tests startup with CUDA devices hidden.
 Its binary-wheel installation uses no pip download cache to reduce disk use.
-It uploads large backend and desktop archives, not a final installer. See PLATFORMS.md
-for exact scope; hosted GPU computation is not part of this job.
+Hosted GPU computation is not part of this job.
 
 After preparing the backend, `python installer/prepare-native-esptool.py` downloads
 and verifies the native esptool archive. Run `npm --prefix desktop run build:native
