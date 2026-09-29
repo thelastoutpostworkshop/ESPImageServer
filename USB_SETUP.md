@@ -3,7 +3,7 @@
 Use **Set up display** in the desktop app on the computer connected to the board.
 Native desktop bundles include esptool and serial-port bindings; Arduino and a
 separate Python/esptool installation are unnecessary. GPU support is not required
-for USB setup. See [native installation instructions](NATIVE_INSTALL.md).
+for USB setup. See [release installation instructions](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest).
 
 Connect a data-capable cable to the board's documented data/programming connector.
 Close Serial Monitor and other serial terminals. Refresh the port list, select

@@ -240,7 +240,7 @@ dispatch. It uses Windows 2025, Ubuntu 24.04, and macOS 15 hosted runners with
 Python 3.12 and Node.js 22. See the [GitHub runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 for runner architectures and availability. The explicit targets are Windows x64,
 Ubuntu x64, and macOS ARM64; Python and Node architectures are checked in CI.
-See [native installation instructions](NATIVE_INSTALL.md) for delivery targets. These source
+See [release installation instructions](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest) for delivery targets. These source
 checks do not imply that Linux/macOS packages are available.
 
 Each runner installs JavaScript dependencies with `npm ci`, runs frontend tests
@@ -297,7 +297,7 @@ and copies the backend and built web app. It does not build an installer.
 
 Platform CI moves the output, launches its own Python, and verifies the relocated
 bundle before uploading a tar archive that preserves executable permissions and
-symlinks. See [native installation instructions](NATIVE_INSTALL.md) for packaging details.
+symlinks. See [release installation instructions](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest) for packaging details.
 Changes to dependency constraints or the Python pin must pass these native jobs.
 
 For a Linux x64 CUDA backend, add `--mode cuda` and use a new output directory.

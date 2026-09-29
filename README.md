@@ -41,7 +41,7 @@ Image and video generation require a working NVIDIA graphics card with CUDA.
 Without CUDA, the app supports display management and saved creations; CPU
 generation is disabled.
 
-See [native installation instructions](NATIVE_INSTALL.md) for platform details. The app is free to use; you supply the computer, display hardware, storage, and electricity.
+See [release installation instructions](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest) for platform details. The app is free to use; you supply the computer, display hardware, storage, and electricity.
 
 ## Windows installation
 
@@ -57,7 +57,7 @@ The desktop app starts the local server automatically. You can also open the app
 
 ## Linux installation
 
-Download the `.deb` from the [latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest), then follow the [Ubuntu installation instructions](NATIVE_INSTALL.md). Generation dependencies are downloaded automatically on first launch.
+Download the `.deb` from the [latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest), then follow the [Ubuntu installation instructions in the release notes](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest). Generation dependencies are downloaded automatically on first launch.
 
 ## Install firmware over USB
 

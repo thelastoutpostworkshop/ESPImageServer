@@ -91,6 +91,41 @@ Built from `{sha}` after automated platform, installer lifecycle, and Linux depe
 | [Download Linux installer (.deb)]({download_base}/ESPImageServer-{version}-linux-x64.deb) | Ubuntu 24.04 x64 | Image and video generation with a supported NVIDIA GPU; first launch downloads dependencies |
 
 Installers are unsigned. SHA-256 files accompany each installer. macOS is deferred from this release.
+
+## Windows installation
+
+Quit ESPImageServer, run `ESPImageServer-Setup-{version}.exe`, and follow setup. You can install over an existing version. Setup downloads the generation dependencies; internet access and sufficient free disk space are required.
+
+## Ubuntu 24.04 installation
+
+Quit ESPImageServer and any separately started server. From the download directory, run:
+
+```sh
+sudo apt install './ESPImageServer-{version}-linux-x64.deb'
+```
+
+Launch **ESPImageServer** from the applications menu or run `espimageserver` as your normal user, without sudo. First launch checks your NVIDIA GPU and downloads several GB of generation dependencies. Install a compatible NVIDIA driver beforehand; the app does not install drivers. Model weights download separately when selected.
+
+The startup screen shows download progress. If setup fails, choose **Retry setup**; closing and reopening the app also retries incomplete setup. Without a compatible GPU, you can retry the GPU check or open display tools.
+
+To update, quit the app and install the newer `.deb` with the same command. App-only updates reuse verified generation dependencies. To repair this version:
+
+```sh
+sudo apt install --reinstall './ESPImageServer-{version}-linux-x64.deb'
+```
+
+To uninstall:
+
+```sh
+sudo apt remove espimageserver
+```
+
+## Your saved data
+
+Updating or uninstalling keeps settings, downloaded models, and saved creations stored outside the installation folder. Linux also retains its generation runtime and cached setup downloads. Keep personal files outside the installation directory.
+
+## Automated checks
+
 The automated checks do not run generation on a physical GPU. Windows upgrade checks use fixture payloads.
 
 Before publishing, add the user-facing changes for this version and review the attached downloads.
