@@ -21,15 +21,15 @@ Both platforms require a supported NVIDIA GPU with CUDA for image and video gene
 
 ## Supported boards
 
-| Board | Screen | Resolution | Touch supported by firmware |
-| --- | --- | --- | --- |
-| JC4827W543 | 4.3-inch IPS | 480 x 272 | Yes - capacitive GT911 variant |
-| Waveshare ESP32-S3 LCD 3.16 | 3.16-inch LCD, ST7701 | 320 x 820 | No |
-| Waveshare ESP32-C6 LCD 1.47 | 1.47-inch LCD | 172 x 320 | No |
-| Cheap Yellow Display ESP32-2432S028R | 2.8-inch LCD, ILI9341 | 240 x 320 | No |
-| Waveshare ESP32-S3 Touch AMOLED 1.43 | 1.43-inch round AMOLED | 466 x 466 | Yes - FT3168 |
+Check the model and variant when ordering. Some purchase links are affiliate links.
 
-Don't have a board? Open **Set up display > Buy a supported board** in the app for photos, purchase links, and guidance on choosing the correct variant.
+| Photo | Board and screen | Resolution | Touch supported by firmware | Buy |
+| --- | --- | --- | --- | --- |
+| <img src="frontend/public/board-catalog/JC4827W543.png" alt="JC4827W543" width="140"> | **JC4827W543**<br>4.3-inch IPS | 480 x 272 | Yes - choose the capacitive GT911 variant | [AliExpress](https://s.click.aliexpress.com/e/_oEHbBud) |
+| <img src="frontend/public/board-catalog/ST7701_320X820.png" alt="Waveshare ESP32-S3 LCD 3.16" width="140"> | **Waveshare ESP32-S3 LCD 3.16**<br>3.16-inch LCD, ST7701 | 320 x 820 | No | [Amazon](https://amzn.to/4689Mbm)<br>[AliExpress](https://s.click.aliexpress.com/e/_c4S9IVQB) |
+| <img src="frontend/public/board-catalog/ESP32_C6_LCD_147.png" alt="Waveshare ESP32-C6 LCD 1.47" width="140"> | **Waveshare ESP32-C6 LCD 1.47**<br>1.47-inch LCD | 172 x 320 | No | [Amazon](https://amzn.to/3ZzfcZr)<br>[AliExpress](https://s.click.aliexpress.com/e/_okJAvee) |
+| <img src="frontend/public/board-catalog/CHEAP_YELLOW_DISPLAY.png" alt="Cheap Yellow Display ESP32-2432S028R" width="140"> | **Cheap Yellow Display ESP32-2432S028R**<br>2.8-inch LCD, ILI9341 | 240 x 320 | No | [Amazon](https://amzn.to/4kAyDJh)<br>[AliExpress](https://s.click.aliexpress.com/e/_oCVWMbC) |
+| <img src="frontend/public/board-catalog/ESP32_S3_AMOLED_143.png" alt="Waveshare ESP32-S3 Touch AMOLED 1.43" width="140"> | **Waveshare ESP32-S3 Touch AMOLED 1.43**<br>1.43-inch round AMOLED | 466 x 466 | Yes - FT3168 | [Amazon](https://amzn.to/41VszVi)<br>[AliExpress](https://s.click.aliexpress.com/e/_ondyHh3) |
 
 Install compatible firmware through **Set up display** in the desktop app. Firmware packages are also available in the [ESPImageFirmware releases](https://github.com/thelastoutpostworkshop/ESPImageFirmware/releases/latest).
 
