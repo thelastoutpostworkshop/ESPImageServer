@@ -1,3 +1,5 @@
+![ESPImageServer - Free local AI image & video generation for your ESP32](docs/images/espimageserver-banner.png)
+
 # ESPImageServer
 
 ESPImageServer is a free app that creates images and videos using AI models running locally on your own computer. Describe what you want to create, then save it to your Creation Library or send it to a supported ESP32 display over your local network.
