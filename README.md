@@ -45,69 +45,33 @@ generation is disabled.
 
 See [release installation instructions](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest) for platform details. The app is free to use; you supply the computer, display hardware, storage, and electricity.
 
-## Install firmware over USB
-
-1. Connect your supported board to the computer using a USB data cable.
-2. Open **Set up display** in the desktop app and follow the firmware installation instructions.
-3. Configure Wi-Fi and wait for **Ready**.
-
-## Connect your display
-
-Start your ESP32 display on the same Wi-Fi network as the computer. Firmware 1.1.39 and later registers its compiled board target, firmware version, name, and screen size automatically. Update the app and firmware together: registration requires an explicit `board_target`. Automatic firmware update notifications use this identifier, never screen dimensions or a user-assigned name. Once connected, ESPImageServer shows the display name and resolution near the top of the app.
-
-Generated images are automatically sized for the physical display. No manual image-size setup is needed.
-
-If the display does not connect, confirm that:
-
-- The computer and ESP32 are on the same local network.
-- ESPImageServer is open and Windows Firewall allows it on private networks.
-- The ESP32 firmware uses the correct server address, normally `http://espimageserver.local:8000`.
-
 ## Save to the display SD card
 
 SD-card saves show download and verification progress. The app confirms a save after the display acknowledges the committed file. **Cancel save** remains pending until the display confirms cancellation. Thumbnails can finish later. Keep room for a temporary copy when replacing a file.
 
-## Create an image
+## Supported generation models
 
-1. Open **Generate image**.
-2. Choose an image model and, if needed, an image rotation.
-3. Describe the scene in the prompt box.
-4. Optionally adjust **Generation steps** or use a seed to repeat a variation.
-5. Select **Generate**.
+All models run locally and require a supported NVIDIA GPU with CUDA. Model files download on first use and are kept for reuse.
 
-The new image is sent to the connected ESP32 when generation finishes. It is also saved to the Creation Library by default.
+### Image generation
 
-### Prompts, seeds, and steps
+| Model | Description |
+| --- | --- |
+| DreamShaper 8 | Creative illustrations, fantasy scenes, and stylized artwork. The default image model. |
+| Segmind SSD-1B | A compact SDXL-based model for detailed images. |
+| SDXL Base 1.0 | Detailed images and rich compositions, with higher GPU memory requirements. |
 
-- **Prompt**: what you want to see. Be specific about subject, style, lighting, and mood.
-- **Seed**: a number that helps reproduce a result. Use the same prompt, model, settings, and seed for the closest repeat; create a random seed for a new variation.
-- **Steps**: how long the model spends refining the image. More steps can add detail but take longer.
-- **Rotation**: changes the image orientation for the physical display. It is applied by ESPImageServer, so the board receives an image in its native dimensions.
+All three image models support negative prompts to describe what the image should avoid.
 
-## Choose a model
+### Video generation
 
-Open **Models** to choose the look and quality level you want.
-
-| Model | Best for | Computer guidance |
+| Model | Description | Input |
 | --- | --- | --- |
-| DreamShaper 8 | Creative, illustrated, and fantasy artwork | NVIDIA graphics card with CUDA required |
-| Segmind SSD-1B | More detailed, higher-quality images | NVIDIA graphics card with CUDA required |
-| SDXL Base 1.0 | The richest detail and prompt understanding | Powerful NVIDIA graphics card required |
+| LTX-Video 2B distilled | Fast short animations, using 4-8 generation steps. | Text, or text with a saved image as the first frame |
+| LTX-Video 2B quality | More detail and prompt accuracy, with slower generation using 10-40 steps. | Text, or text with a saved image as the first frame |
+| Wan 2.1 T2V 1.3B | A slower text-to-video alternative, using 20-50 steps. | Text only |
 
-When you choose a model for the first time, ESPImageServer says it is **Downloading and loading** it. Later, it says **Loading** because the model is already on your computer and only needs to be prepared for image generation.
-
-Your selected model is remembered after you close the app. Installer upgrades keep downloaded models too.
-
-## Use the Creation Library
-
-The Creation Library keeps your generated images and their settings together.
-
-- Open **Creation Library** from the app bar.
-- Select an image to review its prompt, model, steps, seed, and rotation.
-- Right-click a thumbnail to reuse just its prompt, seed, steps, model, or rotation in the generator.
-- Choose **Use all** to restore all of that image's generation settings.
-
-In **Settings**, you can choose where the image library is stored, open that folder, and turn automatic saving on or off. Your library location and settings survive app upgrades. A user-selected library folder is preserved if you uninstall ESPImageServer.
+Image and video generation share the GPU and run one job at a time. Generated media is resized to the selected display's dimensions.
 
 ## Troubleshooting
 
