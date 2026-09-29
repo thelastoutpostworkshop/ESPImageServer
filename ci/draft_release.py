@@ -126,6 +126,31 @@ To uninstall:
 sudo apt remove espimageserver
 ```
 
+## USB display setup and troubleshooting
+
+Use **Set up display** in the desktop app with a USB data cable connected to the board's data/programming connector. USB setup does not require a GPU or a separate Arduino/esptool installation. Close Serial Monitor and other apps using the port, then refresh the port list. Refresh again after reconnecting, since port names can change.
+
+If no port appears, try a known data cable and a direct USB connection. Check the board manufacturer's instructions for the correct connector and any required USB-to-serial driver.
+
+On Ubuntu, if opening the port reports **access denied**, check the device's group and your account's groups (replace `/dev/ttyACM0` with the port shown in the app):
+
+```sh
+ls -l /dev/ttyACM0
+id -nG
+```
+
+If the device belongs to `dialout` and your account is not a member:
+
+```sh
+sudo usermod -aG dialout "$USER"
+```
+
+Log out and back in, then reopen the app. If your system uses another device group, use that group instead. Run the app as your normal user; do not use sudo or make serial ports world-writable.
+
+For Ubuntu's `spawn udevadm ENOENT` error, run `command -v udevadm`. If missing, install it with `sudo apt install udev`; if present, ensure `/usr/bin` is in the app's PATH.
+
+**Check display** requires compatible running firmware; it cannot identify a board sitting in the ROM bootloader. Reset normally and retry. For firmware installation connection failures, follow the app's help and your board maker's BOOT/RESET instructions. On Linux, investigate any device-specific service conflict rather than disabling services globally.
+
 ## Open the app in a browser
 
 The desktop app starts the local server automatically. While it is running, you can also open the app at `http://127.0.0.1:8000` in a browser.

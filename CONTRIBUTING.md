@@ -35,5 +35,3 @@ npm --prefix desktop test
 ```
 
 Check visible changes in the running app. In your pull request, explain what changed and which checks you ran. Mention any effect on firmware compatibility. Do not commit credentials, model downloads, virtual environments, logs, or generated installers.
-
-For specialized work, see [release preparation](RELEASING.md), [firmware packaging](scripts/firmware-packages.md), and [USB setup](USB_SETUP.md).

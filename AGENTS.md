@@ -58,7 +58,7 @@
 
 ## Firmware image preparation and publication
 
-- Read the [local firmware packaging guide](scripts/firmware-packages.md) and the [firmware release guide](../ESPImageFirmware/RELEASING.md) before preparing assets. Keep detailed commands and format requirements in those guides rather than duplicating them here.
+- Follow the local packaging requirements below and read the [firmware distribution release guide](../ESPImageFirmware/RELEASING.md) before preparing distribution assets.
 - The user compiles firmware manually with the matching Arduino Maker Workshop profile. Agents may perform source-only syntax checks and validate/package supplied build exports; do not compile or link firmware binaries, flash hardware, or rebuild installers as part of preparation unless the user explicitly requests it.
 - Release inputs must come from a fresh, credential-free build. An ignored `secrets.h` can still embed credentials in binaries; Git exclusion and successful package validation do not prove a build contains no credentials. Use USB/device storage for user Wi-Fi configuration. Do not expose credentials while checking preparation inputs.
 - Confirm the actual compiled target and `ESP_IMAGE_DISPLAY_FIRMWARE_VERSION` from `FirmwareTarget.h`; firmware versions are separate from the app's `pyproject.toml` version. Record the firmware source commit, any uncommitted build changes, selected profile/FQBN, and toolchain/library versions for provenance. The distribution repository's release tag does not identify the firmware source commit.
@@ -66,6 +66,45 @@
 - Prepare distribution assets using `ESPImageFirmware/scripts/prepare_release.py`. Preserve the exact `ESPImageDisplay-<BOARD_TARGET>-<version>.zip` naming and accompanying `SHA256SUMS.txt` required by app discovery. Keep generated binaries/ZIPs outside Git history and retain applicable license notices. Ensure the installing app supports every included board target.
 - Record only tests actually performed, distinguishing source checks, package validation, flashing, and physical-board acceptance (boot, USB identity/version, Wi-Fi, display, touch where supported, SD media playback, and offline/recovery behavior). Successful packaging is not hardware verification; report unverified boards explicitly and keep unfinished releases as unpublished drafts. Firmware releases support only plain major.minor.patch versions, with no prerelease flags or version suffixes.
 - Never replace published firmware with different bytes under the same version; assign a new version. Preparing packages does not authorize commits, pushes, tags, uploads, or publication. Follow the user's requested scope and use `ESPImageFirmware/scripts/publish_release.py` when publication is requested.
+
+### Local firmware package requirements
+
+- From the server repository, run `scripts/package-firmware.ps1` against a separate board/version folder containing the user's exported binaries and metadata. For example (replace the example version with the actual compiled version):
+
+  ```powershell
+  & .\scripts\package-firmware.ps1 `
+    -PackageDirectory 'C:\Users\charles\Desktop\ESPImage Firmwares\JC4827W543\1.1.39' `
+    -BoardTarget JC4827W543 `
+    -FirmwareVersion 1.1.39
+  ```
+
+- Accepted package identifiers are `JC4827W543`, `ST7701_320X820`, `ESP32_C6_LCD_147`, `CHEAP_YELLOW_DISPLAY`, and `ESP32_S3_AMOLED_143` (without the `FIRMWARE_TARGET_` prefix). Versions must be plain major.minor.patch, without prerelease or build suffixes.
+- Supported input is a flat Arduino export with explicit flash mode/frequency/size, one bootloader, one partition table, `boot_app0.bin`, and one `.ino.bin` application, plus `flash_args` and `build.options.json`. Unsupported layouts must fail rather than be guessed. Reject missing/empty files, unsafe paths, duplicates, overlapping erase sectors, and writes beyond flash capacity before replacing an existing manifest.
+- The script only writes or regenerates `manifest.json`; it does not compile, flash, download firmware, or build an installer. Schema version 1 records the first-install package type, declared board/version, FQBN, chip, flash settings, and each segment's role, relative filename, offset, size, and SHA-256. Do not copy absolute build paths or arbitrary compiler flags into the manifest.
+- Arduino-ESP32's QIO preset exports DIO for ESP32, ESP32-C6, and ESP32-S3. Accept this preset mapping and preserve exported DIO; never edit `flash_args` or relabel build options to force a match.
+- The AMOLED profile `ESP32-S3-AMOLED-1.43` uses package target `ESP32_S3_AMOLED_143`. Its named FQBN `waveshare_esp32_s3_touch_amoled_143` has fixed 16 MB flash even without a FlashSize menu option. Do not relabel it as another S3 board; the installing app must support this target.
+- Packaging checks chip-family metadata but does not prove application identity, inspect binaries for credentials, validate partition-table contents, or validate the chip encoded inside each binary. Checksums detect changes, not publisher authenticity. These are trusted first-install packages, not a settings-preserving update plan.
+- The desktop revalidates package files, physical chip, ESP image headers, and application partition before invoking esptool, verifies writes, and reports firmware startup separately through USB identity. Its supported Arduino layout uses partition table 0x8000, OTA data 0xe000, application 0x10000, and the chip's normal bootloader offset. These are validation constraints, not permission to invent export offsets.
+- For an explicitly requested installation, the app selects the version folder, matching physical board, and detected USB port. Package tests are hardware-free and never establish flashing or boot acceptance. Run `& .\scripts\test-package-firmware.ps1` when changing packaging.
+
+## App release workflow
+
+- **Prepare draft release** builds Windows x64 and Ubuntu 24.04 x64 installers after reused platform checks and Linux dependency setup checks pass. macOS release delivery is deferred; its development artifacts and checks remain in CI. Ordinary branch pushes do not start this release pipeline; platform checks remain available for pull requests and manual runs.
+- Set an unused major.minor.patch in `pyproject.toml`. Build scripts synchronize derived metadata. When authorized, commit and push the version/workflow changes, then tag that commit and push the tag:
+
+  ```powershell
+  git tag -a v1.2.3 -m "ESPImageServer 1.2.3"
+  git push origin v1.2.3
+  ```
+
+  Replace 1.2.3 with the committed project version. A mismatched tag fails before building. Tag pushes run checks through the release workflow without a duplicate standalone run; open pull requests can still trigger their own checks.
+- A successful tag run creates an unpublished draft named `ESPImageServer <version>`, not a public release. Review assets and add user-facing changes before publication. Publish through GitHub's release editor only within the user's requested scope.
+- Require exactly two installers and their two adjacent `.sha256` files. The collector checks filenames/versions and recomputes hashes. All artifacts and the draft must use the tested workflow commit; the remote tag must still resolve to it (annotated or lightweight tags). Never replace an existing release's files.
+- `ci/draft_release.py` generates the download table and installation/USB guidance. Direct version-specific download links work after publication; review attached assets while the release is a draft.
+- If failure occurs before draft creation, rerun the failed workflow. For partial uploads, recovery is to delete only the unpublished draft, retain its tag, and rerun all jobs to regenerate the complete set. Perform draft deletion only when authorized. Never delete or move a published tag/release to retry.
+- Windows builds the production Inno Setup installer and downloads generation dependencies during setup; Linux downloads them on first launch. Both require supported NVIDIA GPUs for generation. Installers are unsigned and release notes must state this; no signing credentials are required by this workflow.
+- CI covers installer lifecycle and dependency imports, not physical GPU generation. Windows upgrade-preservation checks use fixture payloads; the production release installer is built separately. A successful draft does not prove real Windows installation or GPU generation.
+- Only the final draft job receives repository contents write permission; build jobs remain read-only.
 
 ## Installer and releases
 
