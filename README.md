@@ -31,7 +31,7 @@ Check the model and variant when ordering. Some purchase links are affiliate lin
 | <img src="frontend/public/board-catalog/CHEAP_YELLOW_DISPLAY.png" alt="Cheap Yellow Display ESP32-2432S028R" width="140"> | **Cheap Yellow Display ESP32-2432S028R**<br>2.8-inch LCD, ILI9341 | 240 x 320 | No | [Amazon](https://amzn.to/4kAyDJh)<br>[AliExpress](https://s.click.aliexpress.com/e/_oCVWMbC) |
 | <img src="frontend/public/board-catalog/ESP32_S3_AMOLED_143.png" alt="Waveshare ESP32-S3 Touch AMOLED 1.43" width="140"> | **Waveshare ESP32-S3 Touch AMOLED 1.43**<br>1.43-inch round AMOLED | 466 x 466 | Yes - FT3168 | [Amazon](https://amzn.to/41VszVi)<br>[AliExpress](https://s.click.aliexpress.com/e/_ondyHh3) |
 
-Install compatible firmware through **Set up display** in the desktop app. Firmware packages are also available in the [ESPImageFirmware releases](https://github.com/thelastoutpostworkshop/ESPImageFirmware/releases/latest).
+Install compatible firmware through **Set up display** in the desktop app.
 
 ## What you need
 
