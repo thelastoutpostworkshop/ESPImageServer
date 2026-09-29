@@ -1,8 +1,5 @@
 # Local firmware packages
 
-Start with the [contributor guide](../CONTRIBUTING.md#create-a-local-firmware-package-and-manifest)
-for the folder layout, required files, and script parameters.
-
 After manually compiling the selected ESPImageDisplay target/profile, copy all
 four binaries referenced by `flash_args`, that file, and `build.options.json`
 into a separate folder. Use a fresh credential-free build. The packaging script
