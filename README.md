@@ -45,10 +45,6 @@ generation is disabled.
 
 See [release installation instructions](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest) for platform details. The app is free to use; you supply the computer, display hardware, storage, and electricity.
 
-## Save to the display SD card
-
-SD-card saves show download and verification progress. The app confirms a save after the display acknowledges the committed file. **Cancel save** remains pending until the display confirms cancellation. Thumbnails can finish later. Keep room for a temporary copy when replacing a file.
-
 ## Supported generation models
 
 All models run locally and require a supported NVIDIA GPU with CUDA. Model files download on first use and are kept for reuse.
