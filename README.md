@@ -8,7 +8,7 @@ ESPImageServer is a free app that creates images and videos using AI models runn
 
 **[Download installers from the latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest)**
 
-Choose the installer for your computer from the release's **Assets** list:
+Choose the installer for your computer from the release's **Assets** list. Installation and update instructions are included in the release notes:
 
 | Platform | Installer | Generation setup |
 | --- | --- | --- |
@@ -42,22 +42,6 @@ Without CUDA, the app supports display management and saved creations; CPU
 generation is disabled.
 
 See [release installation instructions](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest) for platform details. The app is free to use; you supply the computer, display hardware, storage, and electricity.
-
-## Windows installation
-
-1. Download `ESPImageServer-Setup-<version>.exe` from the [latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest).
-2. Run the installer and follow the setup steps.
-3. Choose NVIDIA CUDA acceleration for generation, or display management only for setup, saved creations, and SD-card tools.
-4. Choose an initial image model. Its files download during setup or the first time you select it.
-5. Open **ESPImageServer** from the Start Menu or desktop shortcut.
-
-Setup uses CPython 3.12. If it is not already installed, the installer asks Windows Package Manager to install it; other Python versions already on the computer are left alone.
-
-The desktop app starts the local server automatically. You can also open the app in a browser at `http://127.0.0.1:8000` while it is running.
-
-## Linux installation
-
-Download the `.deb` from the [latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest), then follow the [Ubuntu installation instructions in the release notes](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest). Generation dependencies are downloaded automatically on first launch.
 
 ## Install firmware over USB
 

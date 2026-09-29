@@ -96,6 +96,12 @@ Installers are unsigned. SHA-256 files accompany each installer. macOS is deferr
 
 Quit ESPImageServer, run `ESPImageServer-Setup-{version}.exe`, and follow setup. You can install over an existing version. Setup downloads the generation dependencies; internet access and sufficient free disk space are required.
 
+1. Choose NVIDIA CUDA acceleration for generation, or display management only for setup, saved creations, and SD-card tools.
+2. Choose an initial image model. Its files download during setup or the first time you select it.
+3. Open **ESPImageServer** from the Start Menu or desktop shortcut.
+
+Setup uses CPython 3.12. If it is not already installed, the installer asks Windows Package Manager to install it; other Python versions already on the computer are left alone.
+
 ## Ubuntu 24.04 installation
 
 Quit ESPImageServer and any separately started server. From the download directory, run:
@@ -119,6 +125,10 @@ To uninstall:
 ```sh
 sudo apt remove espimageserver
 ```
+
+## Open the app in a browser
+
+The desktop app starts the local server automatically. While it is running, you can also open the app at `http://127.0.0.1:8000` in a browser.
 
 ## Your saved data
 
