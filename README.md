@@ -1,47 +1,51 @@
 # ESPImageServer
 
-ESPImageServer creates AI images and video on your own computer and sends them to an ESP32 display on your local network. Describe the image or the video you want, choose a model, and generate an image or video sized exactly for your connected display.
+ESPImageServer is a free app that creates images and videos using AI models running locally on your own computer. Describe what you want to create, then save it to your Creation Library or send it to a supported ESP32 display over your local network.
 
-Your prompts, generated images, and model files stay on your computer. The ESP32 only downloads the finished JPEG or MJPEG from your local network.
+**No API registration, API key, subscription, or per-generation fee is required.** Image and video generation runs on your NVIDIA GPU, not a paid cloud service. Internet access is needed to download the app, dependencies, and AI models; your prompts and generated images and videos stay on your computer.
 
-## SD saves with firmware 1.1.6
+## Download and install
 
-The updated app shows download progress, then verification, and confirms a save
-only after the display acknowledges the committed file. **Cancel save** appears
-once compatible firmware reports progress; cancellation remains pending until
-the display confirms it. Progress follows the original display even if you
-select another display. Older firmware keeps its existing save flow.
+**[Download installers from the latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest)**
 
-Firmware 1.1.6 checks downloaded bytes read back from the SD card before exposing
-the final filename. Thumbnails follow the main acknowledgement and can finish
-later. Files saved by older firmware remain playable, but the first save of the
-same content on 1.1.6 validates/replaces them before they qualify for automatic
-reuse. Keep room for a temporary copy when replacing a file.
+Choose the installer for your computer from the release's **Assets** list:
 
-These changes require the updated server/frontend and manually compiled 1.1.6
-firmware. No new installer or firmware package is included by this source change;
-physical recovery checks remain listed in `TODO.md`.
+| Platform | Installer | Generation setup |
+| --- | --- | --- |
+| Windows x64 | `ESPImageServer-Setup-<version>.exe` | Downloads dependencies during installation |
+| Ubuntu 24.04 x64 | `ESPImageServer-<version>-linux-x64.deb` | Downloads dependencies automatically on first launch |
+
+Both platforms require a supported NVIDIA GPU with CUDA for image and video generation. macOS installers are not included in the current release.
+
+## Supported boards
+
+| Board | Screen | Resolution | Touch supported by firmware |
+| --- | --- | --- | --- |
+| JC4827W543 | 4.3-inch IPS | 480 x 272 | Yes - capacitive GT911 variant |
+| Waveshare ESP32-S3 LCD 3.16 | 3.16-inch LCD, ST7701 | 320 x 820 | No |
+| Waveshare ESP32-C6 LCD 1.47 | 1.47-inch LCD | 172 x 320 | No |
+| Cheap Yellow Display ESP32-2432S028R | 2.8-inch LCD, ILI9341 | 240 x 320 | No |
+| Waveshare ESP32-S3 Touch AMOLED 1.43 | 1.43-inch round AMOLED | 466 x 466 | Yes - FT3168 |
+
+Don't have a board? Open **Set up display > Buy a supported board** in the app for photos, purchase links, and guidance on choosing the correct variant.
+
+Install compatible firmware through **Set up display** in the desktop app. Firmware packages are also available in the [ESPImageFirmware releases](https://github.com/thelastoutpostworkshop/ESPImageFirmware/releases/latest).
 
 ## What you need
 
-- A Windows computer.
-- An ESP32 display running compatible ESPImageServer firmware and connected to the same Wi-Fi network.
+- A Windows x64 or Ubuntu 24.04 x64 computer.
+- For displaying your creations: a supported ESP32 board running compatible firmware, connected to the same local network. You can generate images and videos without a connected display.
 - Enough free disk space for AI models. The first use of a model downloads its files.
 
 Image and video generation require a working NVIDIA graphics card with CUDA.
 Without CUDA, the app supports display management and saved creations; CPU
 generation is disabled.
 
-Linux (Ubuntu 24.04 x64) and macOS (15 or later, Apple Silicon, display management
-only) have development packages with successful installer lifecycle checks. Linux
-automatically prepares generation dependencies on first launch; its hosted setup
-checks passed. See [platform scope](PLATFORMS.md) and
-[native installation instructions](NATIVE_INSTALL.md). Signed native releases
-are not available yet.
+See [platform scope](PLATFORMS.md) and [native installation instructions](NATIVE_INSTALL.md) for platform details. The app is free to use; you supply the computer, display hardware, storage, and electricity.
 
-## Install
+## Windows installation
 
-1. Download the latest `ESPImageServer-Setup-<version>.exe` installer.
+1. Download `ESPImageServer-Setup-<version>.exe` from the [latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest).
 2. Run the installer and follow the setup steps.
 3. Choose NVIDIA CUDA acceleration for generation, or display management only for setup, saved creations, and SD-card tools.
 4. Choose an initial image model. Its files download during setup or the first time you select it.
@@ -50,6 +54,10 @@ are not available yet.
 Setup uses CPython 3.12. If it is not already installed, the installer asks Windows Package Manager to install it; other Python versions already on the computer are left alone.
 
 The desktop app starts the local server automatically. You can also open the app in a browser at `http://127.0.0.1:8000` while it is running.
+
+## Linux installation
+
+Download the `.deb` from the [latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest), then follow the [Ubuntu installation instructions](NATIVE_INSTALL.md). Generation dependencies are downloaded automatically on first launch.
 
 ## Install firmware over USB
 
@@ -66,8 +74,7 @@ automatically and finds firmware for the identified board. Choose **Review
 update** to download and verify it, then review the installation notice,
 confirm, and install. Users do not need a GitHub account or a local firmware
 folder. Download progress and cancellation are available before installation.
-Preview releases are excluded unless **Include preview firmware releases** is
-selected. Failed update checks never mean the firmware is up to date.
+Only published stable firmware releases are offered; drafts and prereleases are excluded. Failed update checks never mean the firmware is up to date.
 
 For an unidentified or blank board, choose **Install firmware on this display**,
 select its physical model, and download the matching release. A matching chip
@@ -161,6 +168,10 @@ If the display does not connect, confirm that:
 - The computer and ESP32 are on the same local network.
 - ESPImageServer is open and Windows Firewall allows it on private networks.
 - The ESP32 firmware uses the correct server address, normally `http://espimageserver.local:8000`.
+
+## Save to the display SD card
+
+SD-card saves show download and verification progress. The app confirms a save after the display acknowledges the committed file. **Cancel save** remains pending until the display confirms cancellation. Thumbnails can finish later. Keep room for a temporary copy when replacing a file.
 
 ## Create an image
 
