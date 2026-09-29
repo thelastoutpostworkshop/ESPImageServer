@@ -4,6 +4,8 @@ ESPImageServer is a free app that creates images and videos using AI models runn
 
 **No API registration, API key, subscription, or per-generation fee is required.** Image and video generation runs on your NVIDIA GPU, not a paid cloud service. Internet access is needed to download the app, dependencies, and AI models; your prompts and generated images and videos stay on your computer.
 
+Turn a supported ESP32 board into a small digital art display: show images, play videos, and save your favorites to its SD card over Wi-Fi. Configure a **Display Experience** to keep playing saved images and videos when the server is unavailable.
+
 ## Download and install
 
 **[Download installers from the latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest)**
