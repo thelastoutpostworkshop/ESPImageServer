@@ -23,7 +23,7 @@ Both platforms require a supported NVIDIA GPU with CUDA for image and video gene
 
 Check the model and variant when ordering. Some purchase links are affiliate links.
 
-| Photo | Board and screen | Resolution | Touch supported by firmware | Buy |
+| Board | Model | Resolution | Touch supported by firmware | Buy |
 | --- | --- | --- | --- | --- |
 | <img src="frontend/public/board-catalog/JC4827W543.png" alt="JC4827W543" width="140"> | **JC4827W543**<br>4.3-inch IPS | 480 x 272 | Yes - choose the capacitive GT911 variant | [AliExpress](https://s.click.aliexpress.com/e/_oEHbBud) |
 | <img src="frontend/public/board-catalog/ST7701_320X820.png" alt="Waveshare ESP32-S3 LCD 3.16" width="140"> | **Waveshare ESP32-S3 LCD 3.16**<br>3.16-inch LCD, ST7701 | 320 x 820 | No | [Amazon](https://amzn.to/4689Mbm)<br>[AliExpress](https://s.click.aliexpress.com/e/_c4S9IVQB) |
