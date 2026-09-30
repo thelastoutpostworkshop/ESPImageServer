@@ -203,7 +203,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <div v-if="state.busy || ['written', 'failed', 'boot_verified'].includes(state.stage)" role="status" class="my-4">{{ stageLabel }}</div><v-progress-linear v-if="state.busy" indeterminate class="my-4" />
           <p v-if="state.stage === 'written'" class="mb-3">The write passed verification and restart was requested. Check the screen, then check the display again to verify startup.</p>
           <v-btn v-if="state.stage === 'written'" class="mr-2" :disabled="locked" @click="showInstall = false; identify()">Check display after restart</v-btn>
-          <details class="mt-5"><summary>Advanced installation details</summary><v-select v-model="baud" class="mt-4" label="USB transfer speed" :items="[{title:'Standard (460800)', value:460800}, {title:'Slower — retry failed transfers (115200)',value:115200}]" :disabled="locked" /><p v-if="state.package" class="setup-path">{{ state.package.directory }} · {{ state.package.chip }} · {{ state.package.flashBytes / 1048576 }} MB · {{ state.package.files.length }} binaries</p></details>
+          <v-select v-model="baud" class="mt-5" label="USB transfer speed" :items="[{title:'Standard (460800)', value:460800}, {title:'Slower — retry failed transfers (115200)',value:115200}]" :disabled="locked" hint="Use Standard normally. Try Slower if firmware transfers fail." persistent-hint />
         </section>
         <section v-if="panel === 'wifi'">
           <UsbWifiSetup :identity="identity" :selected-port="port" :state="state.wifi" :locked="locked" @state="wifiState" @editing="wifiEditing = $event" />
