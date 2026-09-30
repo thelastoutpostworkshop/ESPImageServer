@@ -3441,7 +3441,7 @@ onUnmounted(() => {
     </v-dialog>
 
     <v-main class="app-shell">
-      <v-container class="app-container py-4 py-sm-7">
+      <v-container fluid class="app-container py-4 py-sm-7">
         <FirmwareUpdateNotice :displays="displays" :enabled="firmwareChecksEnabled" @setup="navigate('firmware')" />
         <v-alert v-if="!compact && !mobileAccessPromptDismissed" type="info" variant="tonal" icon="mdi-cellphone-link" class="mb-4">
           <div class="font-weight-medium">Use ESPImageServer from your phone</div>
@@ -3453,7 +3453,7 @@ onUnmounted(() => {
             </div>
           </template>
         </v-alert>
-        <v-card v-if="page === 'queue'" class="mx-auto" max-width="960">
+        <v-card v-if="page === 'queue'">
           <v-card-title class="page-card-title d-flex align-center text-h6">
             <div class="page-card-title__heading d-flex align-center">
               <v-icon class="mr-2">mdi-format-list-numbered</v-icon><span>Generation queue</span>
@@ -3503,7 +3503,7 @@ onUnmounted(() => {
           </template>
         </v-card>
         <FirmwareInstaller v-if="page === 'firmware'" @open-display="selectActiveDisplay($event); navigate('displays')" />
-        <v-card v-if="page === 'diagnostics'" class="mx-auto" max-width="960">
+        <v-card v-if="page === 'diagnostics'">
           <v-card-title class="page-card-title d-flex align-center text-h6">
             <div class="page-card-title__heading d-flex align-center">
               <v-icon class="mr-2" icon="mdi-text-box-outline" /><span>Diagnostics</span>
@@ -3554,8 +3554,8 @@ onUnmounted(() => {
           </v-window>
         </v-card>
         <template v-if="page === 'generate'">
-        <v-row>
-        <v-col cols="12" lg="5">
+        <v-row class="generation-layout">
+        <v-col cols="12" lg="5" class="generation-controls">
         <v-card class="generation-card">
           <v-card-text>
             <v-alert v-if="videoGenerationActive" type="info" variant="tonal" density="compact" class="compact-stack-alert-actions mb-4">
@@ -3659,7 +3659,7 @@ onUnmounted(() => {
         </v-card>
         </v-col>
 
-        <v-col cols="12" lg="7">
+        <v-col cols="12" lg="7" class="generation-preview">
         <v-card class="generated-image-card h-100">
           <v-card-title class="d-flex flex-wrap align-center ga-2 text-subtitle-1">
             <span>{{ selectedSavedImage ? 'Selected saved image' : 'Latest completed image' }}</span>
@@ -3741,7 +3741,7 @@ onUnmounted(() => {
         </v-row>
         </template>
 
-        <v-card v-if="page === 'video'" class="mx-auto" max-width="1400">
+        <v-card v-if="page === 'video'">
           <v-card-title class="text-h5 pt-5">Generate video</v-card-title>
           <v-card-text>
             <v-alert v-if="health && health.device !== 'cuda'" type="error" variant="tonal" density="compact" class="mb-4" icon="mdi-cpu-64-bit">
@@ -3751,8 +3751,8 @@ onUnmounted(() => {
               Image generation is using the graphics card. You can add a video to the queue; it will start when the image finishes.
               <template #append><v-btn size="small" variant="text" @click="page = 'queue'">View queue</v-btn></template>
             </v-alert>
-            <v-row>
-              <v-col cols="12" lg="5">
+            <v-row class="generation-layout">
+              <v-col cols="12" lg="5" class="generation-controls">
             <v-form @submit.prevent="generateVideo">
               <v-alert v-if="display?.connected && !activeDisplayOnline" type="warning" variant="tonal" density="compact" class="mb-3" prepend-icon="mdi-monitor-off">
                 <strong>{{ display.name }} is offline.</strong> This video will still be created for its {{ display.width }} × {{ display.height }} screen, but display and SD-card actions are unavailable until it reconnects.
@@ -3846,7 +3846,7 @@ onUnmounted(() => {
             <v-alert v-else-if="videoStage" type="success" variant="tonal" density="compact" class="mt-4">{{ videoStage }}</v-alert>
             <v-alert v-if="videoError" type="error" variant="tonal" density="compact" class="mt-4">{{ videoError }}</v-alert>
               </v-col>
-              <v-col cols="12" lg="7">
+              <v-col cols="12" lg="7" class="generation-preview">
                 <v-card class="generated-video-card h-100">
                   <v-card-title class="d-flex flex-wrap align-center ga-2 text-subtitle-1">
                     <span>Latest completed video</span>
@@ -4010,7 +4010,7 @@ onUnmounted(() => {
           </v-list>
         </v-card>
 
-        <v-card v-if="page === 'displays'" class="mx-auto" max-width="1200">
+        <v-card v-if="page === 'displays'">
           <v-card-title class="text-h5 pt-5">Displays</v-card-title>
           <v-card-subtitle>Choose the screen used by generation, display controls, and SD-card actions.</v-card-subtitle>
           <v-card-text>
@@ -4048,7 +4048,7 @@ onUnmounted(() => {
           </v-card-text>
         </v-card>
 
-        <v-card v-if="page === 'about'">
+        <v-card v-if="page === 'about'" class="mx-auto" max-width="960">
           <v-card-title>About ESPImageServer</v-card-title>
           <v-card-text class="text-body-1">
             Generate local AI images and show them on a connected ESP32 display. Images remain on your local network.

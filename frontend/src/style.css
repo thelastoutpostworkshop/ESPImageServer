@@ -5,7 +5,14 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .model-table th { white-space: nowrap; }
 .model-table__active { background: rgba(var(--v-theme-success), 0.08); }
 .model-table__description { max-width: 230px; }
-.app-container { max-width: 1440px; }
+.v-container.app-container { max-width: none; padding-inline: clamp(16px, 2vw, 32px); container-type: inline-size; }
+/* Use the workspace width after navigation and the pinned library, not viewport width. */
+.generation-layout > .generation-controls,
+.generation-layout > .generation-preview { flex: 0 0 100%; max-width: 100%; min-width: 0; }
+@container (min-width: 1000px) {
+  .generation-layout > .generation-controls { flex: 0 0 40%; max-width: 560px; }
+  .generation-layout > .generation-preview { flex: 1 1 0; max-width: none; }
+}
 /* Keep the primary controls above navigation drawers while they change mode. */
 .app-bar { z-index: 1202 !important; }
 .app-bar__display-chip { min-width: 0; }

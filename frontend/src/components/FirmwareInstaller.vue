@@ -137,21 +137,18 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 </script>
 
 <template>
-  <v-card class="mx-auto" max-width="800">
+  <v-card class="setup-workspace">
     <v-card-text class="pa-6">
       <div class="d-flex align-center ga-3 mb-2"><v-icon icon="mdi-monitor" size="28" /><h1 class="text-h5">Set up display</h1></div>
       <p class="text-medium-emphasis mb-6">{{ identity ? identity.board_name : 'Connect your display. We’ll guide you through the rest.' }}</p>
-      <BoardShopping v-if="!identity && !locked" />
       <ol class="setup-steps mb-6" aria-label="Display setup progress">
         <li v-for="(title, index) in ['Connect', 'Firmware', 'Wi-Fi', 'Ready']" :key="title" :aria-current="step === index + 1 ? 'step' : undefined" :class="{ current: step === index + 1, complete: step > index + 1 }"><span>{{ step > index + 1 ? '✓' : index + 1 }}</span>{{ title }}</li>
       </ol>
+      <div class="setup-layout">
+      <div class="setup-main">
       <v-alert v-if="!available" type="info" variant="tonal">Open the updated ESPImageServer desktop app to set up a USB display. Your browser can manage displays already on the network.</v-alert>
       <template v-else>
         <div v-if="identity && panel !== 'connect'" class="setup-summary mb-5"><span>USB connected · {{ identity.board_name }}</span><v-btn variant="text" size="small" :disabled="locked" @click="port = ''; selectPort()">Change display</v-btn></div>
-        <figure v-if="detectedBoard && ['firmware', 'install'].includes(panel)" class="detected-board mb-5">
-          <img :src="detectedBoard.image" :alt="detectedBoard.title" class="board-photo" />
-          <figcaption class="text-body-2 mt-2">{{ detectedBoard.title }}</figcaption>
-        </figure>
         <v-alert v-if="error || state.error || state.identityError" type="error" variant="tonal" class="mb-4">{{ error || state.error || state.identityError }}</v-alert>
         <v-sheet v-if="download.busy" border rounded class="pa-4 mb-4" role="status" aria-live="polite">
           <p class="mb-3">{{ download.download?.stage === 'validating' ? 'Checking downloaded firmware…' : 'Downloading firmware from GitHub…' }}</p>
@@ -217,17 +214,37 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         </div>
         <v-alert v-if="libraryError || library.error" type="warning" variant="tonal" class="mt-4">{{ libraryError || library.error }}</v-alert>
         <details v-if="panel === 'firmware' && library.issues?.length" class="mt-3"><summary>{{ library.issues.length }} package(s) could not be used</summary><p v-for="issue in library.issues" :key="issue.folder" class="mt-2">{{ issue.folder }}: {{ issue.message }}</p></details>
-        <details v-if="identity" class="mt-5"><summary>Device details</summary><p class="mt-3">{{ identity.port }} · Hardware ID {{ identity.hardware_id }} · {{ identity.width }} × {{ identity.height }} · Firmware {{ identity.firmware_version }}</p><v-btn variant="text" :disabled="locked" @click="refreshConnection">Refresh device information</v-btn></details>
-        <details v-if="panel !== 'connection' || !serverReady" class="mt-5" :open="state.stage === 'failed' || Boolean(state.identityError)"><summary>Connection help and recovery</summary><p class="mt-3">Use the board’s data USB connector and a data cable. Close other apps using the USB serial port.</p><p class="mt-3">If flashing cannot connect: hold BOOT, press and release RESET/EN, then release BOOT. Without RESET, reconnect USB while holding BOOT. Refresh ports and check the display again if its port name changes.</p><p class="mt-3">After an interrupted write, enter bootloader mode and reinstall the complete package. Try the slower USB speed if transfers fail. No full-chip erase is performed.</p></details>
         <details v-if="state.log" class="mt-4"><summary>Installation log</summary><pre class="firmware-log mt-3">{{ state.log }}</pre></details>
       </template>
+      </div>
+      <aside class="setup-support" aria-label="Display information and help">
+        <h2 class="text-h6 mb-4">{{ identity ? 'Your display' : 'Display setup help' }}</h2>
+        <figure v-if="detectedBoard" class="detected-board mb-5">
+          <img :src="detectedBoard.image" :alt="detectedBoard.title" class="board-photo" />
+          <figcaption class="text-body-2 mt-2">{{ detectedBoard.title }}</figcaption>
+        </figure>
+
+        <p v-if="identity" class="text-body-2 mb-4">{{ identity.wifi_connected ? 'Connected to Wi-Fi' : 'Wi-Fi connection pending' }}</p>
+        <BoardShopping v-if="!identity && !locked" />
+        <details v-if="identity" class="mt-5"><summary>Device details</summary><p class="mt-3">{{ identity.port }} · Hardware ID {{ identity.hardware_id }} · {{ identity.width }} × {{ identity.height }} · Firmware {{ identity.firmware_version }}</p><v-btn variant="text" :disabled="locked" @click="refreshConnection">Refresh device information</v-btn></details>
+        <details v-if="panel !== 'connection' || !serverReady" class="mt-5" :open="state.stage === 'failed' || Boolean(state.identityError)"><summary>Connection help and recovery</summary><p class="mt-3">Use the board’s data USB connector and a data cable. Close other apps using the USB serial port.</p><p class="mt-3">If flashing cannot connect: hold BOOT, press and release RESET/EN, then release BOOT. Without RESET, reconnect USB while holding BOOT. Refresh ports and check the display again if its port name changes.</p><p class="mt-3">After an interrupted write, enter bootloader mode and reinstall the complete package. Try the slower USB speed if transfers fail. No full-chip erase is performed.</p></details>
+      </aside>
+      </div>
     </v-card-text>
   </v-card>
 </template>
 
 <style scoped>
+.setup-workspace { container-type: inline-size; }
+.setup-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+.setup-main, .setup-support { min-width: 0; }
+.setup-support { padding: 24px; border-radius: 8px; background: rgba(var(--v-theme-on-surface), .035); overflow-wrap: anywhere; }
+@container (min-width: 1000px) {
+  .setup-layout { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); align-items: start; }
+}
+
 .board-picker { border: 0; min-width: 0; }
-.board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.board-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; }
 .board-option { display: flex; flex-direction: column; border: 2px solid rgba(var(--v-theme-on-surface), .2); border-radius: 8px; padding: 10px; cursor: pointer; }
 .board-option.selected { border-color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), .08); }
 .board-option:focus-within { outline: 2px solid rgb(var(--v-theme-primary)); outline-offset: 3px; }
