@@ -151,7 +151,7 @@ try {
         # cannot make CUDA available to PyTorch.
         Write-Host 'Checking NVIDIA CUDA with a small GPU computation...'
         if ((Invoke-LoggedExternal $venvPython @('-c', 'import torch; assert torch.version.cuda, "CPU-only PyTorch was installed"; assert torch.cuda.is_available(), "PyTorch cannot access a compatible NVIDIA GPU"; a = torch.ones((16, 16), device="cuda"); result = a @ a; torch.cuda.synchronize(); assert bool((result == 16).all().item()), "CUDA computation returned an incorrect result"; gpu = torch.cuda.get_device_properties(0); print(f"CUDA computation passed: {gpu.name}, {gpu.total_memory / (1024 ** 3):.1f} GiB total graphics memory, PyTorch {torch.__version__}")')) -ne 0) {
-            throw 'CUDA was selected, but the GPU computation check failed. See the preceding error. Update the NVIDIA driver or choose display management only (no AI generation).'
+            throw 'The NVIDIA CUDA computation check failed. See the preceding error. Confirm this computer has a supported NVIDIA GPU, install or update its driver, and run setup again.'
         }
     }
 

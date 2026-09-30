@@ -56,7 +56,7 @@ Filename: "{app}\desktop\ESPImageServer.exe"; Description: "Start ESPImageServer
 
 [Code]
 var
-  ComputePage: TInputOptionWizardPage;
+  HardwarePage: TOutputMsgWizardPage;
   BootstrapProgress: TOutputProgressWizardPage;
   BootstrapOutput: TNewMemo;
   BootstrapCancelButton: TNewButton;
@@ -66,24 +66,25 @@ var
 procedure Sleep(Milliseconds: Longword);
 external 'Sleep@kernel32.dll stdcall';
 
-function NvidiaDetected: Boolean;
+procedure DetectNvidia;
 var
+  Detected: Boolean;
   ResultCode: Integer;
   ReportPath: String;
   ReportText: AnsiString;
 begin
   ReportPath := ExpandConstant('{tmp}\nvidia-hardware.txt');
-  Result := Exec('nvidia-smi.exe', '--query-gpu=name,memory.total --format=csv,noheader --filename="' + ReportPath + '"', '', SW_HIDE,
+  Detected := Exec('nvidia-smi.exe', '--query-gpu=name,memory.total --format=csv,noheader --filename="' + ReportPath + '"', '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
-  if Result then begin
-    Result := LoadStringFromFile(ReportPath, ReportText);
-    if Result then begin
+  if Detected then begin
+    Detected := LoadStringFromFile(ReportPath, ReportText);
+    if Detected then begin
       NvidiaSummary := Trim(String(ReportText));
-      Result := NvidiaSummary <> '';
+      Detected := NvidiaSummary <> '';
     end;
   end;
   DeleteFile(ReportPath);
-  if Result then
+  if Detected then
     NvidiaSummary := 'Detected NVIDIA GPU(s), total graphics memory:' + #13#10 + NvidiaSummary
   else
     NvidiaSummary := 'No NVIDIA GPU could be detected through its driver. Install or update the NVIDIA driver to enable CUDA generation.';
@@ -99,23 +100,13 @@ begin
 end;
 
 procedure InitializeWizard;
-var
-  HasNvidia: Boolean;
 begin
-  HasNvidia := NvidiaDetected;
-  ComputePage := CreateInputOptionPage(wpSelectDir,
-    'Choose image and video generation hardware',
-    'Select the hardware this computer should use.',
+  DetectNvidia;
+  HardwarePage := CreateOutputMsgPage(wpSelectDir,
+    'Image and video generation',
+    'Setup will install NVIDIA CUDA acceleration.',
     NvidiaSummary + #13#10#13#10 +
-    'Generation requires NVIDIA CUDA. Installation will test a GPU computation after installing PyTorch. Memory needs vary by model; detection does not guarantee every model will fit. Display management mode works without generation.',
-    True, True);
-  ComputePage.Add('Display management only (no AI generation)');
-  ComputePage.Add('NVIDIA CUDA acceleration');
-  if HasNvidia then
-    ComputePage.SelectedValueIndex := 1
-  else
-    ComputePage.SelectedValueIndex := 0;
-
+    'Generation requires a supported NVIDIA GPU and driver. Setup downloads the generation dependencies and tests a GPU computation. Memory needs vary by model; detection does not guarantee every model will fit. Models download when selected in the app.');
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -136,17 +127,10 @@ end;
 
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
   MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
-var
-  ComputeChoice: String;
 begin
-  if ComputePage.SelectedValueIndex = 1 then
-    ComputeChoice := 'NVIDIA CUDA acceleration'
-  else
-    ComputeChoice := 'Display management only (no AI generation)';
-
   Result := MemoUserInfoInfo + MemoDirInfo + MemoTypeInfo + MemoComponentsInfo +
-    MemoGroupInfo + MemoTasksInfo + NewLine + 'Image generation:' + NewLine +
-    Space + 'Hardware: ' + ComputeChoice + NewLine +
+    MemoGroupInfo + MemoTasksInfo + NewLine + 'Image and video generation:' + NewLine +
+    Space + 'Hardware: NVIDIA CUDA acceleration' + NewLine +
     Space + NvidiaSummary + NewLine +
     Space + 'Models: choose and download them later in the app';
 end;
@@ -162,13 +146,12 @@ begin
     Exit;
 
   Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\bootstrap.ps1') + '"';
-  if ComputePage.SelectedValueIndex = 1 then
-    Parameters := Parameters + ' -UseCuda';
+  Parameters := Parameters + ' -UseCuda';
 
   BootstrapProgress := CreateOutputProgressPage('Installing ESPImageServer',
-    'Setting up the local image-generation environment.');
+    'Setting up the local image and video generation environment.');
   BootstrapProgress.SetProgress(1, 6);
-  BootstrapProgress.SetText('Installing the local image-generation environment...',
+  BootstrapProgress.SetText('Installing the local image and video generation environment...',
     'This can take several minutes while PyTorch and ESPImageServer are prepared. Please keep this window open.');
   BootstrapOutput := TNewMemo.Create(BootstrapProgress);
   BootstrapOutput.Left := 0;

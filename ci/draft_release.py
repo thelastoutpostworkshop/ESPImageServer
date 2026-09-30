@@ -96,9 +96,9 @@ Installers are unsigned. SHA-256 files accompany each installer. macOS is deferr
 
 Quit ESPImageServer, run `ESPImageServer-Setup-{version}.exe`, and follow setup. You can install over an existing version. Setup downloads the generation dependencies; internet access and sufficient free disk space are required.
 
-1. Choose NVIDIA CUDA acceleration for generation, or display management only for setup, saved creations, and SD-card tools.
-2. Choose an initial image model. Its files download during setup or the first time you select it.
-3. Open **ESPImageServer** from the Start Menu or desktop shortcut.
+1. Setup installs NVIDIA CUDA generation dependencies and verifies your GPU. Install a compatible NVIDIA driver beforehand.
+2. Open **ESPImageServer** from the Start Menu or desktop shortcut.
+3. Choose an image or video model in the app; its files download when selected.
 
 Setup uses CPython 3.12. If it is not already installed, the installer asks Windows Package Manager to install it; other Python versions already on the computer are left alone.
 
