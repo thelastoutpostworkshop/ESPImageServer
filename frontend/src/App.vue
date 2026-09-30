@@ -4,6 +4,7 @@ import { useDisplay } from 'vuetify'
 import QRCode from 'qrcode'
 import { generationJobDetail, generationHasMeasuredProgress } from './generationStatus.js'
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
+import AboutPage from './components/AboutPage.vue'
 import BoardShopping from './components/BoardShopping.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
@@ -4048,28 +4049,7 @@ onUnmounted(() => {
           </v-card-text>
         </v-card>
 
-        <v-card v-if="page === 'about'" class="mx-auto" max-width="960">
-          <v-card-title>About ESPImageServer</v-card-title>
-          <v-card-text class="text-body-1">
-            Generate local AI images and show them on a connected ESP32 display. Images remain on your local network.
-          </v-card-text>
-          <v-list density="compact">
-            <v-list-item prepend-icon="mdi-tag-outline" title="App version" :subtitle="serverInfo?.version ? `Version ${serverInfo.version}` : 'Loading version information...'" />
-            <v-list-item prepend-icon="mdi-brain" title="Model" :subtitle="serverInfo?.model_description || 'Loading model information...'" />
-            <v-list-item
-              :prepend-icon="health?.device === 'cuda' ? 'mdi-expansion-card-variant' : 'mdi-cpu-64-bit'"
-              title="Image processing"
-              :subtitle="serverInfo?.processing || 'Loading processing information...'"
-            />
-            <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display" :subtitle="displayMessage" />
-            <v-alert v-if="display?.connected && !activeDisplayOnline" type="warning" variant="tonal" density="compact" class="ma-4" prepend-icon="mdi-monitor-off">
-              {{ display.name }} is offline. It will receive the most recently prepared image after it reconnects; display and SD-card commands are unavailable until then.
-            </v-alert>
-            <v-alert v-if="!display?.connected" type="info" variant="tonal" density="compact" class="ma-4">
-              Turn on the ESP32, connect it to the same local network as this computer, and confirm its configured server address points here. The display will appear automatically after it registers.
-            </v-alert>
-          </v-list>
-        </v-card>
+        <AboutPage v-if="page === 'about'" :server-info="serverInfo" :health="health" :display-message="displayMessage" @navigate="navigate" />
 
         <v-card v-if="page === 'display-experience'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
