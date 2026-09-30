@@ -6,13 +6,12 @@ import SetupConnection from './SetupConnection.vue'
 import { firmwareStatus } from '../firmwareStatus.js'
 const emit = defineEmits(['open-display'])
 const desktop = window.espImageServerDesktop
-const available = Boolean(desktop?.firmwareLibrary && desktop?.refreshFirmwareIdentity)
+const available = Boolean(desktop?.firmwareReleases && desktop?.refreshFirmwareIdentity)
 const state = ref({ busy: false, stage: 'idle', package: null, error: '', log: '' })
 const ports = ref([]), port = ref(''), board = ref(''), baud = ref(460800)
 const pending = ref(false), error = ref(''), confirmed = ref(false)
 const library = ref({ packages: [], issues: [], directory: '', checkedAt: null })
 const onlineAvailable = Boolean(desktop?.firmwareReleases)
-const source = ref(onlineAvailable ? 'github' : 'local')
 const download = ref({ busy: false, download: null })
 const libraryBusy = ref(false), libraryError = ref('')
 const reviewed = ref(false), showInstall = ref(false), manageWifi = ref(false), wifiEditing = ref(false)
@@ -27,7 +26,7 @@ const update = computed(() => firmwareStatus(identity.value || (board.value ? { 
 const panel = computed(() => showInstall.value ? 'install' : !identity.value ? 'connect' : !reviewed.value ? 'firmware' :
   manageWifi.value || !identity.value.wifi_connected ? 'wifi' : 'connection')
 const step = computed(() => ({ connect: 1, install: 2, firmware: 2, wifi: 3, connection: 4 }[panel.value]))
-const canInstall = computed(() => available && !locked.value && confirmed.value && port.value && state.value.package && board.value === state.value.package.board)
+const canInstall = computed(() => available && !locked.value && confirmed.value && port.value && state.value.package?.source === 'github' && board.value === state.value.package.board)
 const boardItems = [
   { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543', image: '/ui/board-catalog/JC4827W543.png' }, { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820', image: '/ui/board-catalog/ST7701_320X820.png' },
   { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147', image: '/ui/board-catalog/ESP32_C6_LCD_147.png' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY', image: '/ui/board-catalog/CHEAP_YELLOW_DISPLAY.png' },
@@ -38,7 +37,7 @@ const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validati
   connecting: 'Connecting to your display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
   identifying: 'Checking firmware startup', boot_verified: 'Firmware installed and startup verified',
   written: 'Write verified — startup still needs checking', failed: 'Installation needs attention' }[state.value.stage] || state.value.stage))
-const updateText = computed(() => libraryBusy.value ? 'Checking for firmware updates…' : ({ unknown: 'Updates haven’t been checked.', missing: `No firmware for this display was found ${source.value === 'github' ? 'on GitHub' : 'in your local library'}.`,
+const updateText = computed(() => libraryBusy.value ? 'Checking for firmware updates…' : ({ unknown: 'Updates haven’t been checked.', missing: `No firmware for this display was found on GitHub.`,
   current: `Firmware is up to date: ${identity.value?.firmware_version}`,
   newer: `Installed ${identity.value?.firmware_version} is newer than the available releases.`,
   update: `Update available: ${identity.value?.firmware_version} → ${update.value.latest?.version}` }[update.value.kind]))
@@ -55,8 +54,7 @@ async function perform(action) {
 }
 async function loadLibrary(method) {
   if (libraryBusy.value) return
-  if (method === 'chooseFirmwareLibrary') source.value = 'local'
-  method ||= source.value === 'github' ? 'checkFirmwareReleases' : 'checkFirmwareLibrary'
+  method = method === 'firmwareReleases' ? 'firmwareReleases' : 'checkFirmwareReleases'
   libraryBusy.value = true; libraryError.value = ''
   try { library.value = await call(method) } catch (e) { libraryError.value = e.message; library.value.checkedAt = null }
   finally { libraryBusy.value = false }
@@ -91,14 +89,9 @@ async function reviewUpdate() {
   await perform(async () => {
     const pkg = update.value.latest
     confirmed.value = false
-    state.value = pkg.source === 'github' ? await call('selectReleaseFirmware', { id: pkg.id, board: pkg.board,
-      port: port.value }) : await call('selectLibraryFirmware', { directory: pkg.directory })
+    state.value = await call('selectReleaseFirmware', { id: pkg.id, board: pkg.board, port: port.value })
     board.value = pkg.board; showInstall.value = true
   })
-}
-async function choosePackage() {
-  confirmed.value = false
-  await perform(async () => { state.value = await call('chooseFirmwarePackage') })
 }
 async function install() {
   await perform(async () => { state.value = await call('installFirmware', { port: port.value, board: board.value, baud: baud.value }); installationStarted.value = true; confirmed.value = false; autoAttempts = 0 })
@@ -131,7 +124,7 @@ watch(() => identity.value?.hardware_id, (next, previous) => {
 })
 onMounted(async () => {
   if (!available) return
-  void loadLibrary(onlineAvailable ? 'firmwareReleases' : 'firmwareLibrary')
+  void loadLibrary('firmwareReleases')
   await perform(async () => {
     state.value = await call('firmwareState'); port.value = state.value.selectedPort || state.value.identity?.port || ''
     if (state.value.identity) board.value = state.value.identity.board_target
@@ -176,11 +169,9 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <h2 class="text-h6 mb-2">{{ compatible ? 'Check for firmware updates' : 'Install compatible firmware' }}</h2><p class="mb-4">Installed version: <strong>{{ identity.firmware_version }}</strong></p>
           <v-alert :type="update.kind === 'current' ? 'success' : 'info'" variant="tonal" class="mb-4">{{ updateText }}</v-alert>
           <details v-if="update.latest?.notes" class="mb-4"><summary>What’s in version {{ update.latest.version }}</summary><p class="mt-3 release-notes">{{ update.latest.notes }}</p></details>
-          <p v-if="source === 'github'" class="mb-4">Firmware comes directly from the official GitHub releases. The app downloads and checks the files for you.</p>
-          <p v-else-if="!library.directory" class="mb-4">Choose a local firmware library to find packages for this display.</p>
+          <p class="mb-4">Firmware comes directly from the official GitHub releases. The app downloads and checks the files for you.</p>
           <div class="setup-actions mb-4">
             <v-btn v-if="update.kind === 'update'" color="primary" :disabled="locked || libraryBusy" @click="reviewUpdate">Review update to {{ update.latest.version }}</v-btn>
-            <v-btn v-else-if="source === 'local' && !library.directory" color="primary" :loading="libraryBusy" :disabled="locked" @click="loadLibrary('chooseFirmwareLibrary')">Choose firmware library</v-btn>
             <v-btn v-else :variant="update.kind === 'current' && compatible ? 'text' : 'flat'" :loading="libraryBusy" :disabled="locked" @click="loadLibrary()">Check for updates</v-btn>
             <v-btn v-if="compatible" :color="update.kind === 'current' ? 'primary' : undefined" :variant="update.kind === 'current' ? 'flat' : 'text'" :disabled="locked" @click="continueSetup">{{ update.kind === 'update' ? 'Continue with current version' : 'Continue' }}</v-btn>
           </div>
@@ -199,13 +190,12 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
             </div>
           </fieldset><p v-else class="mb-3">{{ identity.board_name }} · Installed {{ identity.firmware_version }}</p>
           <p v-if="!identity" class="mb-3">USB port: {{ port || 'Not selected' }}. Choose the physical display model above before installing.</p>
-          <div v-if="source === 'github' && !state.busy" class="mb-4">
+          <div v-if="!state.busy" class="mb-4">
             <v-btn v-if="update.latest && !(state.package?.source === 'github' && state.package?.board === update.latest.board && state.package?.version === update.latest.version)" color="primary" variant="tonal" :disabled="locked || libraryBusy" @click="reviewUpdate">Download firmware {{ update.latest.version }}</v-btn>
-            <p v-else-if="!update.latest && (board || identity)" class="mb-3">{{ libraryBusy ? 'Checking GitHub for this display…' : 'No matching release found. Check again, or choose a local package below.' }}</p>
+            <p v-else-if="!update.latest && (board || identity)" class="mb-3">{{ libraryBusy ? 'Checking GitHub for this display…' : 'No matching release found on GitHub. Check again later.' }}</p>
           </div>
           <v-sheet v-if="state.package" border rounded class="pa-4 mb-4"><strong>{{ state.package.board }} · Version {{ state.package.version }}</strong><p class="mt-1">{{ state.package.source === 'github' ? 'Downloaded from GitHub. Files checked and ready.' : 'Package files checked and ready.' }}</p></v-sheet>
           <details v-if="update.latest?.notes" class="mb-4"><summary>Release notes for {{ update.latest.version }}</summary><p class="mt-3 release-notes">{{ update.latest.notes }}</p></details>
-          <details v-if="!state.busy" class="mb-4"><summary>Use a local firmware package</summary><v-btn variant="text" class="mt-2" :disabled="locked" @click="choosePackage">Choose firmware folder</v-btn></details>
           <v-alert v-if="state.package && board && board !== state.package.board" type="error" class="mb-4">This package does not match the display model.</v-alert>
           <template v-if="state.package && !state.busy"><v-alert type="warning" variant="tonal" class="mb-3">This replaces the display’s firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert><v-checkbox v-model="confirmed" label="Install this firmware on the selected display." :disabled="locked" hide-details class="mb-4" /><v-btn color="primary" :disabled="!canInstall" @click="install">Install {{ state.package.version }}</v-btn></template>
           <div v-if="state.busy || ['written', 'failed', 'boot_verified'].includes(state.stage)" role="status" class="my-4">{{ stageLabel }}</div><v-progress-linear v-if="state.busy" indeterminate class="my-4" />
@@ -220,14 +210,10 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         </section>
         <SetupConnection v-if="identity && compatible && reviewed" v-show="panel === 'connection'" :identity="identity" :selected-port="port" :locked="locked || panel !== 'connection'" @ready="serverReady = $event" @open-display="emit('open-display', $event)" />
         <div v-if="panel === 'connection'" class="mt-4"><p class="mb-3">Firmware {{ identity.firmware_version }} <span v-if="update.kind === 'update'">· Update {{ update.latest.version }} available</span></p><div class="setup-actions"><v-btn variant="text" :disabled="locked" @click="manageWifi = true">Manage Wi-Fi</v-btn><v-btn variant="text" :disabled="locked" @click="reviewed = false; loadLibrary()">Firmware updates</v-btn></div></div>
-        <details v-if="['firmware', 'install'].includes(panel)" class="mt-5"><summary>Firmware source and advanced options</summary>
-          <v-select v-model="source" class="mt-4" label="Firmware source" :items="[{title:'GitHub — official releases',value:'github',props:{disabled:!onlineAvailable}},{title:'Local firmware library',value:'local'}]" :disabled="locked || libraryBusy" @update:model-value="library = {packages:[],issues:[]}; loadLibrary(source === 'github' ? 'firmwareReleases' : 'firmwareLibrary')" />
-          <p v-if="!onlineAvailable" class="mb-3">Restart the updated desktop app to enable GitHub downloads.</p>
-          <p v-if="source === 'local'" class="my-3 setup-path">{{ library.directory || 'No folder selected' }}</p>
+        <div v-if="['firmware', 'install'].includes(panel)" class="mt-5">
           <p v-if="library.checkedAt" class="mb-3 text-caption">Last checked: {{ new Date(library.checkedAt).toLocaleString() }}</p>
-          <v-btn variant="text" :disabled="locked || libraryBusy" :loading="libraryBusy" @click="loadLibrary()">Check for updates</v-btn>
-          <v-btn v-if="source === 'local'" variant="tonal" :disabled="locked || libraryBusy" @click="loadLibrary('chooseFirmwareLibrary')">{{ library.directory ? 'Change library folder' : 'Choose library folder' }}</v-btn>
-        </details>
+          <v-btn variant="text" :disabled="locked || libraryBusy" :loading="libraryBusy" @click="loadLibrary()">Check GitHub for updates</v-btn>
+        </div>
         <v-alert v-if="libraryError || library.error" type="warning" variant="tonal" class="mt-4">{{ libraryError || library.error }}</v-alert>
         <details v-if="panel === 'firmware' && library.issues?.length" class="mt-3"><summary>{{ library.issues.length }} package(s) could not be used</summary><p v-for="issue in library.issues" :key="issue.folder" class="mt-2">{{ issue.folder }}: {{ issue.message }}</p></details>
         <details v-if="identity" class="mt-5"><summary>Device details</summary><p class="mt-3">{{ identity.port }} · Hardware ID {{ identity.hardware_id }} · {{ identity.width }} × {{ identity.height }} · Firmware {{ identity.firmware_version }}</p><v-btn variant="text" :disabled="locked" @click="refreshConnection">Refresh device information</v-btn></details>

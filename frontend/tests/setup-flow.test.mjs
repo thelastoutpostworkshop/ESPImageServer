@@ -16,7 +16,7 @@ async function mount(t, extraApi = {}) {
   const identity={port:'COM8',board_target:'JC4827W543',hardware_id:'aabbccddeeff',firmware_version:'1.1.3',wifi_configured:true,wifi_connected:true,capabilities:['wifi_scan','wifi_connect','wifi_status','wifi_cancel']}
   const state={selectedPort:'COM8',identity,busy:false,stage:'idle'}
   let installs=0, refreshes=0
-  const api={firmwareLibrary:async()=>({ok:true,value:{directory:'library',checkedAt:'today',packages:[{board:'JC4827W543',version:'1.1.4',directory:'library/package'}]}}),
+  const api={firmwareDownloadState:async()=>({ok:true,value:{busy:false}}),firmwareReleases:async()=>({ok:true,value:{directory:'library',checkedAt:'today',packages:[{board:'JC4827W543',version:'1.1.4',id:'release-package',source:'github'}]}}),
     firmwareState:async()=>({ok:true,value:structuredClone(state)}),firmwarePorts:async()=>({ok:true,value:[{port:'COM8'}]}),
     selectFirmwarePort:async({port})=>{state.selectedPort=port;state.identity=null;return {ok:true,value:structuredClone(state)}},
     refreshFirmwareIdentity:async()=>{refreshes++;state.identity={...identity,wifi_connected:true};return {ok:true,value:structuredClone(state)}},
@@ -64,14 +64,14 @@ test('opening firmware management after an earlier install does not auto-close i
   await form.poll();await flush();assert.equal(form.panel,'install')
 })
 
-test('GitHub is the default source and download ends at an unconfirmed installation review', async t => {
+test('GitHub supplies firmware and download ends at an unconfirmed installation review', async t => {
   let selections = []
   const {form,state,installs} = await mount(t, {
     firmwareReleases: async()=>({ok:true,value:{checkedAt:'today',packages:[{id:'42',source:'github',board:'JC4827W543',version:'1.1.4'}]}}),
     firmwareDownloadState: async()=>({ok:true,value:{busy:false}}),
     selectReleaseFirmware: async request=>{selections.push(request);return {ok:true,value:{...state,package:{board:'JC4827W543',version:'1.1.4',source:'github'}}}}
   })
-  assert.equal(form.source,'github'); assert.equal(form.update.kind,'update')
+  assert.equal(form.update.kind,'update')
   await form.reviewUpdate(); await flush()
   assert.deepEqual(selections,[{id:'42',board:'JC4827W543',port:'COM8'}])
   assert.equal(form.panel,'install'); assert.equal(form.confirmed,false); assert.equal(form.canInstall,false); assert.equal(installs(),0)
@@ -87,4 +87,13 @@ test('GitHub failure stays unknown and download errors do not open an installati
   form.library={checkedAt:'today',packages:[{id:'42',source:'github',board:'JC4827W543',version:'1.1.4'}]}
   await form.reviewUpdate(); await flush()
   assert.equal(form.error,'Checksum failed'); assert.equal(form.panel,'firmware'); assert.equal(installs(),0)
+})
+
+
+test('a previously selected local package cannot be installed from setup', async t => {
+  const {form} = await mount(t)
+  form.state = {...form.state, package: {board:'JC4827W543', source:'local'}}
+  form.board = 'JC4827W543'; form.confirmed = true
+  await flush()
+  assert.equal(form.canInstall, false)
 })
