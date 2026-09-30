@@ -178,6 +178,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <v-btn variant="text" :disabled="locked" @click="showInstall = true">{{ compatible ? 'Reinstall or choose other firmware' : 'Choose firmware' }}</v-btn>
         </section>
         <section v-if="panel === 'install'">
+          <v-btn class="mb-4" variant="tonal" prepend-icon="mdi-arrow-left" :disabled="locked" @click="showInstall = false">Back</v-btn>
           <h2 class="text-h6 mb-4">{{ state.busy ? stageLabel : 'Review firmware installation' }}</h2>
           <fieldset v-if="!identity" class="board-picker mb-4" :disabled="locked">
             <legend class="text-subtitle-1 mb-2">Choose your physical display model</legend>
@@ -200,7 +201,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <template v-if="state.package && !state.busy"><v-alert type="warning" variant="tonal" class="mb-3">This replaces the display’s firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert><v-checkbox v-model="confirmed" label="Install this firmware on the selected display." :disabled="locked" hide-details class="mb-4" /><v-btn color="primary" :disabled="!canInstall" @click="install">Install {{ state.package.version }}</v-btn></template>
           <div v-if="state.busy || ['written', 'failed', 'boot_verified'].includes(state.stage)" role="status" class="my-4">{{ stageLabel }}</div><v-progress-linear v-if="state.busy" indeterminate class="my-4" />
           <p v-if="state.stage === 'written'" class="mb-3">The write passed verification and restart was requested. Check the screen, then check the display again to verify startup.</p>
-          <v-btn v-if="state.stage === 'written'" class="mr-2" :disabled="locked" @click="showInstall = false; identify()">Check display after restart</v-btn><v-btn class="ml-2" variant="text" :disabled="locked" @click="showInstall = false">Back</v-btn>
+          <v-btn v-if="state.stage === 'written'" class="mr-2" :disabled="locked" @click="showInstall = false; identify()">Check display after restart</v-btn>
           <details class="mt-5"><summary>Advanced installation details</summary><v-select v-model="baud" class="mt-4" label="USB transfer speed" :items="[{title:'Standard (460800)', value:460800}, {title:'Slower — retry failed transfers (115200)',value:115200}]" :disabled="locked" /><p v-if="state.package" class="setup-path">{{ state.package.directory }} · {{ state.package.chip }} · {{ state.package.flashBytes / 1048576 }} MB · {{ state.package.files.length }} binaries</p></details>
         </section>
         <section v-if="panel === 'wifi'">
