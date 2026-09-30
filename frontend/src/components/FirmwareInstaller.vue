@@ -17,6 +17,7 @@ const download = ref({ busy: false, download: null })
 const libraryBusy = ref(false), libraryError = ref('')
 const reviewed = ref(false), showInstall = ref(false), manageWifi = ref(false), wifiEditing = ref(false)
 const serverReady = ref(false)
+const checkingDisplay = ref(false)
 const installationStarted = ref(false)
 let timer, disposed = false, epoch = 0, lastPorts = 0, lastIdentity = 0, autoAttempts = 0, wasBusy = false
 const locked = computed(() => pending.value || state.value.busy || download.value.busy)
@@ -27,7 +28,7 @@ const update = computed(() => firmwareStatus(identity.value || (board.value ? { 
 const installationRelease = computed(() => state.value.package?.board === board.value
   ? library.value.packages.find(pkg => pkg.board === board.value && pkg.version === state.value.package.version)
   : update.value.latest)
-const panel = computed(() => showInstall.value ? 'install' : !identity.value ? 'connect' : !reviewed.value ? 'firmware' :
+const panel = computed(() => checkingDisplay.value ? 'connect' : showInstall.value ? 'install' : !identity.value ? 'connect' : !reviewed.value ? 'firmware' :
   manageWifi.value || !identity.value.wifi_connected ? 'wifi' : 'connection')
 const step = computed(() => ({ connect: 1, install: 2, firmware: 2, wifi: 3, connection: 4 }[panel.value]))
 const canInstall = computed(() => available && !locked.value && port.value && state.value.package?.source === 'github' && board.value === state.value.package.board)
@@ -64,9 +65,22 @@ async function loadLibrary(method) {
   finally { libraryBusy.value = false }
 }
 function resetFlow() {
-  reviewed.value = false; showInstall.value = false; manageWifi.value = false; wifiEditing.value = false
+  checkingDisplay.value = false; reviewed.value = false; showInstall.value = false; manageWifi.value = false; wifiEditing.value = false
   serverReady.value = false; autoAttempts = 0; lastIdentity = Date.now()
   installationStarted.value = false
+}
+function goToStep(next) {
+  if (locked.value || !available) return
+  if (next === 1) {
+    checkingDisplay.value = true; showInstall.value = false
+  } else if (next === 2 && port.value) {
+    checkingDisplay.value = false; reviewed.value = false; manageWifi.value = false
+    showInstall.value = !identity.value; error.value = ''
+  } else if (next === 3 && compatible.value) {
+    checkingDisplay.value = false; showInstall.value = false; reviewed.value = true; manageWifi.value = true
+  } else if (next === 4 && compatible.value && identity.value?.wifi_connected) {
+    checkingDisplay.value = false; showInstall.value = false; continueSetup()
+  }
 }
 async function checkPorts() {
   ports.value = await call('firmwarePorts')
@@ -81,7 +95,7 @@ async function selectPort() {
 async function identify() {
   await perform(async () => {
     state.value = await call('identifyFirmware', { port: port.value })
-    if (identity.value) board.value = identity.value.board_target
+    if (identity.value) { board.value = identity.value.board_target; checkingDisplay.value = false }
     lastIdentity = Date.now(); autoAttempts = 0
   })
 }
@@ -97,6 +111,7 @@ async function reviewUpdate() {
   })
 }
 async function install() {
+  if (!canInstall.value) return
   await perform(async () => { state.value = await call('installFirmware', { port: port.value, board: board.value, baud: baud.value }); installationStarted.value = true; autoAttempts = 0 })
 }
 function continueSetup() { reviewed.value = true; manageWifi.value = false; lastIdentity = 0; autoAttempts = 0 }
@@ -140,30 +155,39 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 </script>
 
 <template>
-  <v-card class="setup-workspace">
+  <v-stepper :model-value="step" class="setup-workspace" hide-actions :mobile="false" @update:model-value="goToStep">
     <v-card-text class="pa-6">
       <div class="d-flex align-center ga-3 mb-2"><v-icon icon="mdi-monitor" size="28" /><h1 class="text-h5">Set up display</h1></div>
       <p class="text-medium-emphasis mb-6">{{ identity ? identity.board_name : 'Connect your display. We’ll guide you through the rest.' }}</p>
-      <ol class="setup-steps mb-6" aria-label="Display setup progress">
-        <li v-for="(title, index) in ['Connect', 'Firmware', 'Wi-Fi', 'Ready']" :key="title" :aria-current="step === index + 1 ? 'step' : undefined" :class="{ current: step === index + 1, complete: step > index + 1 }"><span>{{ step > index + 1 ? '✓' : index + 1 }}</span>{{ title }}</li>
-      </ol>
+      <v-stepper-header class="setup-stepper-header mb-6" aria-label="Display setup progress">
+        <v-stepper-item :value="1" title="Check display" :subtitle="identity ? 'Display identified' : 'Choose a USB port'" :complete="Boolean(identity)" :editable="available && !locked" :disabled="!available || locked" color="primary" />
+        <v-divider />
+        <v-stepper-item :value="2" title="Install firmware" subtitle="Install or keep your version" :complete="compatible && reviewed" :editable="Boolean(available && port && !locked)" :disabled="!available || !port || locked" color="primary" />
+        <v-divider />
+        <v-stepper-item :value="3" title="Connect Wi-Fi" :subtitle="compatible ? 'Choose your network' : 'Requires compatible firmware'" :complete="compatible && reviewed && Boolean(identity?.wifi_connected)" :editable="compatible && !locked" :disabled="!compatible || locked" color="primary" />
+        <v-divider />
+        <v-stepper-item :value="4" title="Ready" subtitle="Connect to this app" :complete="serverReady" :editable="compatible && Boolean(identity?.wifi_connected) && !locked" :disabled="!compatible || !identity?.wifi_connected || locked" color="primary" />
+      </v-stepper-header>
+      <p class="text-body-2 text-medium-emphasis mb-4" role="status">Step {{ step }} of 4: {{ ['Check your display', 'Review firmware', 'Connect to Wi-Fi', 'Check the server connection'][step - 1] }}</p>
       <div class="setup-layout">
       <div class="setup-main">
       <v-alert v-if="!available" type="info" variant="tonal">Open the updated ESPImageServer desktop app to set up a USB display. Your browser can manage displays already on the network.</v-alert>
       <template v-else>
         <div v-if="identity && panel !== 'connect'" class="setup-summary mb-5"><span>USB connected · {{ identity.board_name }}</span><v-btn variant="text" size="small" :disabled="locked" @click="port = ''; selectPort()">Change display</v-btn></div>
-        <v-alert v-if="error || state.error || state.identityError" type="error" variant="tonal" class="mb-4">{{ error || state.error || state.identityError }}</v-alert>
+        <v-alert v-if="error || state.error" type="error" variant="tonal" class="mb-4">{{ error || state.error }}</v-alert>
+        <v-alert v-if="state.identityError && panel === 'connect'" type="info" variant="tonal" class="mb-4">We couldn't identify this display. You can retry, or continue to install firmware by choosing your board model in the next step.</v-alert>
         <v-sheet v-if="download.busy" border rounded class="pa-4 mb-4" role="status" aria-live="polite">
           <p class="mb-3">{{ download.download?.stage === 'validating' ? 'Checking downloaded firmware…' : 'Downloading firmware from GitHub…' }}</p>
           <v-progress-linear :indeterminate="!download.download?.total || download.download?.stage === 'validating'" :model-value="100 * (download.download?.received || 0) / (download.download?.total || 1)" />
-          <p class="text-body-2 mt-3">Your display will be changed only after you review and confirm installation.</p>
+          <p class="text-body-2 mt-3">Your display will be changed only when you click Install.</p>
           <v-btn class="mt-2" variant="text" @click="call('cancelFirmwareDownload')">Cancel download</v-btn>
         </v-sheet>
         <section v-if="panel === 'connect'">
-          <h2 class="text-h6 mb-2">Connect your display with a USB data cable</h2><p class="mb-5">Select its USB port, then check the display. Close Arduino Serial Monitor first.</p>
+          <h2 class="text-h6 mb-2">Check your display</h2><p class="mb-5">Connect a USB data cable, select the port, then choose Check display. Close Serial Monitor first.</p>
           <v-select v-model="port" :items="ports" item-title="label" item-value="port" label="USB display" :disabled="locked" no-data-text="No display found. Check the cable, then refresh." @update:model-value="selectPort" />
           <div class="setup-actions"><v-btn color="primary" :disabled="locked || !port" :loading="pending" @click="identify">Check display</v-btn><v-btn variant="text" :disabled="locked" @click="perform(checkPorts)">Refresh ports</v-btn></div>
-          <v-btn v-if="state.identityError" class="mt-4" variant="tonal" :disabled="locked || !port" @click="showInstall = true">Install firmware on this display</v-btn>
+          <p class="mt-5 mb-3 text-body-2">New board or display not identified? Continue to choose your board and install firmware. Wi-Fi setup becomes available once compatible firmware is running.</p>
+          <v-btn color="primary" variant="tonal" append-icon="mdi-arrow-right" :disabled="locked || !port" @click="goToStep(2)">Continue to firmware</v-btn>
         </section>
         <section v-if="panel === 'firmware'">
           <h2 class="text-h6 mb-2">{{ compatible ? 'Check for firmware updates' : 'Install compatible firmware' }}</h2><p class="mb-4">Installed version: <strong>{{ identity.firmware_version }}</strong></p>
@@ -173,12 +197,12 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <div class="setup-actions mb-4">
             <v-btn v-if="update.kind === 'update'" color="primary" :disabled="locked || libraryBusy" @click="reviewUpdate">Review update to {{ update.latest.version }}</v-btn>
             <v-btn v-else :variant="update.kind === 'current' && compatible ? 'text' : 'flat'" :loading="libraryBusy" :disabled="locked" @click="loadLibrary()">Check for updates</v-btn>
-            <v-btn v-if="compatible" :color="update.kind === 'current' ? 'primary' : undefined" :variant="update.kind === 'current' ? 'flat' : 'text'" :disabled="locked" @click="continueSetup">{{ update.kind === 'update' ? 'Continue with current version' : 'Continue' }}</v-btn>
+            <v-btn v-if="compatible" :color="update.kind === 'current' ? 'primary' : undefined" :variant="update.kind === 'current' ? 'flat' : 'text'" :disabled="locked" @click="continueSetup">Continue with installed firmware</v-btn>
           </div>
           <v-btn variant="text" :disabled="locked" @click="showInstall = true">{{ compatible ? 'Reinstall or choose other firmware' : 'Choose firmware' }}</v-btn>
         </section>
         <section v-if="panel === 'install'">
-          <v-btn class="mb-4" variant="tonal" prepend-icon="mdi-arrow-left" :disabled="locked" @click="showInstall = false">Back</v-btn>
+          <v-btn class="mb-4" variant="tonal" prepend-icon="mdi-arrow-left" :disabled="locked" @click="identity ? (showInstall = false) : goToStep(1)">Back</v-btn>
           <h2 class="text-h6 mb-4">{{ state.busy ? stageLabel : 'Review firmware installation' }}</h2>
           <fieldset v-if="!identity" class="board-picker mb-4" :disabled="locked">
             <legend class="text-subtitle-1 mb-2">Choose your physical display model</legend>
@@ -233,11 +257,19 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
       </aside>
       </div>
     </v-card-text>
-  </v-card>
+  </v-stepper>
 </template>
 
 <style scoped>
 .setup-workspace { container-type: inline-size; }
+.setup-stepper-header { box-shadow: none; border-bottom: 1px solid rgba(var(--v-theme-on-surface), .12); }
+.setup-stepper-header :deep(.v-stepper-item) { padding: 20px 12px; min-width: 0; }
+.setup-stepper-header :deep(.v-stepper-item__title), .setup-stepper-header :deep(.v-stepper-item__subtitle) { white-space: normal; }
+@container (max-width: 800px) {
+  .setup-stepper-header { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .setup-stepper-header > .v-divider { display: none; }
+  .setup-stepper-header :deep(.v-stepper-item__subtitle) { display: none; }
+}
 .setup-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
 .setup-main, .setup-support { min-width: 0; }
 .setup-support { padding: 24px; border-radius: 8px; background: rgba(var(--v-theme-on-surface), .035); overflow-wrap: anywhere; }
@@ -257,16 +289,9 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 .detected-board { max-width: 420px; }
 .detected-board .board-photo { height: 200px; }
 @media (max-width: 480px) { .board-grid { grid-template-columns: 1fr; } }
-.setup-steps { display: flex; gap: 12px; justify-content: space-between; list-style: none; padding: 0; }
-.setup-steps li { display: flex; align-items: center; gap: 8px; color: rgb(var(--v-theme-on-surface), .6); }
-.setup-steps span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgb(var(--v-theme-on-surface), .08); }
-.setup-steps .current { color: rgb(var(--v-theme-primary)); font-weight: 700; }
-.setup-steps .current span { background: rgb(var(--v-theme-primary), .15); }
-.setup-steps .complete { color: rgb(var(--v-theme-success)); }
 .setup-summary, .setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .setup-summary { justify-content: space-between; font-size: .875rem; border-bottom: 1px solid rgb(var(--v-theme-on-surface), .12); padding-bottom: 12px; }
 .setup-path { overflow-wrap: anywhere; white-space: pre-wrap; }
 summary { cursor: pointer; font-size: .875rem; }
 .firmware-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12px; }
-@media (max-width: 480px) { .setup-steps { gap: 6px; } .setup-steps li { flex-direction: column; font-size: .75rem; } }
 </style>

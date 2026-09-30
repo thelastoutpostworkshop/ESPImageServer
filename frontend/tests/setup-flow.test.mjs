@@ -97,3 +97,42 @@ test('a previously selected local package cannot be installed from setup', async
   await flush()
   assert.equal(form.canInstall, false)
 })
+
+test('unidentified display can continue to firmware, but not Wi-Fi or Ready', async t => {
+  const {form,state,installs} = await mount(t)
+  state.identity = null
+  state.identityError = 'No response'
+  form.state = structuredClone(state)
+  await flush()
+  assert.equal(form.step, 1)
+  form.goToStep(2)
+  assert.equal(form.panel, 'install')
+  assert.equal(form.step, 2)
+  assert.equal(form.identity, null)
+  form.goToStep(3)
+  form.goToStep(4)
+  assert.equal(form.panel, 'install')
+  await form.install()
+  assert.equal(installs(), 0)
+  form.goToStep(1)
+  assert.equal(form.panel, 'connect')
+})
+
+test('stepper navigation requires a port and remains locked during installation', async t => {
+  const {form} = await mount(t)
+  form.port = ''; await form.selectPort(); await flush()
+  form.goToStep(2)
+  assert.equal(form.step, 1)
+  form.port = 'COM8'; form.goToStep(2)
+  form.state = {...form.state, busy:true}
+  form.goToStep(1)
+  assert.equal(form.step, 2)
+})
+
+test('identified display can revisit each permitted step', async t => {
+  const {form} = await mount(t)
+  form.goToStep(1); assert.equal(form.panel, 'connect')
+  form.goToStep(2); assert.equal(form.panel, 'firmware')
+  form.goToStep(3); assert.equal(form.panel, 'wifi')
+  form.goToStep(4); assert.equal(form.panel, 'connection')
+})
