@@ -1,5 +1,6 @@
 <script setup>
 import BoardShopping from './BoardShopping.vue'
+import FirmwareReleaseNotes from './FirmwareReleaseNotes.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UsbWifiSetup from './UsbWifiSetup.vue'
 import SetupConnection from './SetupConnection.vue'
@@ -23,6 +24,9 @@ const identity = computed(() => state.value.identity?.port === port.value ? stat
 const compatible = computed(() => ['wifi_scan', 'wifi_connect', 'wifi_cancel', 'wifi_status'].every(c => identity.value?.capabilities?.includes(c)))
 const update = computed(() => firmwareStatus(identity.value || (board.value ? { board_target: board.value, firmware_version: '0.0.0' } : null),
   library.value))
+const installationRelease = computed(() => state.value.package?.board === board.value
+  ? library.value.packages.find(pkg => pkg.board === board.value && pkg.version === state.value.package.version)
+  : update.value.latest)
 const panel = computed(() => showInstall.value ? 'install' : !identity.value ? 'connect' : !reviewed.value ? 'firmware' :
   manageWifi.value || !identity.value.wifi_connected ? 'wifi' : 'connection')
 const step = computed(() => ({ connect: 1, install: 2, firmware: 2, wifi: 3, connection: 4 }[panel.value]))
@@ -165,7 +169,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         <section v-if="panel === 'firmware'">
           <h2 class="text-h6 mb-2">{{ compatible ? 'Check for firmware updates' : 'Install compatible firmware' }}</h2><p class="mb-4">Installed version: <strong>{{ identity.firmware_version }}</strong></p>
           <v-alert :type="update.kind === 'current' ? 'success' : 'info'" variant="tonal" class="mb-4">{{ updateText }}</v-alert>
-          <details v-if="update.latest?.notes" class="mb-4"><summary>What’s in version {{ update.latest.version }}</summary><p class="mt-3 release-notes">{{ update.latest.notes }}</p></details>
+          <FirmwareReleaseNotes :release="update.latest" />
           <p class="mb-4">Firmware comes directly from the official GitHub releases. The app downloads and checks the files for you.</p>
           <div class="setup-actions mb-4">
             <v-btn v-if="update.kind === 'update'" color="primary" :disabled="locked || libraryBusy" @click="reviewUpdate">Review update to {{ update.latest.version }}</v-btn>
@@ -193,7 +197,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
             <p v-else-if="!update.latest && (board || identity)" class="mb-3">{{ libraryBusy ? 'Checking GitHub for this display…' : 'No matching release found on GitHub. Check again later.' }}</p>
           </div>
           <v-sheet v-if="state.package" border rounded class="pa-4 mb-4"><strong>{{ state.package.board }} · Version {{ state.package.version }}</strong><p class="mt-1">{{ state.package.source === 'github' ? 'Downloaded from GitHub. Files checked and ready.' : 'Package files checked and ready.' }}</p></v-sheet>
-          <details v-if="update.latest?.notes" class="mb-4"><summary>Release notes for {{ update.latest.version }}</summary><p class="mt-3 release-notes">{{ update.latest.notes }}</p></details>
+          <FirmwareReleaseNotes :release="installationRelease" />
           <v-alert v-if="state.package && board && board !== state.package.board" type="error" class="mb-4">This package does not match the display model.</v-alert>
           <template v-if="state.package && !state.busy"><v-alert type="warning" variant="tonal" class="mb-3">This replaces the display’s firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert><v-checkbox v-model="confirmed" label="Install this firmware on the selected display." :disabled="locked" hide-details class="mb-4" /><v-btn color="primary" :disabled="!canInstall" @click="install">Install {{ state.package.version }}</v-btn></template>
           <div v-if="state.busy || ['written', 'failed', 'boot_verified'].includes(state.stage)" role="status" class="my-4">{{ stageLabel }}</div><v-progress-linear v-if="state.busy" indeterminate class="my-4" />
@@ -263,7 +267,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 .setup-steps .complete { color: rgb(var(--v-theme-success)); }
 .setup-summary, .setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .setup-summary { justify-content: space-between; font-size: .875rem; border-bottom: 1px solid rgb(var(--v-theme-on-surface), .12); padding-bottom: 12px; }
-.setup-path, .release-notes { overflow-wrap: anywhere; white-space: pre-wrap; }
+.setup-path { overflow-wrap: anywhere; white-space: pre-wrap; }
 summary { cursor: pointer; font-size: .875rem; }
 .firmware-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12px; }
 @media (max-width: 480px) { .setup-steps { gap: 6px; } .setup-steps li { flex-direction: column; font-size: .75rem; } }
