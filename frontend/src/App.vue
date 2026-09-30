@@ -2992,7 +2992,7 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="navigate('video')" />
         <v-list-item prepend-icon="mdi-image-text" title="Creation Library" :active="metadataPane" @click="openMetadataPane" />
         <v-divider class="my-2" />
-        <v-list-subheader>Displays</v-list-subheader>
+        <v-list-subheader>ESP32 Displays</v-list-subheader>
         <v-list-item prepend-icon="mdi-usb-flash-drive-outline" title="Set up display" :active="page === 'firmware'" @click="navigate('firmware')" />
         <v-list-item prepend-icon="mdi-monitor-multiple" title="Displays" :active="page === 'displays'" @click="openDisplaysPage" />
         <v-list-item prepend-icon="mdi-monitor-dashboard" title="Display Experience" :active="page === 'display-experience'" @click="openDisplayExperiencePage" />
