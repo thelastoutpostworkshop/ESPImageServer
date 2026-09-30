@@ -10,7 +10,7 @@ const desktop = window.espImageServerDesktop
 const available = Boolean(desktop?.firmwareReleases && desktop?.refreshFirmwareIdentity)
 const state = ref({ busy: false, stage: 'idle', package: null, error: '', log: '' })
 const ports = ref([]), port = ref(''), board = ref(''), baud = ref(460800)
-const pending = ref(false), error = ref(''), confirmed = ref(false)
+const pending = ref(false), error = ref('')
 const library = ref({ packages: [], issues: [], directory: '', checkedAt: null })
 const onlineAvailable = Boolean(desktop?.firmwareReleases)
 const download = ref({ busy: false, download: null })
@@ -30,7 +30,7 @@ const installationRelease = computed(() => state.value.package?.board === board.
 const panel = computed(() => showInstall.value ? 'install' : !identity.value ? 'connect' : !reviewed.value ? 'firmware' :
   manageWifi.value || !identity.value.wifi_connected ? 'wifi' : 'connection')
 const step = computed(() => ({ connect: 1, install: 2, firmware: 2, wifi: 3, connection: 4 }[panel.value]))
-const canInstall = computed(() => available && !locked.value && confirmed.value && port.value && state.value.package?.source === 'github' && board.value === state.value.package.board)
+const canInstall = computed(() => available && !locked.value && port.value && state.value.package?.source === 'github' && board.value === state.value.package.board)
 const boardItems = [
   { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543', image: '/ui/board-catalog/JC4827W543.png' }, { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820', image: '/ui/board-catalog/ST7701_320X820.png' },
   { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147', image: '/ui/board-catalog/ESP32_C6_LCD_147.png' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY', image: '/ui/board-catalog/CHEAP_YELLOW_DISPLAY.png' },
@@ -65,7 +65,7 @@ async function loadLibrary(method) {
 }
 function resetFlow() {
   reviewed.value = false; showInstall.value = false; manageWifi.value = false; wifiEditing.value = false
-  confirmed.value = false; serverReady.value = false; autoAttempts = 0; lastIdentity = Date.now()
+  serverReady.value = false; autoAttempts = 0; lastIdentity = Date.now()
   installationStarted.value = false
 }
 async function checkPorts() {
@@ -92,13 +92,12 @@ async function refreshConnection() {
 async function reviewUpdate() {
   await perform(async () => {
     const pkg = update.value.latest
-    confirmed.value = false
     state.value = await call('selectReleaseFirmware', { id: pkg.id, board: pkg.board, port: port.value })
     board.value = pkg.board; showInstall.value = true
   })
 }
 async function install() {
-  await perform(async () => { state.value = await call('installFirmware', { port: port.value, board: board.value, baud: baud.value }); installationStarted.value = true; confirmed.value = false; autoAttempts = 0 })
+  await perform(async () => { state.value = await call('installFirmware', { port: port.value, board: board.value, baud: baud.value }); installationStarted.value = true; autoAttempts = 0 })
 }
 function continueSetup() { reviewed.value = true; manageWifi.value = false; lastIdentity = 0; autoAttempts = 0 }
 function wifiState(next) { state.value = next; lastIdentity = Date.now(); autoAttempts = 0 }
@@ -187,7 +186,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
             <div class="board-grid">
               <label v-for="item in boardItems" :key="item.value" class="board-option" :class="{ selected: board === item.value }">
                 <img :src="item.image" :alt="item.title" class="board-photo" />
-                <span class="board-option-label"><input v-model="board" type="radio" name="firmware-board" :value="item.value" @change="confirmed = false" /><span>{{ item.title }}</span></span>
+                <span class="board-option-label"><input v-model="board" type="radio" name="firmware-board" :value="item.value" /><span>{{ item.title }}</span></span>
               </label>
             </div>
           </fieldset><p v-else class="mb-3">{{ identity.board_name }} · Installed {{ identity.firmware_version }}</p>
@@ -199,7 +198,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <v-sheet v-if="state.package" border rounded class="pa-4 mb-4"><strong>{{ state.package.board }} · Version {{ state.package.version }}</strong><p class="mt-1">{{ state.package.source === 'github' ? 'Downloaded from GitHub. Files checked and ready.' : 'Package files checked and ready.' }}</p></v-sheet>
           <FirmwareReleaseNotes :release="installationRelease" />
           <v-alert v-if="state.package && board && board !== state.package.board" type="error" class="mb-4">This package does not match the display model.</v-alert>
-          <template v-if="state.package && !state.busy"><v-alert type="warning" variant="tonal" class="mb-3">This replaces the display’s firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert><v-checkbox v-model="confirmed" label="Install this firmware on the selected display." :disabled="locked" hide-details class="mb-4" /><v-btn color="primary" :disabled="!canInstall" @click="install">Install {{ state.package.version }}</v-btn></template>
+          <template v-if="state.package && !state.busy"><v-alert type="warning" variant="tonal" class="mb-3">This replaces the display’s firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert><v-btn color="primary" :disabled="!canInstall" @click="install">Install {{ state.package.version }}</v-btn></template>
           <div v-if="state.busy || ['written', 'failed', 'boot_verified'].includes(state.stage)" role="status" class="my-4">{{ stageLabel }}</div><v-progress-linear v-if="state.busy" indeterminate class="my-4" />
           <p v-if="state.stage === 'written'" class="mb-3">The write passed verification and restart was requested. Check the screen, then check the display again to verify startup.</p>
           <v-btn v-if="state.stage === 'written'" class="mr-2" :disabled="locked" @click="showInstall = false; identify()">Check display after restart</v-btn>

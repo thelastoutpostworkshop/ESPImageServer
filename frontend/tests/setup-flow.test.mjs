@@ -40,10 +40,10 @@ test('saved Wi-Fi is checked automatically while a disconnected board reconnects
   form.continueSetup();await form.poll();await flush()
   assert.equal(refreshes(),1);assert.equal(form.panel,'connection')
 })
-test('port changes clear setup progress and installation confirmation',async t=>{
-  const {form}=await mount(t);form.continueSetup();form.confirmed=true
+test('port changes clear setup progress',async t=>{
+  const {form}=await mount(t);form.continueSetup()
   form.port='';await form.selectPort();await flush()
-  assert.equal(form.panel,'connect');assert.equal(form.confirmed,false);assert.equal(form.reviewed,false)
+  assert.equal(form.panel,'connect');assert.equal(form.reviewed,false)
 })
 test('post-flash identification follows the verified new COM port without losing the board',async t=>{
   const {form,state,identity}=await mount(t)
@@ -64,7 +64,7 @@ test('opening firmware management after an earlier install does not auto-close i
   await form.poll();await flush();assert.equal(form.panel,'install')
 })
 
-test('GitHub supplies firmware and download ends at an unconfirmed installation review', async t => {
+test('GitHub supplies firmware and download ends at installation review without automatically flashing', async t => {
   let selections = []
   const {form,state,installs} = await mount(t, {
     firmwareReleases: async()=>({ok:true,value:{checkedAt:'today',packages:[{id:'42',source:'github',board:'JC4827W543',version:'1.1.4'}]}}),
@@ -74,7 +74,7 @@ test('GitHub supplies firmware and download ends at an unconfirmed installation 
   assert.equal(form.update.kind,'update')
   await form.reviewUpdate(); await flush()
   assert.deepEqual(selections,[{id:'42',board:'JC4827W543',port:'COM8'}])
-  assert.equal(form.panel,'install'); assert.equal(form.confirmed,false); assert.equal(form.canInstall,false); assert.equal(installs(),0)
+  assert.equal(form.panel,'install');  assert.equal(form.canInstall,true); assert.equal(installs(),0)
 })
 
 test('GitHub failure stays unknown and download errors do not open an installation review', async t => {
@@ -93,7 +93,7 @@ test('GitHub failure stays unknown and download errors do not open an installati
 test('a previously selected local package cannot be installed from setup', async t => {
   const {form} = await mount(t)
   form.state = {...form.state, package: {board:'JC4827W543', source:'local'}}
-  form.board = 'JC4827W543'; form.confirmed = true
+  form.board = 'JC4827W543'
   await flush()
   assert.equal(form.canInstall, false)
 })
