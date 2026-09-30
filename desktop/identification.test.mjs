@@ -51,9 +51,9 @@ for (const portName of ['COM8', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/cu.usbmode
   } })
   assert.equal(identity.firmware_version, '1.1.2'); assert.ok(port.closed)
 })
-test('timeout releases the serial port and explains old firmware', async () => {
+test('timeout releases the serial port and explains recovery', async () => {
   const port = new FakePort(false)
-  await assert.rejects(identifyPort('COM8', { timeout: 10, createPort: () => port }), /No compatible firmware/)
+  await assert.rejects(identifyPort('COM8', { timeout: 10, createPort: () => port }), /identify your display/)
   assert.ok(port.closed)
 })
 test('a disconnected board releases its identification attempt', async () => {
@@ -65,7 +65,7 @@ test('a disconnected board releases its identification attempt', async () => {
 test('timeout during open waits for port cleanup before releasing its caller', async () => {
   const port = new FakePort(false)
   port.open = callback => { setTimeout(() => { port.isOpen = true; callback() }, 30) }
-  await assert.rejects(identifyPort('COM8', { timeout: 5, createPort: () => port }), /No compatible/)
+  await assert.rejects(identifyPort('COM8', { timeout: 5, createPort: () => port }), /identify your display/)
   assert.ok(port.closed)
 })
 test('COM renumbering matches only a unique USB identity, never a different board', () => {

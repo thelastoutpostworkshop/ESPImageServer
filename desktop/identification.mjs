@@ -70,7 +70,7 @@ export async function identifyPort(portName, { timeout = 5000, createPort = opti
     port.on('data', responseDecoder(id, message => {
       try { finish(null, validateIdentity(message)) } catch (error) { finish(error) }
     }))
-    timer = setTimeout(() => finish(new Error('No compatible firmware responded. Install firmware 1.1.2 or later with USB identification, then retry.')), timeout)
+    timer = setTimeout(() => finish(new Error('We couldn’t identify your display. Check the USB port and close Serial Monitor, then retry. If this board hasn’t been set up yet, choose “Install firmware on this display”.')), timeout)
     port.open(error => {
       opening = false
       if (settled) { finishOpen?.(); return }
