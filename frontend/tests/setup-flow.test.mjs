@@ -22,6 +22,7 @@ async function mount(t, extraApi = {}) {
     refreshFirmwareIdentity:async()=>{refreshes++;state.identity={...identity,wifi_connected:true};return {ok:true,value:structuredClone(state)}},
     installFirmware:async()=>{installs++;return {ok:true,value:structuredClone(state)}}}
   Object.assign(api, extraApi)
+  api.checkFirmwareReleases ||= api.firmwareReleases
   globalThis.window={espImageServerDesktop:api,setTimeout:()=>0,clearTimeout(){}}
   const app=renderer.createApp(component);app.mount({})
   t.after(()=>{app.unmount();delete globalThis.window})
@@ -64,20 +65,20 @@ test('opening firmware management after an earlier install does not auto-close i
   await form.poll();await flush();assert.equal(form.panel,'install')
 })
 
-test('GitHub supplies firmware and download ends at installation review without automatically flashing', async t => {
+test('one install action downloads verified GitHub firmware and then starts flashing', async t => {
   let selections = []
   const {form,state,installs} = await mount(t, {
     firmwareReleases: async()=>({ok:true,value:{checkedAt:'today',packages:[{id:'42',source:'github',board:'JC4827W543',version:'1.1.4'}]}}),
     firmwareDownloadState: async()=>({ok:true,value:{busy:false}}),
     selectReleaseFirmware: async request=>{selections.push(request);return {ok:true,value:{...state,package:{board:'JC4827W543',version:'1.1.4',source:'github'}}}}
   })
-  assert.equal(form.update.kind,'update')
-  await form.reviewUpdate(); await flush()
+  assert.equal(form.update.kind,'update'); assert.equal(installs(),0)
+  await form.install(); await flush()
   assert.deepEqual(selections,[{id:'42',board:'JC4827W543',port:'COM8'}])
-  assert.equal(form.panel,'install');  assert.equal(form.canInstall,true); assert.equal(installs(),0)
+  assert.equal(form.panel,'install'); assert.equal(installs(),1); assert.equal(form.installationStarted,true)
 })
 
-test('GitHub failure stays unknown and download errors do not open an installation review', async t => {
+test('GitHub and download failures do not start flashing', async t => {
   const {form,installs} = await mount(t, {
     firmwareReleases: async()=>({ok:true,value:{checkedAt:null,error:'GitHub unavailable',packages:[]}}),
     firmwareDownloadState: async()=>({ok:true,value:{busy:false}}),
@@ -85,17 +86,35 @@ test('GitHub failure stays unknown and download errors do not open an installati
   })
   assert.equal(form.update.kind,'unknown')
   form.library={checkedAt:'today',packages:[{id:'42',source:'github',board:'JC4827W543',version:'1.1.4'}]}
-  await form.reviewUpdate(); await flush()
-  assert.equal(form.error,'Checksum failed'); assert.equal(form.panel,'firmware'); assert.equal(installs(),0)
+  await form.install(); await flush()
+  assert.equal(form.error,'Checksum failed'); assert.equal(installs(),0)
 })
 
 
-test('a previously selected local package cannot be installed from setup', async t => {
-  const {form} = await mount(t)
-  form.state = {...form.state, package: {board:'JC4827W543', source:'local'}}
-  form.board = 'JC4827W543'
+test('downloaded board/version mismatch prevents flashing', async t => {
+  const {form,installs} = await mount(t, {
+    selectReleaseFirmware:async()=>({ok:true,value:{package:{board:'ESP32_C6_LCD_147',version:'1.1.4',source:'github'}}})
+  })
+  await form.install()
+  assert.match(form.error, /does not match/)
+  assert.equal(installs(),0)
+})
+
+test('repeated install clicks cannot duplicate a download and cancellation never flashes', async t => {
+  let finishDownload, downloads = 0
+  const {form,installs} = await mount(t, {
+    selectReleaseFirmware: async()=>{ downloads++; return new Promise(resolve=>{finishDownload=resolve}) }
+  })
+  const first = form.install()
   await flush()
+  await form.install()
+  assert.equal(downloads, 1)
   assert.equal(form.canInstall, false)
+  finishDownload({ok:false,error:'Download cancelled'})
+  await first
+  assert.equal(installs(), 0)
+  assert.equal(form.error, 'Download cancelled')
+  assert.equal(form.pending, false)
 })
 
 test('unidentified display can continue to firmware, but not Wi-Fi or Ready', async t => {
