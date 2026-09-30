@@ -155,3 +155,28 @@ test('identified display can revisit each permitted step', async t => {
   form.goToStep(3); assert.equal(form.panel, 'wifi')
   form.goToStep(4); assert.equal(form.panel, 'connection')
 })
+
+test('installation progress distinguishes download, upload, verification, and startup', async t => {
+  const {form} = await mount(t)
+  form.showInstall = true
+  form.pending = true
+  assert.equal(form.installationActive, true)
+  assert.equal(form.installationProgress.label, 'Preparing firmware installation')
+  form.download = {busy:true,download:{stage:'downloading',received:25,total:100}}
+  assert.equal(form.installationProgress.percent, 25)
+  form.download.download.stage = 'validating'
+  assert.equal(form.installationProgress.percent, null)
+  assert.equal(form.installationProgress.label, 'Checking downloaded firmware')
+  form.download = {busy:false}
+  form.pending = false
+  form.state = {...form.state,busy:true,stage:'writing_and_verifying',progress:{percent:62.9,verified:3,total:4,phase:'writing'}}
+  assert.equal(form.installationProgress.percent, 62)
+  assert.equal(form.installationProgress.detail, '3 of 4 firmware files verified.')
+  form.state.progress.phase = 'verifying'
+  assert.equal(form.installationProgress.label, 'Verifying firmware on your display')
+  form.state.stage = 'identifying'
+  assert.equal(form.installationProgress.percent, null)
+  assert.equal(form.installationProgress.label, 'Checking firmware startup')
+  form.state.stage = 'failed'; form.state.busy = false
+  assert.equal(form.installationActive, false)
+})

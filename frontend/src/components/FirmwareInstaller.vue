@@ -39,6 +39,29 @@ const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validati
   connecting: 'Connecting to your display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
   identifying: 'Checking firmware startup', boot_verified: 'Firmware installed and startup verified',
   written: 'Write verified — startup still needs checking', failed: 'Installation needs attention' }[state.value.stage] || state.value.stage))
+const installationActive = computed(() => download.value.busy || (step.value === 2 && (pending.value || state.value.busy)))
+const installationProgress = computed(() => {
+  if (download.value.busy) {
+    const transfer = download.value.download
+    const validating = transfer?.stage === 'validating'
+    return { label: validating ? 'Checking downloaded firmware' : 'Downloading firmware from GitHub',
+      percent: !validating && transfer?.total ? Math.min(100, Math.floor(100 * (transfer.received || 0) / transfer.total)) : null,
+      detail: validating ? 'Checking that the files are complete and match your board.' : 'Getting the firmware files for your display.' }
+  }
+  if (pending.value && !state.value.busy) return { label: 'Preparing firmware installation', percent: null, detail: 'Getting your firmware ready.' }
+  const progress = state.value.progress
+  if (state.value.stage === 'writing_and_verifying') return {
+    label: progress?.phase === 'verifying' ? 'Verifying firmware on your display' : progress?.phase === 'verified' ? 'Preparing the next firmware file' : 'Writing firmware to your display',
+    percent: progress ? Math.floor(progress.percent) : null,
+    detail: progress ? `${progress.verified} of ${progress.total} firmware files verified.` : 'Preparing the display for the USB transfer.'
+  }
+  return { label: stageLabel.value, percent: null, detail: ({
+    validating: 'Checking the firmware files before making changes.',
+    connecting: 'Connecting over USB and checking the display’s chip and storage.',
+    restarting: 'All firmware files are verified. Restarting your display.',
+    identifying: 'Firmware upload complete. Waiting for the display to restart and confirm its new version.'
+  }[state.value.stage] || 'Please wait while installation finishes.') }
+})
 const updateText = computed(() => libraryBusy.value ? 'Checking for firmware updates…' : ({ unknown: 'Updates haven’t been checked.', missing: `No firmware for this display was found on GitHub.`,
   current: `Firmware is up to date: ${identity.value?.firmware_version}`,
   newer: `Installed ${identity.value?.firmware_version} is newer than the available releases.`,
@@ -149,6 +172,9 @@ onMounted(async () => {
   void loadLibrary('firmwareReleases')
   await perform(async () => {
     state.value = await call('firmwareState'); port.value = state.value.selectedPort || state.value.identity?.port || ''
+    if (state.value.busy && ['validating', 'connecting', 'writing_and_verifying', 'restarting', 'identifying'].includes(state.value.stage)) {
+      showInstall.value = true; installationStarted.value = true
+    }
     if (state.value.identity) board.value = state.value.identity.board_target
     if (onlineAvailable) download.value = await call('firmwareDownloadState')
     if (!download.value.busy) await checkPorts()
@@ -180,11 +206,13 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         <div v-if="identity && panel !== 'connect'" class="setup-summary mb-5"><span>USB connected · {{ identity.board_name }}</span><v-btn variant="text" size="small" :disabled="locked" @click="port = ''; selectPort()">Change display</v-btn></div>
         <v-alert v-if="error || state.error" type="error" variant="tonal" class="mb-4">{{ error || state.error }}</v-alert>
         <v-alert v-if="state.identityError && panel === 'connect'" type="info" variant="tonal" class="mb-4">We couldn't identify this display. You can retry, or continue to install firmware by choosing your board model in the next step.</v-alert>
-        <v-sheet v-if="download.busy" border rounded class="pa-4 mb-4" role="status" aria-live="polite">
-          <p class="mb-3">{{ download.download?.stage === 'validating' ? 'Checking downloaded firmware…' : 'Downloading firmware from GitHub…' }}</p>
-          <v-progress-linear :indeterminate="!download.download?.total || download.download?.stage === 'validating'" :model-value="100 * (download.download?.received || 0) / (download.download?.total || 1)" />
-          <p class="text-body-2 mt-3">Downloading and verifying firmware before installation. Keep your display connected.</p>
-          <v-btn class="mt-2" variant="text" @click="call('cancelFirmwareDownload')">Cancel download</v-btn>
+        <v-sheet v-if="installationActive" border rounded class="pa-5 mb-4">
+          <p class="text-h6 mb-3" role="status" aria-live="polite">{{ installationProgress.label }}</p>
+          <v-progress-linear color="primary" height="12" rounded :indeterminate="installationProgress.percent === null" :model-value="installationProgress.percent ?? 0" :aria-label="installationProgress.label" />
+          <p v-if="installationProgress.percent !== null" class="text-body-2 mt-2">{{ installationProgress.percent }}% {{ download.busy ? 'downloaded' : 'written' }}</p>
+          <p class="mt-3" role="status" aria-live="polite">{{ installationProgress.detail }}</p>
+          <p class="text-body-2 text-medium-emphasis mt-3">Keep the USB cable connected until installation finishes.</p>
+          <v-btn v-if="download.busy" class="mt-2" variant="text" @click="call('cancelFirmwareDownload')">Cancel download</v-btn>
         </v-sheet>
         <section v-if="panel === 'connect'">
           <h2 class="text-h6 mb-2">Check your display</h2><p class="mb-5">Connect a USB data cable, select the port, then choose Check display. Close Serial Monitor first.</p>
@@ -193,7 +221,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <p class="mt-5 mb-3 text-body-2">New board or display not identified? Continue to choose your board and install firmware. Wi-Fi setup becomes available once compatible firmware is running.</p>
           <v-btn color="primary" variant="tonal" append-icon="mdi-arrow-right" :disabled="locked || !port" @click="goToStep(2)">Continue to firmware</v-btn>
         </section>
-        <section v-if="['firmware', 'install'].includes(panel)">
+        <section v-if="['firmware', 'install'].includes(panel) && !installationActive">
           <h2 class="text-h6 mb-2">{{ state.busy ? stageLabel : compatible ? 'Firmware' : 'Install firmware' }}</h2>
           <p v-if="identity" class="mb-4">{{ identity.board_name }} ? Installed version {{ identity.firmware_version }}</p>
           <fieldset v-if="!identity" class="board-picker mb-4" :disabled="locked">
@@ -228,8 +256,6 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
             </template>
           </div>
           <div v-if="state.busy || ['written', 'failed', 'boot_verified'].includes(state.stage)" role="status" class="my-4">{{ stageLabel }}</div>
-          <p v-if="pending && !state.busy && !download.busy" role="status" class="my-4">Preparing firmware installation…</p>
-          <v-progress-linear v-if="state.busy" indeterminate class="my-4" />
           <p v-if="state.stage === 'written'" class="mb-3">Firmware was written, but startup could not be confirmed. Check the display after it restarts to continue.</p>
           <v-btn v-if="state.stage === 'written'" :disabled="locked" @click="showInstall = false; identify()">Check display after restart</v-btn>
         </section>

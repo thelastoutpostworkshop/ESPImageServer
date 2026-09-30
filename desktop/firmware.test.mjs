@@ -5,6 +5,24 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { FirmwareInstaller, parseProbe, validatePackage, writeArguments, runProcess } from './firmware.mjs'
+import { firmwareProgress } from './firmware-progress.mjs'
+
+test('upload progress handles split chunks, carriage returns, and differently sized binaries', () => {
+  const updates = []
+  const progress = firmwareProgress([{ size_bytes: 10 }, { size_bytes: 90 }], value => updates.push(value))
+  progress.push('Writing at 0x00000000... (100 %)\r\nHash of data veri')
+  assert.equal(updates.at(-1).percent, 10)
+  progress.push('fied.\nWriting at 0x00010000 [====] 50.0% 45/90 bytes\r')
+  assert.equal(updates.at(-1).percent, 55)
+  assert.equal(updates.at(-1).verified, 1)
+  progress.push('Writing at 0x00010000 [====] 40.0%\rWriting at 0x00010000 [====] 100.0%\rWrote 90 bytes\n')
+  assert.equal(updates.at(-1).phase, 'verifying')
+  assert.equal(updates.at(-1).verified, 1)
+  progress.push('Hash of data verified.')
+  progress.finish()
+  assert.deepEqual(updates.at(-1), { percent: 100, verified: 2, total: 2, phase: 'verified' })
+  assert.ok(updates.every((value, i) => i === 0 || value.percent >= updates[i - 1].percent))
+})
 
 const sha = data => createHash('sha256').update(data).digest('hex')
 async function fixture(t) {
@@ -170,6 +188,36 @@ test('successful writes remain successful when old firmware cannot identify itse
   assert.match(installer.state.identityError, /startup was not confirmed/)
   assert.equal(installer.state.error, '')
 })
+test('installer publishes live progress, separates startup checks, and clears progress for a retry', async t => {
+  const f = await fixture(t)
+  const installer = new FirmwareInstaller('fake', { ports: async () => [{ port: 'COM8' }],
+    run: async (_, args, options) => {
+      if (args.includes('flash-id')) {
+        assert.equal(installer.snapshot().progress, null)
+        options.onOutput('Hard resetting via RTS pin...\n')
+        assert.equal(installer.state.stage, 'connecting')
+        return probe
+      }
+      options.onOutput('Writing at 0x00000000... (50 %)\r')
+      assert.ok(installer.snapshot().progress.percent > 0)
+      assert.ok(installer.snapshot().progress.percent < 50)
+      assert.equal(installer.state.stage, 'writing_and_verifying')
+      options.onOutput(verified)
+      assert.equal(installer.state.stage, 'restarting')
+      return verified
+    }, reconnect: async () => {
+      assert.equal(installer.state.stage, 'identifying')
+      assert.equal(installer.snapshot().progress.percent, 100)
+      throw new Error('Not yet connected')
+    } })
+  await installer.select(f.directory)
+  installer.start('COM8', 'JC4827W543', 460800)
+  await installer.completion
+  assert.equal(installer.state.stage, 'written')
+  await installer.select(f.directory)
+  assert.equal(installer.snapshot().progress, null)
+})
+
 test('identification shares the flash operation lock and releases it on errors', async t => {
   const f = await fixture(t)
   let finish

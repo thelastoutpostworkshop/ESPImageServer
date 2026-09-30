@@ -35,6 +35,7 @@
       "splash.html",
       "package.json",
       "firmware.mjs",
+      "firmware-progress.mjs",
       "firmware-library.mjs",
       "firmware-releases.mjs",
       "identification.mjs",

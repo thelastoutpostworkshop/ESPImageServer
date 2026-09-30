@@ -4,6 +4,7 @@ import { lstat, readFile, realpath, mkdtemp, writeFile, rm } from 'node:fs/promi
 import path from 'node:path'
 import os from 'node:os'
 import { spawn } from 'node:child_process'
+import { firmwareProgress } from './firmware-progress.mjs'
 
 export const boards = {
   JC4827W543: 'esp32s3', ST7701_320X820: 'esp32s3',
@@ -127,7 +128,7 @@ export class FirmwareInstaller {
   constructor(toolPath, { run = runProcess, ports = listPorts, identify = null, reconnect = null } = {}) {
     this.toolPath = toolPath; this.run = run; this.ports = ports
     this.identify = identify; this.reconnect = reconnect
-    this.state = { busy: false, stage: 'idle', log: '', package: null, error: '' }
+    this.state = { busy: false, stage: 'idle', log: '', package: null, error: '', progress: null }
   }
   snapshot() { return structuredClone(this.state) }
   selectPort(port) {
@@ -184,7 +185,7 @@ export class FirmwareInstaller {
   }
   async select(directory) {
     requireValue(!this.state.busy, 'A firmware operation is already running.')
-    this.state = { ...this.state, busy: true, package: null, error: '', stage: 'validating' }
+    this.state = { ...this.state, busy: true, package: null, error: '', stage: 'validating', progress: null }
     this.selected = null
     try {
       const pkg = await validatePackage(directory)
@@ -200,7 +201,7 @@ export class FirmwareInstaller {
     requireValue(!this.state.busy && this.selected, 'Choose a valid package first; only one installation can run.')
     requireValue(isSerialPortPath(port) && board === this.state.package.board && [115200, 460800].includes(baud), 'Confirm the matching physical board, port, and speed.')
     this.expectedHardwareId = this.state.identity?.port === port ? this.state.identity.hardware_id : undefined
-    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', port, selectedPort: port, identity: null, identityError: '', wifi: null }
+    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', progress: null, port, selectedPort: port, identity: null, identityError: '', wifi: null }
     this.completion = this.install(port, baud).catch(e => {
       this.state.stage = 'failed'; this.state.error = e.message
     }).finally(() => { this.state.busy = false; this.child = null })
@@ -217,15 +218,21 @@ export class FirmwareInstaller {
       for (const s of pkg.segments) await writeFile(path.join(staged, s.file), s.data)
       const options = { cwd: staged, onChild: child => { this.child = child }, onOutput: text => {
         this.state.log = (this.state.log + text).slice(-32000)
-        if (/Writing at|Wrote \d|Hash of data verified/i.test(text)) this.state.stage = 'writing_and_verifying'
-        if (/Hard resetting/i.test(text) && this.state.stage === 'writing_and_verifying') this.state.stage = 'restarting'
       } }
       this.state.stage = 'connecting'
       const probe = await this.run(this.toolPath, ['--chip', pkg.manifest.chip, '--port', port, '--baud', '115200', '--before', 'default-reset', '--after', 'hard-reset', 'flash-id'], options)
       parseProbe(probe, pkg.manifest.chip, pkg.manifest.flash.size_bytes)
       this.state.stage = 'writing_and_verifying'
-      const output = await this.run(this.toolPath, writeArguments(pkg.manifest, port, pkg.segments, baud), { ...options, timeout: 900000 })
+      const progress = firmwareProgress(pkg.segments, value => {
+        this.state.progress = value
+        if (value.verified === pkg.segments.length) this.state.stage = 'restarting'
+      })
+      const output = await this.run(this.toolPath, writeArguments(pkg.manifest, port, pkg.segments, baud), {
+        ...options, timeout: 900000, onOutput: text => { options.onOutput(text); progress.push(text) }
+      })
+      progress.finish()
       requireValue((output.match(/Hash of data verified/gi) || []).length >= pkg.segments.length, 'Write finished without all four verification results. Review the log before retrying.')
+      this.state.progress = { percent: 100, verified: pkg.segments.length, total: pkg.segments.length, phase: 'verified' }
       this.state.stage = 'written'
       if (this.reconnect) {
         this.state.stage = 'identifying'
