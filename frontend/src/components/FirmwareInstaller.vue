@@ -213,7 +213,6 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         <SetupConnection v-if="identity && compatible && reviewed" v-show="panel === 'connection'" :identity="identity" :selected-port="port" :locked="locked || panel !== 'connection'" @ready="serverReady = $event" @open-display="emit('open-display', $event)" />
         <div v-if="panel === 'connection'" class="mt-4"><p class="mb-3">Firmware {{ identity.firmware_version }} <span v-if="update.kind === 'update'">· Update {{ update.latest.version }} available</span></p><div class="setup-actions"><v-btn variant="text" :disabled="locked" @click="manageWifi = true">Manage Wi-Fi</v-btn><v-btn variant="text" :disabled="locked" @click="reviewed = false; loadLibrary()">Firmware updates</v-btn></div></div>
         <div v-if="['firmware', 'install'].includes(panel)" class="mt-5">
-          <p v-if="library.checkedAt" class="mb-3 text-caption">Last checked: {{ new Date(library.checkedAt).toLocaleString() }}</p>
           <v-btn variant="text" :disabled="locked || libraryBusy" :loading="libraryBusy" @click="loadLibrary()">Check GitHub for updates</v-btn>
         </div>
         <v-alert v-if="libraryError || library.error" type="warning" variant="tonal" class="mt-4">{{ libraryError || library.error }}</v-alert>
