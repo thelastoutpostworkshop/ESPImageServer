@@ -33,7 +33,7 @@ for (const switchAt of ['initial inventory', 'command polling']) {
     let selected = '/displays/original'
     const requests = []
     const context = {
-      activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} },
+      activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} }, displaySdCardScope: { value: null },
       selectedDisplayEndpoint: suffix => selected + suffix,
       sdSaveCommandEndpoint,
       fetchDisplaySdCardReport: async () => { if (switchAt === 'initial inventory') selected = '/displays/other'; return { report_version: 1 } },
@@ -51,7 +51,7 @@ for (const delay of [12000, Infinity]) {
   test(`SD refresh waits for fresh inventory after acknowledgement (delay ${delay})`, async () => {
     let elapsed = 0, reports = 0
     const context = {
-      activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} },
+      activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} }, displaySdCardScope: { value: null },
       selectedDisplayEndpoint: suffix => '/displays/original' + suffix,
       sdSaveCommandEndpoint,
       fetchDisplaySdCardReport: async () => ({ available: true, report_version: ++reports > 1 && elapsed >= delay ? 2 : 1 }),

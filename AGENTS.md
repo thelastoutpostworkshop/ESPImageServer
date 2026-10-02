@@ -149,6 +149,7 @@
 ## Collaboration preferences
 
 - Preserve existing user changes and do not reveal credentials from `secrets.h`.
+- Remove completed TODO items after verification, preserving unfinished items.
 - Keep maker-facing language plain: explain GPU requirements and model tradeoffs without unexplained jargon.
 - Every final handoff must include short commit comments for both projects, even if one has no changes:
 
