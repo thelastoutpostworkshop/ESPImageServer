@@ -1,13 +1,24 @@
-"""Adapters that turn Hugging Face file-download progress into job progress."""
+"""Hugging Face download settings and job-progress adapters."""
 
 from __future__ import annotations
 
+import sys
 from typing import Callable
 
 from tqdm.auto import tqdm
 
 
 DownloadProgress = Callable[[int, int, str], None]
+
+
+def model_snapshot_download_options() -> dict[str, int]:
+    """Avoid a concurrent Windows symlink probe in Hugging Face's cache.
+
+    The installed Hub library publishes a tentative supported result before
+    the probe finishes. One file worker lets it select its normal move/copy
+    fallback before another file can try creating a privileged symlink.
+    """
+    return {"max_workers": 1} if sys.platform == "win32" else {}
 
 
 def huggingface_progress(label: str, report: DownloadProgress):

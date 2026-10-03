@@ -13,7 +13,7 @@ from PIL import Image, ImageOps
 from .paths import model_cache_dir as resolve_model_cache_dir
 from .generation_jobs import GenerationCancelled
 from .generation_capabilities import GenerationCapabilities, detect_generation_device, clear_generation_cache
-from .download_progress import huggingface_progress
+from .download_progress import huggingface_progress, model_snapshot_download_options
 
 
 VIDEO_MODELS = {
@@ -199,6 +199,7 @@ class LTXVideoGenerator:
             model_path = snapshot_download(
                 repository, cache_dir=cache_dir,
                 tqdm_class=huggingface_progress("Wan 2.1", progress) if progress else None,
+                **model_snapshot_download_options(),
             )
             # The VAE is intentionally float32, as recommended by Diffusers for
             # cleaner Wan decoding. CPU offload keeps it out of VRAM except when
@@ -234,6 +235,7 @@ class LTXVideoGenerator:
             cache_dir=cache_dir,
             allow_patterns=VIDEO_MODELS[model_id]["checkpoint"],
             tqdm_class=huggingface_progress("LTX-Video", progress) if progress else None,
+            **model_snapshot_download_options(),
         )
         checkpoint_path = Path(checkpoint_root) / VIDEO_MODELS[model_id]["checkpoint"]
         # This original-format checkpoint contains the actual 2B distilled

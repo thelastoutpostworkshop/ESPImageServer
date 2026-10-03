@@ -11,7 +11,7 @@ from PIL import Image
 from .paths import model_cache_dir as resolve_model_cache_dir
 from .config import Settings
 from .generation_capabilities import GenerationCapabilities, detect_generation_device, clear_generation_cache
-from .download_progress import DownloadProgress, huggingface_progress
+from .download_progress import DownloadProgress, huggingface_progress, model_snapshot_download_options
 from .generation_jobs import GenerationCancelled
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,7 @@ class DiffusersGenerator:
         model_path = snapshot_download(
             self.settings.model_id, cache_dir=model_cache_dir,
             tqdm_class=huggingface_progress(self.settings.model_id, progress) if progress else None,
+            **model_snapshot_download_options(),
         )
         # Some model repositories bundle the legacy safety checker. Its false
         # positives are returned as an all-black image, which is especially

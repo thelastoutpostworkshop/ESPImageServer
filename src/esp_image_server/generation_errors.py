@@ -21,7 +21,7 @@ def user_facing_generation_error(error: Exception, kind: str) -> str:
     )):
         friendly = "A compatible NVIDIA graphics card is required for this generation."
     elif "winerror 1314" in message or "required privilege is not held" in message:
-        friendly = "Windows prevented the model files from being prepared. Enable Developer Mode, then try again."
+        friendly = "Windows could not prepare the model files. Restart ESPImageServer and try again. If it continues, check the server log."
     elif any(marker in message for marker in (
         "does not appear to have a file named", "weights for this component appear to be missing",
         "safetensors", "checkpoint",
