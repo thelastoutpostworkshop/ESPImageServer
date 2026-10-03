@@ -3,7 +3,7 @@
   "description": "ESPImageServer desktop application",
   "author": "ESPImageServer",
   "private": true,
-  "version": "1.0.98",
+  "version": "1.0.99",
   "type": "module",
   "main": "main.mjs",
   "scripts": {

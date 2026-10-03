@@ -239,6 +239,7 @@ const selectedTheme = computed({
       : 'The theme changed, but this device could not save your choice. It may reset when you reopen the app.'
   }
 })
+const themeToggleLabel = computed(() => selectedTheme.value === 'dark' ? 'Switch to light theme' : 'Switch to dark theme')
 const firmwareChecksEnabled = ref(false)
 const autoSaveSaving = ref(false)
 const autoSaveVideoSaving = ref(false)
@@ -3125,8 +3126,22 @@ onUnmounted(() => {
         </template>
       </v-tooltip>
       <v-spacer />
+      <v-tooltip :text="themeToggleLabel" location="bottom">
+        <template #activator="{ props }">
+          <v-btn
+            v-bind="props"
+            :icon="selectedTheme === 'dark' ? 'mdi-white-balance-sunny' : 'mdi-weather-night'"
+            :aria-label="themeToggleLabel"
+            :title="themeToggleLabel"
+            size="large"
+            density="comfortable"
+            variant="text"
+            @click="selectedTheme = selectedTheme === 'dark' ? 'light' : 'dark'"
+          />
+        </template>
+      </v-tooltip>
       <v-btn v-if="!compact" color="primary" variant="tonal" prepend-icon="mdi-cellphone-link" class="mr-2 flex-shrink-0" @click="openMobileAccessDialog()">Use on phone</v-btn>
-      <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
+      <v-btn :size="compact ? 'default' : 'x-large'" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
     </v-app-bar>
 
     <v-navigation-drawer v-model="drawer" width="272" border :temporary="compact">
@@ -3600,6 +3615,7 @@ onUnmounted(() => {
 
     <v-main class="app-shell">
       <v-container fluid class="app-container py-4 py-sm-7">
+        <v-alert v-if="themePreferenceError" type="warning" variant="tonal" density="compact" class="mb-4">{{ themePreferenceError }}</v-alert>
         <FirmwareUpdateNotice :displays="displays" :enabled="firmwareChecksEnabled" @setup="navigate('firmware')" />
         <v-alert v-if="!compact && !mobileAccessPromptDismissed" type="info" variant="tonal" icon="mdi-cellphone-link" class="mb-4">
           <div class="font-weight-medium">Use ESPImageServer from your phone</div>
@@ -4454,7 +4470,6 @@ onUnmounted(() => {
               persistent-hint
               class="mb-6"
             />
-            <v-alert v-if="themePreferenceError" type="warning" variant="tonal" density="compact" class="mb-6">{{ themePreferenceError }}</v-alert>
             <v-divider class="mb-6" />
             <v-form @submit.prevent="saveAppSettings">
               <div>
