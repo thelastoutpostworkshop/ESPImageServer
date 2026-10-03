@@ -57,7 +57,7 @@ const features = [
 
 <style scoped>
 .about-page { max-width: 1600px; margin-inline: auto; container-type: inline-size; }
-.about-banner { overflow: hidden; border-radius: 20px; border: 1px solid rgba(var(--v-theme-primary), .25); background: #071426; }
+.about-banner { overflow: hidden; border-radius: 20px; border: 1px solid rgba(var(--v-theme-primary), .25); background: rgb(var(--v-theme-surface)); }
 .about-banner img { display: block; width: 100%; height: auto; }
 .about-intro { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; padding: clamp(24px, 4cqi, 64px) 0; align-items: center; }
 .about-eyebrow { font-size: .72rem; letter-spacing: .16em; font-weight: 700; color: rgb(var(--v-theme-primary)); margin-bottom: 14px; }

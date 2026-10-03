@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useDisplay } from 'vuetify'
+import { useDisplay, useTheme } from 'vuetify'
 import QRCode from 'qrcode'
 import { generationJobDetail, generationHasMeasuredProgress } from './generationStatus.js'
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
@@ -10,6 +10,7 @@ import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
 import { requireSdCardCommandAvailable, waitForSdCardDeletion } from './sdDeletion.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
+import { saveThemePreference } from './themePreference.js'
 
 let displaySelectionInitialized = false
 let sdCardDisplaySelectionVersion = 0
@@ -225,6 +226,19 @@ const autoSaveImages = ref(true)
 const autoSaveVideos = ref(true)
 const confirmDeletion = ref(true)
 const autoCheckFirmwareUpdates = ref(true)
+const appTheme = useTheme()
+const themePreferenceError = ref('')
+const themeOptions = [{ title: 'Dark', value: 'dark' }, { title: 'Light', value: 'light' }]
+const selectedTheme = computed({
+  get: () => appTheme.name.value,
+  set: value => {
+    if (value !== 'dark' && value !== 'light') return
+    appTheme.change(value)
+    themePreferenceError.value = saveThemePreference(value)
+      ? ''
+      : 'The theme changed, but this device could not save your choice. It may reset when you reopen the app.'
+  }
+})
 const firmwareChecksEnabled = ref(false)
 const autoSaveSaving = ref(false)
 const autoSaveVideoSaving = ref(false)
@@ -3076,7 +3090,7 @@ onUnmounted(() => {
             >
               <template #prepend>
                 <v-avatar :color="target.online ? 'success' : 'warning'" size="32" variant="tonal">
-                  <span style="color: white; font-size: 18px; font-weight: 700; line-height: 1">{{ target.online ? '✓' : '!' }}</span>
+                  <span style="color: rgb(var(--v-theme-on-surface)); font-size: 18px; font-weight: 700; line-height: 1">{{ target.online ? '✓' : '!' }}</span>
                 </v-avatar>
               </template>
               <v-list-item-title>{{ target.name }}</v-list-item-title>
@@ -4430,6 +4444,18 @@ onUnmounted(() => {
         <v-card v-if="page === 'settings'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Settings</v-card-title>
           <v-card-text>
+            <v-select
+              v-model="selectedTheme"
+              :items="themeOptions"
+              label="Theme"
+              variant="outlined"
+              :prepend-inner-icon="selectedTheme === 'dark' ? 'mdi-weather-night' : 'mdi-white-balance-sunny'"
+              hint="Changes apply immediately and are saved automatically for this device."
+              persistent-hint
+              class="mb-6"
+            />
+            <v-alert v-if="themePreferenceError" type="warning" variant="tonal" density="compact" class="mb-6">{{ themePreferenceError }}</v-alert>
+            <v-divider class="mb-6" />
             <v-form @submit.prevent="saveAppSettings">
               <div>
                 <v-text-field
