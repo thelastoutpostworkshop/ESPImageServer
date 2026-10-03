@@ -1353,6 +1353,7 @@ async function copyMobileAccessUrl(url, label) {
 
 async function openMobileAccessDialog(dismissPrompt = false) {
   if (dismissPrompt) dismissMobileAccessPrompt()
+  if (compact.value) drawer.value = false
   mobileAccessDialog.value = true
   mobileAccessCopyStatus.value = ''
   mobileAccessQrCodeLoading.value = true
@@ -3110,6 +3111,7 @@ onUnmounted(() => {
         </template>
       </v-tooltip>
       <v-spacer />
+      <v-btn v-if="!compact" color="primary" variant="tonal" prepend-icon="mdi-cellphone-link" class="mr-2 flex-shrink-0" @click="openMobileAccessDialog()">Use on phone</v-btn>
       <v-btn size="x-large" icon="mdi-image-text" variant="text" aria-label="Open Creation Library" title="Open Creation Library" @click="openMetadataPane" />
     </v-app-bar>
 
@@ -3124,6 +3126,10 @@ onUnmounted(() => {
       </v-list-item>
       <v-divider />
       <v-list nav density="comfortable">
+        <template v-if="compact">
+          <v-list-item prepend-icon="mdi-cellphone-link" title="Use on phone" @click="openMobileAccessDialog()" />
+          <v-divider class="my-2" />
+        </template>
         <v-list-subheader>Create</v-list-subheader>
         <v-list-item prepend-icon="mdi-image-plus" title="Generate image" :active="page === 'generate'" @click="openGeneratePage" />
         <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="navigate('video')" />
@@ -4424,21 +4430,6 @@ onUnmounted(() => {
         <v-card v-if="page === 'settings'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Settings</v-card-title>
           <v-card-text>
-            <v-card v-if="!compact" variant="tonal" color="primary" class="mb-6">
-              <v-card-title class="text-subtitle-1">Use from your phone</v-card-title>
-              <v-card-text class="pt-0">
-                <div class="text-body-2">Open ESPImageServer on another device connected to the same Wi-Fi network.</div>
-                <div class="text-caption text-medium-emphasis mt-3">Phone address: {{ mobileAccessUrl }}</div>
-                <div v-if="mobileAccessFallbackUrl" class="text-caption text-medium-emphasis mt-1">Fallback: {{ mobileAccessFallbackUrl }}</div>
-              </v-card-text>
-              <v-card-actions>
-                <v-btn color="primary" variant="flat" prepend-icon="mdi-qrcode" @click="openMobileAccessDialog">Show QR code</v-btn>
-                <v-btn variant="text" prepend-icon="mdi-content-copy" @click="copyMobileAccessUrl(mobileAccessUrl, 'Phone')">Copy address</v-btn>
-              </v-card-actions>
-              <v-alert v-if="mobileAccessCopyStatus" :type="mobileAccessCopyStatus.startsWith('Could not') ? 'warning' : 'success'" variant="tonal" density="compact" class="mx-4 mb-4">
-                {{ mobileAccessCopyStatus }}
-              </v-alert>
-            </v-card>
             <v-form @submit.prevent="saveAppSettings">
               <div>
                 <v-text-field
