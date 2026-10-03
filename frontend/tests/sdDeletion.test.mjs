@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { sdSaveCommandEndpoint } from '../src/sdSaveProgress.js'
+import { requireSdCardCommandAvailable, waitForSdCardDeletion } from '../src/sdDeletion.js'
 
 const source = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
 const deletionCode = source.slice(source.indexOf('function displaySdCardMediaType('), source.indexOf('async function showSDCardFileOnDisplay('))
@@ -16,11 +17,14 @@ function deferred() {
 
 // Execute the real confirmation, deletion, and selection-change functions with
 // controlled network awaits. No actual device receives a deletion command.
-function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, legacy = false } = {}) {
+function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, onInventory, legacy = false } = {}) {
   let scope = legacy ? '' : '/displays/one'
   let selectionWatcher
   let commandCount = 0
   const requests = []
+  const inventoryRequests = []
+  const statusCaches = []
+  let elapsed = 0
   const notifications = []
   const loads = []
   const files = [{ name: 'a.jpg', type: 'image' }, { name: 'b.mjpeg', type: 'video' }]
@@ -35,6 +39,17 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, legacy
     sdSaveCommandEndpoint,
     sdCardDisplaySelectionVersion: 0,
     sdCardDeleteTarget: { value: null },
+    sdCardDeleteProgress: { value: null },
+    sdCardDeletionActive: { get value() { return ui.deletingSdCardFile.value || ui.deletingSdCardFiles.value } },
+    sdCardInventoryRefreshing: { value: false },
+    savingToDisplaySdCard: { value: false },
+    savingVideoToDisplaySdCard: { value: false },
+    displayingSdCardFile: { value: '' },
+    displayExperienceSaving: { value: false },
+    displayExperiencePreviewChanging: { value: false },
+    requireSdCardCommandAvailable,
+    AbortSignal,
+    waitForSdCardDeletion: options => waitForSdCardDeletion({ ...options, now: () => elapsed, wait: async ms => { elapsed += ms } }),
     sdCardLoadSequence: 0,
     displaySdCardLoading: { value: true },
     displaySdCardScope: { value: scope },
@@ -79,6 +94,11 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, legacy
     activeDisplaySettingsKey: 'active-display',
     fetch: async (url, options = {}) => {
       const request = { url, method: options.method || 'GET' }
+      if (request.method === 'GET' && url.endsWith('/display-sd-card')) {
+        inventoryRequests.push({ ...request, cache: options.cache })
+        const report = await onInventory?.(ui, request) || { available: true, report_version: 1, files: [...ui.displaySdCard.value.files] }
+        return { ok: true, json: async () => report }
+      }
       requests.push(request)
       if (request.method === 'DELETE') {
         const command = {
@@ -88,8 +108,10 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, legacy
         await onDelete?.(ui, request)
         return { ok: true, json: async () => command }
       }
-      const pollStatus = await onPoll?.(ui, request) || status
-      return { ok: true, json: async () => ({ status: pollStatus, detail: pollStatus === 'complete' ? 'Deleted' : 'Could not delete' }) }
+      statusCaches.push(options.cache)
+      const result = await onPoll?.(ui, request) || status
+      if (typeof result === 'object') return { ok: !result.httpStatus, status: result.httpStatus, json: async () => result }
+      return { ok: true, json: async () => ({ status: result, detail: result === 'complete' ? 'Deleted' : 'Could not delete' }) }
     },
   })
   vm.runInContext(deletionCode + '\n' + selectionWatcherCode, ui)
@@ -108,7 +130,7 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, legacy
       ui.displaySdCardLoading.value = true
     }
   }
-  return { ui, files, requests, notifications, loads }
+  return { ui, files, requests, inventoryRequests, statusCaches, notifications, loads, get elapsed() { return elapsed } }
 }
 
 test('confirmed deletion removes the file only after acknowledgement and invalidates older loads', async () => {
@@ -201,6 +223,7 @@ test('a dispatched deletion keeps polling its original display after selection c
   const { ui, files, requests } = setup({ onDelete: current => current.selectDisplay('two') })
   const target = ui.captureSdCardDeleteTarget([files[0]])
   const deletion = ui.deleteSdCardFileAndWait(files[0], target)
+  while (!requests.some(request => request.method === 'DELETE')) await Promise.resolve()
   const secondInventory = ui.displaySdCard.value
   const secondLoadSequence = ui.sdCardLoadSequence
   await deletion
@@ -327,4 +350,212 @@ test('legacy display deletion retains the legacy endpoints', async () => {
     { url: '/display-sd-card/files/a.jpg', method: 'DELETE' },
     { url: '/display-commands/delete-1', method: 'GET' },
   ])
+})
+
+test('bulk deletion waits beyond the old 15-second limit and reports real completed progress', async () => {
+  let secondPolls = 0
+  const run = setup({ onPoll: (_ui, request) => request.url.endsWith('delete-2') && ++secondPolls <= 44 ? 'pending' : 'complete' })
+  run.ui.confirmDeleteSelectedSdCardFiles()
+  await run.ui.deleteSelectedDisplaySdCardFiles()
+  assert.equal(run.ui.sdCardDeleteProgress.value.completed, 2)
+  assert.equal(run.ui.sdCardDeleteProgress.value.total, 2)
+  assert.equal(run.ui.sdCardDeleteProgress.value.state, 'complete')
+  assert.ok(run.elapsed > 15000)
+  assert.equal(run.requests.filter(request => request.method === 'DELETE').length, 2)
+  assert.ok(run.statusCaches.every(cache => cache === 'no-store'))
+  assert.ok(run.inventoryRequests.every(request => request.cache === 'no-store'))
+  assert.equal(run.ui.error.value, '')
+})
+
+test('a transient connection error and HTTP failure retry status without resending deletion', async () => {
+  let polls = 0
+  const run = setup({ onPoll: () => {
+    if (++polls === 1) throw new Error('Connection reset')
+    if (polls === 2) return { httpStatus: 503 }
+    return 'complete'
+  } })
+  run.ui.confirmDeleteDisplaySdCardFile(run.files[0])
+  await run.ui.deleteDisplaySdCardFile()
+  assert.equal(polls, 3)
+  assert.equal(run.requests.filter(request => request.method === 'DELETE').length, 1)
+  assert.equal(run.ui.sdCardDeleteProgress.value.completed, 1)
+  assert.equal(run.ui.sdCardDeleteProgress.value.state, 'complete')
+})
+
+test('a fresh complete inventory confirms missing acknowledgements and keeps bulk deletion serial', async () => {
+  let inventoryReads = 0
+  const run = setup({ status: 'pending', onInventory: () => {
+    ++inventoryReads
+    const version = inventoryReads === 1 ? 1 : inventoryReads < 4 ? 2 : 3
+    const files = inventoryReads === 1 ? [{ name: 'a.jpg' }, { name: 'b.mjpeg' }] : inventoryReads < 4 ? [{ name: 'b.mjpeg' }] : []
+    return { available: true, report_version: version, files }
+  } })
+  run.ui.confirmDeleteSelectedSdCardFiles()
+  await run.ui.deleteSelectedDisplaySdCardFiles()
+  assert.equal(run.ui.sdCardDeleteProgress.value.completed, 2)
+  assert.equal(run.ui.sdCardDeleteProgress.value.state, 'complete')
+  assert.equal(run.ui.displaySdCard.value.files.length, 0)
+  assert.deepEqual(run.requests.map(request => request.method), ['DELETE', 'GET', 'DELETE', 'GET'])
+  assert.ok(run.inventoryRequests.every(request => request.url === '/displays/one/display-sd-card'))
+  assert.equal(run.ui.displaySdCard.value.inventory_refresh_pending, false)
+})
+
+for (const [label, report] of [
+  ['stale', { available: true, report_version: 1, files: [] }],
+  ['unavailable', { available: false, report_version: 2, files: [] }],
+  ['missing files', { available: true, report_version: 2 }],
+  ['malformed files', { available: true, report_version: 2, files: [null] }],
+  ['synthetic pending inventory', { available: true, report_version: 2, files: [], inventory_refresh_pending: true }],
+]) {
+  test(`${label} inventory cannot turn an unconfirmed file into a successful deletion`, async () => {
+    let inventoryReads = 0
+    const run = setup({
+      onPoll: (_ui, request) => request.url.endsWith('delete-1') ? 'complete' : 'pending',
+      onInventory: ui => ++inventoryReads <= 2 ? { available: true, report_version: 1, files: ui.displaySdCard.value.files } : report,
+    })
+    run.ui.confirmDeleteSelectedSdCardFiles()
+    await run.ui.deleteSelectedDisplaySdCardFiles()
+    assert.equal(run.ui.sdCardDeleteProgress.value.completed, 1)
+    assert.equal(run.ui.sdCardDeleteProgress.value.total, 2)
+    assert.equal(run.ui.sdCardDeleteProgress.value.state, 'stopped')
+    assert.equal(run.ui.sdCardDeleteProgress.value.filename, 'b.mjpeg')
+    assert.match(run.ui.error.value, /Removed 1 of 2/)
+    assert.match(run.ui.error.value, /may already have been removed/)
+    assert.deepEqual(Array.from(run.ui.selectedSdCardFileNames.value), ['b.mjpeg'])
+    assert.ok(run.elapsed >= 90000 && run.elapsed <= 90500)
+    assert.equal(run.requests.filter(request => request.method === 'DELETE').length, 2)
+  })
+}
+
+test('failed command stops with honest progress even if a newer inventory omits its filename', async () => {
+  const run = setup({ status: 'failed', onInventory: () => ({ available: true, report_version: 10, files: [] }) })
+  run.ui.confirmDeleteSelectedSdCardFiles()
+  await run.ui.deleteSelectedDisplaySdCardFiles()
+  assert.equal(run.ui.sdCardDeleteProgress.value.completed, 0)
+  assert.equal(run.ui.sdCardDeleteProgress.value.state, 'stopped')
+  assert.equal(run.requests.filter(request => request.method === 'DELETE').length, 1)
+  assert.equal(run.ui.displaySdCard.value.files.length, 2)
+})
+
+test('the confirmation closes immediately and Stop after this file waits for the dispatched result', async () => {
+  const reply = deferred()
+  const run = setup({ onPoll: () => reply.promise })
+  run.ui.confirmDeleteSelectedSdCardFiles()
+  const deletion = run.ui.deleteSelectedDisplaySdCardFiles()
+  while (!run.requests.some(request => request.method === 'GET')) await Promise.resolve()
+  assert.equal(run.ui.deleteSdCardFilesDialog.value, false)
+  assert.equal(run.ui.sdCardDeleteProgress.value.completed, 0)
+  assert.equal(run.ui.sdCardDeleteProgress.value.filename, 'a.jpg')
+  assert.equal(run.ui.displaySdCard.value.files.length, 2)
+  run.ui.stopSdCardDeletionAfterCurrentFile()
+  reply.resolve('complete')
+  await deletion
+  assert.equal(run.ui.sdCardDeleteProgress.value.completed, 1)
+  assert.equal(run.ui.sdCardDeleteProgress.value.state, 'stopped')
+  assert.deepEqual(Array.from(run.ui.selectedSdCardFileNames.value), ['b.mjpeg'])
+  assert.equal(run.requests.filter(request => request.method === 'DELETE').length, 1)
+})
+
+test('switching displays during the pre-deletion inventory read stops before DELETE', async () => {
+  const run = setup({ onInventory: current => { current.selectDisplay('two'); return { available: true, report_version: 1, files: [] } } })
+  run.ui.confirmDeleteSelectedSdCardFiles()
+  await run.ui.deleteSelectedDisplaySdCardFiles()
+  assert.deepEqual(run.requests, [])
+  assert.deepEqual(run.inventoryRequests.map(request => request.url), ['/displays/one/display-sd-card'])
+  assert.match(run.ui.error.value, /Active display changed/)
+})
+
+for (const busyRef of ['sdCardInventoryRefreshing', 'savingToDisplaySdCard', 'savingVideoToDisplaySdCard', 'displayingSdCardFile', 'displayExperienceSaving', 'displayExperiencePreviewChanging', 'displayExperiencePreviewing']) {
+  test(`${busyRef} blocks deletion while another display command is in flight`, () => {
+    const run = setup()
+    run.ui[busyRef].value = true
+    run.ui.confirmDeleteSelectedSdCardFiles()
+    assert.equal(run.ui.sdCardDeleteTarget.value, null)
+    assert.match(run.ui.error.value, /current display operation/)
+    assert.deepEqual(run.requests, [])
+  })
+}
+
+test('the eight-file case recovers a physically deleted second file with a lost acknowledgement', async () => {
+  let dispatched = ''
+  let version = 1
+  let physicalFiles
+  const run = setup({
+    onDelete: (_ui, request) => { dispatched = decodeURIComponent(request.url.split('/').at(-1)) },
+    onInventory: () => ({ available: true, report_version: version, files: physicalFiles }),
+    onPoll: (_ui, request) => {
+      physicalFiles = physicalFiles.filter(file => file.name !== dispatched)
+      ++version
+      return request.url.endsWith('delete-2') ? 'pending' : 'complete'
+    },
+  })
+  run.files.push(...Array.from({ length: 6 }, (_, index) => ({ name: `extra-${index}.jpg`, type: 'image' })))
+  physicalFiles = run.files.map(file => ({ ...file }))
+  run.ui.selectedSdCardFileNames.value = run.files.map(file => file.name)
+  run.ui.confirmDeleteSelectedSdCardFiles()
+  await run.ui.deleteSelectedDisplaySdCardFiles()
+  assert.equal(run.ui.sdCardDeleteProgress.value.completed, 8)
+  assert.equal(run.ui.sdCardDeleteProgress.value.total, 8)
+  assert.equal(run.ui.sdCardDeleteProgress.value.state, 'complete')
+  assert.equal(run.requests.filter(request => request.method === 'DELETE').length, 8)
+  assert.equal(run.ui.displaySdCard.value.files.length, 0)
+  assert.equal(run.ui.error.value, '')
+})
+
+test('periodic inventory loads pause only for the original deleting display', async () => {
+  const reply = deferred()
+  const run = setup({ onPoll: () => reply.promise })
+  let reports = 0
+  run.ui.fetchDisplaySdCardReport = async () => {
+    ++reports
+    return { available: true, report_version: 2, files: [{ name: 'other.jpg' }] }
+  }
+  const loadCode = source.slice(source.indexOf('async function loadDisplaySdCard()'), source.indexOf('async function refreshDisplaySdCardInventory()'))
+  vm.runInContext(loadCode, run.ui)
+  run.ui.confirmDeleteSelectedSdCardFiles()
+  const deletion = run.ui.deleteSelectedDisplaySdCardFiles()
+  while (!run.requests.some(request => request.method === 'GET')) await Promise.resolve()
+  await run.ui.loadDisplaySdCard()
+  assert.equal(reports, 0)
+  assert.equal(run.ui.displaySdCard.value.files.length, 2)
+  run.ui.selectDisplay('two')
+  await run.ui.loadDisplaySdCard()
+  assert.ok(reports > 0)
+  assert.equal(run.ui.displaySdCardScope.value, '/displays/two')
+  assert.equal(run.ui.displaySdCard.value.files[0].name, 'other.jpg')
+  reply.resolve('complete')
+  await deletion
+  assert.equal(run.ui.displaySdCard.value.files[0].name, 'other.jpg')
+})
+
+test('refresh, playback, and navigation stop-preview cannot replace a pending deletion', async () => {
+  const run = setup()
+  run.ui.deletingSdCardFiles.value = true
+  const refreshCode = source.slice(source.indexOf('async function refreshDisplaySdCardInventory()'), source.indexOf('async function refreshDisplaySdCard()'))
+  const playbackCode = source.slice(source.indexOf('async function showSDCardFileOnDisplay('), source.indexOf('async function loadAppSettings()'))
+  const stopPreviewCode = source.slice(source.indexOf('async function stopDisplayExperiencePreview()'), source.indexOf('async function sendDisplaySdCardCommand('))
+  run.ui.status = { value: '' }
+  vm.runInContext(refreshCode + '\n' + playbackCode + '\n' + stopPreviewCode, run.ui)
+  await assert.rejects(run.ui.refreshDisplaySdCardInventory(), /current SD-card deletion/)
+  assert.equal(await run.ui.showSDCardFileOnDisplay('a.jpg'), false)
+  assert.match(run.ui.error.value, /current SD-card deletion/)
+  run.ui.displayExperiencePreviewing.value = true
+  await run.ui.stopDisplayExperiencePreview()
+  assert.deepEqual(run.requests, [])
+  assert.deepEqual(run.inventoryRequests, [])
+})
+
+test('a missing command ID stops without polling or sending another deletion', async () => {
+  const run = setup()
+  const fetch = run.ui.fetch
+  run.ui.fetch = async (url, options) => {
+    const response = await fetch(url, options)
+    return options?.method === 'DELETE' ? { ok: true, json: async () => ({ id: '' }) } : response
+  }
+  run.ui.confirmDeleteSelectedSdCardFiles()
+  await run.ui.deleteSelectedDisplaySdCardFiles()
+  assert.deepEqual(run.requests.map(request => request.method), ['DELETE'])
+  assert.equal(run.ui.sdCardDeleteProgress.value.completed, 0)
+  assert.equal(run.ui.sdCardDeleteProgress.value.state, 'stopped')
+  assert.match(run.ui.error.value, /did not return a deletion request/)
 })

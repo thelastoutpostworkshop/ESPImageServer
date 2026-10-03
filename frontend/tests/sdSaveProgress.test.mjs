@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from '../src/sdSaveProgress.js'
+import { requireSdCardCommandAvailable } from '../src/sdDeletion.js'
 
 test('download completion remains distinct from committed save', () => {
   assert.equal(sdSaveProgressMessage({ progress: { stage: 'downloading', received_bytes: 50, total_bytes: 100 } }), 'Saving to SD card: 50% received…')
@@ -33,6 +34,7 @@ for (const switchAt of ['initial inventory', 'command polling']) {
     let selected = '/displays/original'
     const requests = []
     const context = {
+      requireSdCardCommandAvailable, sdCardDeletionActive: { value: false }, sdCardInventoryRefreshing: { value: false },
       activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} }, displaySdCardScope: { value: null },
       selectedDisplayEndpoint: suffix => selected + suffix,
       sdSaveCommandEndpoint,
@@ -51,6 +53,7 @@ for (const delay of [12000, Infinity]) {
   test(`SD refresh waits for fresh inventory after acknowledgement (delay ${delay})`, async () => {
     let elapsed = 0, reports = 0
     const context = {
+      requireSdCardCommandAvailable, sdCardDeletionActive: { value: false }, sdCardInventoryRefreshing: { value: false },
       activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} }, displaySdCardScope: { value: null },
       selectedDisplayEndpoint: suffix => '/displays/original' + suffix,
       sdSaveCommandEndpoint,

@@ -8,6 +8,7 @@ import AboutPage from './components/AboutPage.vue'
 import BoardShopping from './components/BoardShopping.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
+import { requireSdCardCommandAvailable, waitForSdCardDeletion } from './sdDeletion.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
 
 let displaySelectionInitialized = false
@@ -176,6 +177,9 @@ const deleteSdCardFilesDontAskAgain = ref(false)
 const selectedSdCardFileNames = ref([])
 const sdCardFilesToDelete = ref([])
 const sdCardDeleteTarget = ref(null)
+const sdCardDeleteProgress = ref(null)
+const sdCardDeletionActive = computed(() => deletingSdCardFile.value || deletingSdCardFiles.value)
+const sdCardInventoryRefreshing = ref(false)
 const savingToDisplaySdCard = ref(false)
 const showingSavedImageOnDisplay = ref(false)
 const displaySdCard = ref({ available: false, files: [] })
@@ -187,6 +191,7 @@ const displayExperienceIntervalSeconds = ref(15)
 const displayExperienceLoading = ref(false)
 const displayExperienceSaving = ref(false)
 const displayExperiencePreviewing = ref(false)
+const displayExperiencePreviewChanging = ref(false)
 const displayExperienceError = ref('')
 const displayExperienceStatus = ref('')
 const reportedDisplayExperience = ref(null)
@@ -1579,6 +1584,7 @@ async function saveVideoToDisplaySdCard(videoId) {
     showSDCardSaveStatus(`Checking ${display.value.name}'s SD card for this video…`)
     await refreshDisplaySdCardInventory()
     if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Start the save again for the selected display.')
+    requireSdCardCommandAvailable(sdCardDeletionActive.value)
     const response = await fetch(
       `${selectedDisplayEndpoint('/display-commands/save-saved-video')}/${encodeURIComponent(videoId)}`,
       { method: 'POST' }
@@ -1700,6 +1706,7 @@ async function fetchDisplaySdCardReport() {
 
 let sdCardLoadSequence = 0
 async function loadDisplaySdCard() {
+  if (sdCardDeletionActive.value && sdCardDeleteTarget.value?.scope === selectedDisplayEndpoint('')) return displaySdCard.value
   const sequence = ++sdCardLoadSequence
   const scope = selectedDisplayEndpoint('')
   if (!display.value?.connected) {
@@ -1726,18 +1733,21 @@ async function loadDisplaySdCard() {
 }
 
 async function refreshDisplaySdCardInventory() {
+  requireSdCardCommandAvailable(sdCardDeletionActive.value)
   if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
   const displayScope = selectedDisplayEndpoint('')
   const checkDisplay = () => {
     if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Refresh its SD card and try again.')
   }
   displaySdCardLoading.value = true
+  sdCardInventoryRefreshing.value = true
   try {
     const previousReport = await fetchDisplaySdCardReport()
     checkDisplay()
     displaySdCard.value = previousReport
     displaySdCardScope.value = displayScope
     const previousVersion = Number(previousReport.report_version) || 0
+    requireSdCardCommandAvailable(sdCardDeletionActive.value)
     const response = await fetch(selectedDisplayEndpoint('/display-sd-card/refresh'), { method: 'POST' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -1773,6 +1783,7 @@ async function refreshDisplaySdCardInventory() {
     throw new Error('The display did not confirm the SD card refresh. Keep it connected and try again.')
   } finally {
     displaySdCardLoading.value = false
+    sdCardInventoryRefreshing.value = false
   }
 }
 
@@ -1851,6 +1862,7 @@ async function saveDisplayExperience() {
     slideshow_order: displayExperience.value.slideshow_order
   }
   try {
+    requireSdCardCommandAvailable(sdCardDeletionActive.value)
     const response = await fetch(selectedDisplayEndpoint('/display-experience'), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
@@ -1883,9 +1895,11 @@ async function saveDisplayExperience() {
 }
 
 async function previewDisplayExperience() {
-  if (!activeDisplayOnline.value || displayExperiencePreviewing.value) return
+  if (!activeDisplayOnline.value || displayExperiencePreviewing.value || displayExperiencePreviewChanging.value) return
   displayExperienceError.value = ''
+  displayExperiencePreviewChanging.value = true
   try {
+    requireSdCardCommandAvailable(sdCardDeletionActive.value)
     const response = await fetch(selectedDisplayEndpoint('/display-experience/preview'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1899,18 +1913,24 @@ async function previewDisplayExperience() {
     displayExperienceStatus.value = `${displayExperience.value.offline_experience === 'video_loop' ? 'Video loop' : 'Slideshow'} preview is starting on the display.`
   } catch (requestError) {
     displayExperienceError.value = `Could not start preview: ${requestError.message}`
+  } finally {
+    displayExperiencePreviewChanging.value = false
   }
 }
 
 async function stopDisplayExperiencePreview() {
   if (!displayExperiencePreviewing.value) return
+  if (sdCardDeletionActive.value) return
   displayExperiencePreviewing.value = false
+  displayExperiencePreviewChanging.value = true
   try {
     if (activeDisplayOnline.value) {
       await fetch(selectedDisplayEndpoint('/display-experience/preview'), { method: 'DELETE', keepalive: true })
     }
   } catch {
     // The firmware will return to server control on its next successful command poll.
+  } finally {
+    displayExperiencePreviewChanging.value = false
   }
 }
 
@@ -1921,6 +1941,7 @@ async function sendDisplaySdCardCommand(endpoint, method = 'POST', notify = true
   }
   error.value = ''
   try {
+    requireSdCardCommandAvailable(sdCardDeletionActive.value)
     const response = await fetch(selectedDisplayEndpoint(endpoint), { method })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -1941,6 +1962,10 @@ function displaySdCardMediaType(file) {
 
 function captureSdCardDeleteTarget(files) {
   if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
+  if (sdCardInventoryRefreshing.value || savingToDisplaySdCard.value || savingVideoToDisplaySdCard.value ||
+    displayingSdCardFile.value || displayExperienceSaving.value || displayExperiencePreviewChanging.value || displayExperiencePreviewing.value) {
+    throw new Error('Wait for the current display operation to finish before deleting SD-card files.')
+  }
   const scope = selectedDisplayEndpoint('')
   if (displaySdCardScope.value !== scope || !files.length || files.some(file => !displaySdCardFiles().includes(file))) {
     throw new Error('Wait for the selected display’s SD-card list to load, then select the files again.')
@@ -2002,21 +2027,40 @@ async function deleteDisplaySdCardFile() {
   const file = target?.files[0]
   if (!file || deletingSdCardFile.value || deletingSdCardFiles.value) return
   deletingSdCardFile.value = true
+  deleteSdCardFileDialog.value = false
+  startSdCardDeleteProgress(target)
   error.value = ''
   try {
     requireCurrentSdCardDeleteTarget(target)
     if (deleteSdCardFileDontAskAgain.value) await setDeleteConfirmation(false)
     await deleteSdCardFileAndWait(file, target)
+    sdCardDeleteProgress.value = { ...sdCardDeleteProgress.value, completed: 1, state: 'complete', waiting: '' }
     showSDCardSnackbar(`Deleted ${file.name} from ${target.displayName}’s SD card.`)
-    if (sdCardDeleteTargetIsCurrent(target)) await loadDisplaySdCard()
   } catch (requestError) {
     error.value = `Could not remove ${file.name} from ${target.displayName}’s SD card: ${requestError.message}`
+    sdCardDeleteProgress.value = { ...sdCardDeleteProgress.value, state: 'stopped', waiting: requestError.message }
   } finally {
     deletingSdCardFile.value = false
     deleteSdCardFileDialog.value = false
     sdCardDeleteTarget.value = null
     sdCardFileToDelete.value = null
   }
+}
+
+function startSdCardDeleteProgress(target) {
+  ++sdCardLoadSequence
+  displaySdCardLoading.value = false
+  sdCardDeleteProgress.value = {
+    displayName: target.displayName, total: target.files.length, completed: 0,
+    currentIndex: 1, filename: target.files[0].name, state: 'running',
+    waiting: 'Sending the deletion request…', stopRequested: false,
+    confirmedFiles: [],
+  }
+}
+
+function stopSdCardDeletionAfterCurrentFile() {
+  if (sdCardDeleteProgress.value?.state !== 'running') return
+  sdCardDeleteProgress.value = { ...sdCardDeleteProgress.value, stopRequested: true }
 }
 
 function confirmDeleteSelectedSdCardFiles() {
@@ -2039,33 +2083,39 @@ function confirmDeleteSelectedSdCardFiles() {
 
 async function deleteSdCardFileAndWait(file, target) {
   requireCurrentSdCardDeleteTarget(target)
+  const inventoryEndpoint = `${target.scope}/display-sd-card`
+  const baselineResponse = await fetch(inventoryEndpoint, { cache: 'no-store', signal: AbortSignal.timeout(5000) })
+  if (!baselineResponse.ok) throw new Error(`Could not check the SD card before deletion (${baselineResponse.status})`)
+  const baselineReport = await baselineResponse.json()
+  requireCurrentSdCardDeleteTarget(target)
   const response = await fetch(
     `${target.scope}/display-sd-card/files/${encodeURIComponent(file.name)}`,
-    { method: 'DELETE' }
+    { method: 'DELETE', signal: AbortSignal.timeout(5000) }
   )
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     throw new Error(body.detail || `Request failed (${response.status})`)
   }
   const command = await response.json()
+  if (typeof command.id !== 'string' || !command.id.trim()) throw new Error('The server did not return a deletion request to check. Check the SD card before trying again.')
   const commandEndpoint = `${target.scope}/display-commands/${encodeURIComponent(command.id)}`
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await new Promise(resolve => window.setTimeout(resolve, 500))
-    const commandResponse = await fetch(commandEndpoint)
-    if (!commandResponse.ok) throw new Error(`Could not check display status (${commandResponse.status})`)
-    const result = await commandResponse.json()
-    if (result.status === 'complete') {
-      if (sdCardDeleteTargetIsCurrent(target) && displaySdCardScope.value === target.scope) {
-        ++sdCardLoadSequence
-        displaySdCardLoading.value = false
-        removeSdCardFilesFromInventory([file])
-        displaySdCard.value = { ...displaySdCard.value, inventory_refresh_pending: true }
-      }
-      return
-    }
-    if (['failed', 'cancelled', 'superseded'].includes(result.status)) throw new Error(result.detail || `The display could not delete ${file.name}`)
+  const confirmation = await waitForSdCardDeletion({
+    commandEndpoint, inventoryEndpoint, filename: file.name,
+    baselineReportVersion: baselineReport.report_version,
+    onWaiting: waiting => {
+      if (sdCardDeleteProgress.value?.state === 'running') sdCardDeleteProgress.value = { ...sdCardDeleteProgress.value, waiting }
+    },
+    fetchImpl: fetch,
+  })
+  if (sdCardDeleteTargetIsCurrent(target) && displaySdCardScope.value === target.scope) {
+    ++sdCardLoadSequence
+    displaySdCardLoading.value = false
+    if (confirmation.report) displaySdCard.value = confirmation.report
+    const confirmedFiles = [...(sdCardDeleteProgress.value?.confirmedFiles || []), file]
+    removeSdCardFilesFromInventory(confirmedFiles)
+    if (sdCardDeleteProgress.value?.state === 'running') sdCardDeleteProgress.value = { ...sdCardDeleteProgress.value, confirmedFiles }
+    displaySdCard.value = { ...displaySdCard.value, inventory_refresh_pending: confirmation.confirmedBy !== 'inventory' }
   }
-  throw new Error(`${target.displayName} has not confirmed deleting ${file.name}. Check its SD card before trying again.`)
 }
 
 function removeSdCardFilesFromInventory(files) {
@@ -2082,19 +2132,32 @@ async function deleteSelectedDisplaySdCardFiles() {
   const files = target?.files || []
   if (!files.length || deletingSdCardFile.value || deletingSdCardFiles.value) return
   deletingSdCardFiles.value = true
+  deleteSdCardFilesDialog.value = false
+  startSdCardDeleteProgress(target)
   error.value = ''
   const deletedFiles = []
   try {
     requireCurrentSdCardDeleteTarget(target)
     if (deleteSdCardFilesDontAskAgain.value) await setDeleteConfirmation(false)
     for (const file of files) {
+      if (sdCardDeleteProgress.value.stopRequested) break
+      sdCardDeleteProgress.value = {
+        ...sdCardDeleteProgress.value, currentIndex: deletedFiles.length + 1, filename: file.name,
+        waiting: 'Sending the deletion request…',
+      }
       await deleteSdCardFileAndWait(file, target)
       deletedFiles.push(file)
+      sdCardDeleteProgress.value = { ...sdCardDeleteProgress.value, completed: deletedFiles.length }
     }
-    showSDCardSnackbar(`${deletedFiles.length} ${deletedFiles.length === 1 ? 'file' : 'files'} removed from ${target.displayName}’s SD card.`)
-    if (sdCardDeleteTargetIsCurrent(target)) await loadDisplaySdCard()
+    const complete = deletedFiles.length === files.length
+    sdCardDeleteProgress.value = {
+      ...sdCardDeleteProgress.value, state: complete ? 'complete' : 'stopped',
+      waiting: complete ? '' : 'Stopped after the last confirmed deletion. Remaining files are still selected.',
+    }
+    showSDCardSnackbar(`Removed ${deletedFiles.length} of ${files.length} files from ${target.displayName}’s SD card.${complete ? '' : ' Remaining files were not sent.'}`)
   } catch (requestError) {
     error.value = `Removed ${deletedFiles.length} of ${files.length} files from ${target.displayName}’s SD card. ${requestError.message}`
+    sdCardDeleteProgress.value = { ...sdCardDeleteProgress.value, state: 'stopped', waiting: requestError.message }
   } finally {
     deletingSdCardFiles.value = false
     deleteSdCardFilesDialog.value = false
@@ -2111,6 +2174,7 @@ async function showSDCardFileOnDisplay(filename) {
   error.value = ''
   status.value = ''
   try {
+    requireSdCardCommandAvailable(sdCardDeletionActive.value)
     if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
     const response = await fetch(
       selectedDisplayEndpoint(`/display-sd-card/files/${encodeURIComponent(filename)}/display`),
@@ -2370,6 +2434,7 @@ async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
   showingSavedImageOnDisplay.value = true
   error.value = ''
   try {
+    requireSdCardCommandAvailable(sdCardDeletionActive.value)
     const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2560,6 +2625,7 @@ async function saveImageToDisplaySdCard(savedImage = null) {
     showSDCardSaveStatus(`Checking ${display.value.name}'s SD card for this image…`)
     await refreshDisplaySdCardInventory()
     if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Start the save again for the selected display.')
+    requireSdCardCommandAvailable(sdCardDeletionActive.value)
     const endpoint = savedImage
       ? `${selectedDisplayEndpoint('/display-commands/save-saved-image')}/${encodeURIComponent(savedImage.id)}`
       : selectedDisplayEndpoint('/display-commands/save-latest')
@@ -3143,7 +3209,7 @@ onUnmounted(() => {
           <v-chip v-else size="small" variant="tonal" prepend-icon="mdi-help-circle-outline">
             SD card status not checked
           </v-chip>
-          <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="displaySdCardLoading" @click="refreshCreationLibrarySdCardStatus">
+          <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="sdCardDeletionActive" @click="refreshCreationLibrarySdCardStatus">
             Refresh SD card status
           </v-btn>
         </div>
@@ -3280,12 +3346,12 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="showOnDisplayLabel" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
+        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="showOnDisplayLabel" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay || sdCardDeletionActive" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'mdi-check-circle' : 'mdi-sd'"
           :title="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? alreadySavedToDisplaySdCardLabel : saveToDisplaySdCardLabel"
-          :disabled="!activeDisplayOnline || savingToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image')"
+          :disabled="!activeDisplayOnline || savingToDisplaySdCard || sdCardDeletionActive || creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image')"
           @click="saveContextMenuImageToDisplaySdCard"
         />
         <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
@@ -3307,12 +3373,12 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" :title="showOnDisplayLabel" :disabled="!activeDisplayOnline || showingVideoOnDisplay" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
+        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" :title="showOnDisplayLabel" :disabled="!activeDisplayOnline || showingVideoOnDisplay || sdCardDeletionActive" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? 'mdi-check-circle' : 'mdi-sd'"
           :title="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? alreadySavedToDisplaySdCardLabel : saveToDisplaySdCardLabel"
-          :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video')"
+          :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardDeletionActive || creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video')"
           @click="saveSavedVideoToDisplaySdCard"
         />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
@@ -3789,13 +3855,13 @@ onUnmounted(() => {
               <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-restore" aria-label="Use saved settings" @click="useSelectedSavedImageSettings" /></template>
             </v-tooltip>
             <v-tooltip v-if="selectedSavedImage" :text="showOnDisplayLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets" :aria-label="showOnDisplayLabel" @click="showSavedImageOnDisplay()" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets || sdCardDeletionActive" :aria-label="showOnDisplayLabel" @click="showSavedImageOnDisplay()" /></template>
             </v-tooltip>
             <v-tooltip text="Download JPEG">
               <template #activator="{ props }"><v-btn v-bind="props" :href="imageUrl" download="esp-image.jpg" color="secondary" icon="mdi-download" aria-label="Download JPEG" /></template>
             </v-tooltip>
             <v-tooltip :text="saveToDisplaySdCardLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!activeDisplayOnline" :aria-label="saveToDisplaySdCardLabel" @click="saveImageToDisplaySdCard(selectedSavedImage)" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!activeDisplayOnline || sdCardDeletionActive" :aria-label="saveToDisplaySdCardLabel" @click="saveImageToDisplaySdCard(selectedSavedImage)" /></template>
             </v-tooltip>
             <v-tooltip text="Open Creation Library">
               <template #activator="{ props }"><v-btn v-bind="props" variant="text" icon="mdi-image-text" aria-label="Open Creation Library" @click="openMetadataPane" /></template>
@@ -3977,10 +4043,10 @@ onUnmounted(() => {
               <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" :aria-label="videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery'" @click="saveVideoToCreationLibrary" /></template>
             </v-tooltip>
             <v-tooltip :text="showOnDisplayLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" :aria-label="showOnDisplayLabel" @click="showSavedVideoOnDisplay" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardDeletionActive" :aria-label="showOnDisplayLabel" @click="showSavedVideoOnDisplay" /></template>
             </v-tooltip>
             <v-tooltip :text="saveToDisplaySdCardLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard" :aria-label="saveToDisplaySdCardLabel" @click="saveCompletedVideoToDisplaySdCard" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardDeletionActive" :aria-label="saveToDisplaySdCardLabel" @click="saveCompletedVideoToDisplaySdCard" /></template>
             </v-tooltip>
           </v-card-actions>
         </v-card>
@@ -4186,8 +4252,8 @@ onUnmounted(() => {
                 variant="outlined"
                 class="mb-3"
               />
-              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline" prepend-icon="mdi-content-save">Save {{ display?.name || 'display' }} experience</v-btn>
-              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperiencePreviewing" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }} on {{ display?.name || 'display' }}</v-btn>
+              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline || sdCardDeletionActive" prepend-icon="mdi-content-save">Save {{ display?.name || 'display' }} experience</v-btn>
+              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperiencePreviewing || displayExperiencePreviewChanging || sdCardDeletionActive" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }} on {{ display?.name || 'display' }}</v-btn>
               <div v-if="!activeDisplayOnline" class="text-caption text-medium-emphasis mt-3">Reconnect the display to save or preview these settings.</div>
               <v-alert v-if="displayExperienceStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ displayExperienceStatus }}</v-alert>
               <v-alert v-if="displayExperienceError" type="error" variant="tonal" density="compact" class="mt-4">{{ displayExperienceError }}</v-alert>
@@ -4215,8 +4281,18 @@ onUnmounted(() => {
               Waiting for {{ display?.name || 'the display' }} to report its SD card.
             </v-alert>
             <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{ error }}</v-alert>
-            <v-alert v-if="deletingSdCardFile || deletingSdCardFiles" type="info" variant="tonal" density="compact" class="mb-4" role="status">
-              Deleting from {{ sdCardDeleteTarget?.displayName }}’s SD card. Waiting for that display to confirm…
+            <v-alert v-if="sdCardDeleteProgress" :type="sdCardDeleteProgress.state === 'complete' ? 'success' : sdCardDeleteProgress.state === 'stopped' ? 'warning' : 'info'" variant="tonal" density="compact" class="mb-4" role="status" aria-live="polite">
+              <div class="font-weight-medium">
+                {{ sdCardDeleteProgress.state === 'running' ? `Deleting file ${sdCardDeleteProgress.currentIndex} of ${sdCardDeleteProgress.total}` : sdCardDeleteProgress.state === 'complete' ? 'Deletion complete' : 'Deletion stopped' }}
+                · {{ sdCardDeleteProgress.displayName }}’s SD card
+              </div>
+              <div class="mt-1">{{ sdCardDeleteProgress.completed }} of {{ sdCardDeleteProgress.total }} files deleted and confirmed · {{ sdCardDeleteProgress.total - sdCardDeleteProgress.completed }} {{ sdCardDeleteProgress.state === 'stopped' ? 'not confirmed' : 'remaining' }}</div>
+              <v-progress-linear :model-value="sdCardDeleteProgress.completed * 100 / sdCardDeleteProgress.total" color="primary" height="8" rounded class="my-2" :aria-label="`${sdCardDeleteProgress.completed} of ${sdCardDeleteProgress.total} files deleted`" />
+              <div v-if="sdCardDeleteProgress.state === 'running' || sdCardDeleteProgress.state === 'stopped'" class="text-break">{{ sdCardDeleteProgress.filename }}</div>
+              <div v-if="sdCardDeleteProgress.waiting" class="mt-1">{{ sdCardDeleteProgress.waiting }}</div>
+              <div v-if="sdCardDeleteProgress.stopRequested && sdCardDeleteProgress.state === 'running'" class="mt-1">The current file is still being checked. No remaining files will be sent.</div>
+              <v-btn v-if="sdCardDeleteProgress.state === 'running' && sdCardDeleteProgress.total > 1" variant="tonal" size="small" class="mt-2" :disabled="sdCardDeleteProgress.stopRequested" @click="stopSdCardDeletionAfterCurrentFile">Stop after this file</v-btn>
+              <v-btn v-else-if="sdCardDeleteProgress.state !== 'running'" variant="text" size="small" class="mt-2" @click="sdCardDeleteProgress = null">Dismiss</v-btn>
             </v-alert>
             <v-alert v-else-if="displaySdCard.inventory_refresh_pending" type="info" variant="tonal" density="compact" class="mb-4" role="status">
               Deletion confirmed. Deleted files have been removed from this list; waiting for the display’s updated SD-card report.
@@ -4237,7 +4313,7 @@ onUnmounted(() => {
               <v-btn
                 v-if="selectedSdCardFiles.length"
                 variant="text"
-                :disabled="deletingSdCardFiles"
+                :disabled="sdCardDeletionActive"
                 @click="selectedSdCardFileNames = []"
               >
                 Clear selection
@@ -4285,12 +4361,22 @@ onUnmounted(() => {
               v-model:items-per-page="sdCardItemsPerPage"
               v-model="selectedSdCardFileNames"
               item-value="name"
+              :item-selectable="() => !sdCardDeletionActive"
               :show-select="activeDisplayOnline"
               select-strategy="all"
               hover
               density="comfortable"
               class="sd-card-table border rounded"
             >
+              <template #header.data-table-select="{ allSelected, someSelected, selectAll }">
+                <v-checkbox-btn
+                  :model-value="allSelected"
+                  :indeterminate="someSelected && !allSelected"
+                  :disabled="sdCardDeletionActive"
+                  aria-label="Select all SD-card files for deletion"
+                  @update:model-value="selectAll"
+                />
+              </template>
               <template #item.thumbnail="{ item }">
                 <v-avatar v-if="item.thumbnail_available" rounded="sm" size="56">
                   <v-img :src="displaySdCardThumbnailUrl(item.name)" cover />
