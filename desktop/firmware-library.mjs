@@ -53,7 +53,8 @@ export class FirmwareLibrary {
     if (!pkg || !identity || identity.port !== installer.state.selectedPort || identity.board_target !== pkg.board) {
       throw new Error('Identify this board again, then choose a matching firmware package.')
     }
-    await installer.select(pkg.directory)
+    const target = installer.captureInstallTarget(identity.port, pkg.board)
+    await installer.select(pkg.directory, target)
     // The manifest may have changed since the library was checked.
     if (installer.state.package.board !== pkg.board || installer.state.package.version !== pkg.version) {
       installer.selected = null; installer.state.package = null

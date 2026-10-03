@@ -151,6 +151,7 @@ export class FirmwareReleases {
       (!installer.state.identity || (installer.state.identity.port === port && installer.state.identity.board_target === board)) &&
       (!hardware || installer.state.identity?.hardware_id === hardware)
     requireValue(matchingBoard(), 'The selected USB display changed. Check it again.')
+    const target = installer.captureInstallTarget(port, board)
     this.state.busy = true; this.state.download = { stage: 'downloading', received: 0, total: pkg.size }
     this.controller = new AbortController()
     const signal = this.controller.signal
@@ -181,7 +182,7 @@ export class FirmwareReleases {
       signal.throwIfAborted()
       requireValue(!installer.state.busy && matchingBoard(), 'The selected USB display changed. Check it again.')
       await writeFile(cache, data)
-      await installer.select(staging)
+      await installer.select(staging, target)
       installer.state.package.source = 'github'
       // Keep only the current extracted selection; ZIPs remain cached for reuse.
       const previous = this.selectedDirectory

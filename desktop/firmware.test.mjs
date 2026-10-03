@@ -273,3 +273,231 @@ test('AMOLED packages validate as ESP32-S3 and reject a different physical board
   await installer.select(f.directory)
   assert.throws(() => installer.start('COM3', 'JC4827W543', 115200), /matching physical board/)
 })
+
+const usbDisplay = { port: 'COM8', serialNumber: 'original-usb', vendorId: '303a', productId: '1001' }
+const installedIdentity = {
+  port: 'COM8', hardware_id: 'aabbccddeeff', board_target: 'JC4827W543', board_name: 'Original display',
+  firmware_version: '1.1.0', protocol_version: 1, capabilities: ['hello', 'status'], width: 480, height: 272,
+  wifi_configured: false, wifi_connected: false,
+}
+
+function deferred() {
+  let resolve
+  const promise = new Promise(complete => { resolve = complete })
+  return { promise, resolve }
+}
+
+// All USB enumeration, identification, esptool runs, and reconnects below are
+// fake. Real package staging keeps cleanup and ordering checks representative.
+async function selectedUsbPackage(t, { manual = false, onProbe, onFinalIdentify } = {}) {
+  const f = await fixture(t)
+  const device = { ports: [{ ...usbDisplay }], identity: { ...installedIdentity } }
+  const events = [], calls = [], reconnects = []
+  let selecting = true
+  const installer = new FirmwareInstaller('fake', {
+    ports: async () => device.ports.map(port => ({ ...port })),
+    identify: async port => {
+      events.push(selecting ? 'initial-identify' : 'final-identify')
+      assert.equal(port, device.identity.port)
+      if (!selecting) {
+        assert.equal(installer.state.busy, true, 'the final identity check shares the installation lock')
+        if (onFinalIdentify) return onFinalIdentify({ installer, device, events, calls })
+      }
+      return { ...device.identity }
+    },
+    run: async (_, args, options) => {
+      calls.push({ args, cwd: options.cwd })
+      if (args.includes('flash-id')) {
+        events.push('probe')
+        await onProbe?.({ installer, device, events, calls })
+        return probe
+      }
+      assert.ok(args.includes('write-flash'))
+      events.push('write')
+      return verified
+    },
+    reconnect: async (original, expected) => {
+      events.push('reconnect')
+      reconnects.push({ original, expected })
+      return { ...device.identity, firmware_version: f.manifest.firmware_version }
+    },
+  })
+  await installer.refreshPorts()
+  installer.selectPort('COM8')
+  if (!manual) {
+    await installer.identifyFirmware('COM8')
+    assert.equal(installer.state.identity.hardware_id, installedIdentity.hardware_id)
+  }
+  const target = await installer.captureInstallTarget('COM8', 'JC4827W543')
+  await installer.select(f.directory, target)
+  selecting = false
+  return { installer, device, events, calls, reconnects, directory: f.directory }
+}
+
+async function installSelected(installer) {
+  installer.start('COM8', 'JC4827W543', 460800)
+  await installer.completion
+}
+
+function assertNoFirmwareWrites(calls) {
+  assert.ok(!calls.some(call => call.args.includes('write-flash')), 'identity failures must prevent every firmware write')
+}
+
+for (const [description, change] of [
+  ['different hardware ID with unchanged USB descriptors', device => { device.identity.hardware_id = '112233445566' }],
+  ['another S3 board target with the same hardware ID', device => { device.identity.board_target = 'ST7701_320X820' }],
+  ['AMOLED board target with the same hardware ID', device => { device.identity.board_target = 'ESP32_S3_AMOLED_143' }],
+]) test(`final USB check rejects ${description} after the chip probe`, async t => {
+  const { installer, calls } = await selectedUsbPackage(t, { onProbe: ({ device }) => change(device) })
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'failed')
+  assert.equal(installer.state.busy, false)
+  assert.match(installer.state.error, /changed|match|identity|board/i)
+  assertNoFirmwareWrites(calls)
+  assert.equal(calls.length, 1)
+  await assert.rejects(access(calls[0].cwd))
+})
+
+test('fresh USB identity succeeds after the probe without requiring unchanged Wi-Fi or installed version', async t => {
+  const { installer, events, reconnects } = await selectedUsbPackage(t, {
+    onProbe: ({ device }) => { device.identity.wifi_connected = true; device.identity.firmware_version = '1.0.9' },
+  })
+  await installSelected(installer)
+  assert.deepEqual(events, ['initial-identify', 'probe', 'final-identify', 'write', 'reconnect'])
+  assert.equal(installer.state.stage, 'boot_verified')
+  assert.equal(installer.state.busy, false)
+  assert.equal(reconnects[0].expected.hardwareId, installedIdentity.hardware_id)
+  assert.equal(reconnects[0].expected.board, 'JC4827W543')
+  assert.equal(reconnects[0].expected.version, '1.1.1')
+})
+
+test('an identified display that no longer answers cannot fall back to manual installation', async t => {
+  const { installer, calls } = await selectedUsbPackage(t, {
+    onFinalIdentify: async () => { throw new Error('USB identification timed out') },
+  })
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'failed')
+  assert.equal(installer.state.busy, false)
+  assert.match(installer.state.error, /identif|check|respond|timed out/i)
+  assertNoFirmwareWrites(calls)
+  await assert.rejects(access(calls[0].cwd))
+})
+
+test('an identified installation cannot skip revalidation when its identity provider is unavailable', async t => {
+  const { installer, calls } = await selectedUsbPackage(t)
+  installer.identify = null
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'failed')
+  assertNoFirmwareWrites(calls)
+})
+
+test('clearing cached identity does not remove the original identity bound to the selected package', async t => {
+  const { installer, device, calls } = await selectedUsbPackage(t)
+  installer.state.identity = null
+  device.identity.hardware_id = '112233445566'
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'failed')
+  assertNoFirmwareWrites(calls)
+})
+
+for (const [description, change] of [
+  ['USB serial number', port => { port.serialNumber = 'replacement-usb' }],
+  ['USB vendor ID', port => { port.vendorId = '10c4' }],
+  ['USB product ID', port => { port.productId = 'ea60' }],
+]) test(`changed ${description} is rejected before firmware writes`, async t => {
+  const { installer, calls } = await selectedUsbPackage(t, { onProbe: ({ device }) => change(device.ports[0]) })
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'failed')
+  assertNoFirmwareWrites(calls)
+})
+
+for (const replacement of [[], [{ ...usbDisplay, serialNumber: 'replacement-usb' }]]) {
+  test(`port ${replacement.length ? 'replacement' : 'disappearance'} during the final identity await prevents writing`, { timeout: 5000 }, async t => {
+    const identifying = deferred(), answer = deferred()
+    const { installer, device, calls } = await selectedUsbPackage(t, {
+      onFinalIdentify: async ({ device: current }) => { identifying.resolve(); await answer.promise; return { ...current.identity } },
+    })
+    installer.start('COM8', 'JC4827W543', 460800)
+    await identifying.promise
+    device.ports = replacement
+    answer.resolve()
+    await installer.completion
+    assert.equal(installer.state.stage, 'failed')
+    assert.equal(installer.state.busy, false)
+    assertNoFirmwareWrites(calls)
+  })
+}
+
+test('the installation lock remains held until the final USB identity check completes', { timeout: 5000 }, async t => {
+  const identifying = deferred(), answer = deferred()
+  const { installer } = await selectedUsbPackage(t, {
+    onFinalIdentify: async ({ device }) => { identifying.resolve(); await answer.promise; return { ...device.identity } },
+  })
+  installer.start('COM8', 'JC4827W543', 460800)
+  await identifying.promise
+  assert.throws(() => installer.selectPort('COM8'), /Wait for USB/)
+  assert.throws(() => installer.start('COM8', 'JC4827W543', 460800), /one installation/)
+  await assert.rejects(installer.identifyFirmware('COM8'), /wait|available/i)
+  answer.resolve()
+  await installer.completion
+  assert.equal(installer.state.stage, 'boot_verified')
+  assert.equal(installer.state.busy, false)
+})
+
+for (const code of ['USB_IDENTITY_TIMEOUT', 'USB_IDENTITY_UNSUPPORTED']) test(`explicit manual first installation remains available after ${code}`, async t => {
+  const { installer, calls } = await selectedUsbPackage(t, {
+    manual: true, onFinalIdentify: async () => {
+      throw Object.assign(new Error('No compatible firmware responded'), { code })
+    },
+  })
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'boot_verified')
+  assert.equal(calls.filter(call => call.args.includes('write-flash')).length, 1)
+})
+
+test('manual installation rejects a responding display with the wrong board target', async t => {
+  const { installer, device, calls } = await selectedUsbPackage(t, { manual: true })
+  device.identity.board_target = 'ST7701_320X820'
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'failed')
+  assertNoFirmwareWrites(calls)
+})
+
+for (const [description, code] of [
+  ['malformed identity', 'USB_IDENTITY_INVALID'],
+  ['port-open failure', 'EACCES'],
+  ['serial close failure', 'EIO'],
+]) test(`manual installation does not ignore ${description}`, async t => {
+  const { installer, calls } = await selectedUsbPackage(t, {
+    manual: true, onFinalIdentify: async () => { throw Object.assign(new Error(description), { code }) },
+  })
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'failed')
+  assertNoFirmwareWrites(calls)
+})
+
+test('the selected package keeps its original hardware ID when mutable cached identity changes', async t => {
+  const { installer, reconnects } = await selectedUsbPackage(t)
+  installer.state.identity.hardware_id = '112233445566'
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'boot_verified')
+  assert.equal(reconnects[0].expected.hardwareId, installedIdentity.hardware_id)
+})
+
+test('verified startup renews the USB target for another installation after COM renumbering', async t => {
+  const { installer, device, calls, directory } = await selectedUsbPackage(t)
+  installer.reconnect = async (_original, expected) => {
+    assert.equal(expected.hardwareId, installedIdentity.hardware_id)
+    device.ports = [{ ...usbDisplay, port: 'COM12', productId: '1002' }]
+    device.identity = { ...device.identity, port: 'COM12', firmware_version: '1.1.1' }
+    return { ...device.identity }
+  }
+  await installSelected(installer)
+  assert.equal(installer.state.stage, 'boot_verified')
+  assert.equal(installer.state.selectedPort, 'COM12')
+  await installer.select(directory)
+  installer.start('COM12', 'JC4827W543', 460800)
+  await installer.completion
+  assert.equal(installer.state.stage, 'boot_verified')
+  assert.deepEqual(calls.filter(call => call.args.includes('write-flash')).map(call => call.args[call.args.indexOf('--port') + 1]), ['COM8', 'COM12'])
+})

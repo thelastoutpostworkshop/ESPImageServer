@@ -36,7 +36,7 @@ const boardItems = [
 ]
 const detectedBoard = computed(() => boardItems.find(item => item.value === identity.value?.board_target))
 const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Ready to install',
-  connecting: 'Connecting to your display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
+  connecting: 'Connecting to your display', checking_identity: 'Checking the connected display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
   identifying: 'Checking firmware startup', boot_verified: 'Firmware installed and startup verified',
   written: 'Write verified — startup still needs checking', failed: 'Installation needs attention' }[state.value.stage] || state.value.stage))
 const installationActive = computed(() => download.value.busy || (step.value === 2 && (pending.value || state.value.busy)))
@@ -58,6 +58,7 @@ const installationProgress = computed(() => {
   return { label: stageLabel.value, percent: null, detail: ({
     validating: 'Checking the firmware files before making changes.',
     connecting: 'Connecting over USB and checking the display’s chip and storage.',
+    checking_identity: 'Confirming that the connected display still matches your selection before writing firmware.',
     restarting: 'All firmware files are verified. Restarting your display.',
     identifying: 'Firmware upload complete. Waiting for the display to restart and confirm its new version.'
   }[state.value.stage] || 'Please wait while installation finishes.') }
@@ -172,7 +173,7 @@ onMounted(async () => {
   void loadLibrary('firmwareReleases')
   await perform(async () => {
     state.value = await call('firmwareState'); port.value = state.value.selectedPort || state.value.identity?.port || ''
-    if (state.value.busy && ['validating', 'connecting', 'writing_and_verifying', 'restarting', 'identifying'].includes(state.value.stage)) {
+    if (state.value.busy && ['validating', 'connecting', 'checking_identity', 'writing_and_verifying', 'restarting', 'identifying'].includes(state.value.stage)) {
       showInstall.value = true; installationStarted.value = true
     }
     if (state.value.identity) board.value = state.value.identity.board_target

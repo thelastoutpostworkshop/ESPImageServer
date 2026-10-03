@@ -13,6 +13,15 @@ export const boards = {
 }
 const hash = data => createHash('sha256').update(data).digest('hex')
 const requireValue = (ok, message) => { if (!ok) throw new Error(message) }
+const usbDescriptor = port => Object.freeze(Object.fromEntries(
+  ['port', 'serialNumber', 'vendorId', 'productId'].map(key => [key, port[key] || ''])
+))
+const sameUSBDevice = (expected, current) =>
+  ['port', 'serialNumber', 'vendorId', 'productId'].every(key => (expected[key] || '') === (current[key] || ''))
+const firmwareIdentity = identity => identity ? Object.freeze({ hardware_id: identity.hardware_id, board_target: identity.board_target }) : null
+const installTarget = (port, board, usb, identity) => Object.freeze({
+  port, board, usb: usb ? usbDescriptor(usb) : null, identity: firmwareIdentity(identity), mode: identity ? 'identified' : 'manual'
+})
 
 export async function validatePackage(directory) {
   const root = await realpath(directory)
@@ -133,7 +142,8 @@ export class FirmwareInstaller {
   snapshot() { return structuredClone(this.state) }
   selectPort(port) {
     requireValue(!this.state.busy && (port === '' || isSerialPortPath(port)), 'Wait for USB work to finish and select a valid port.')
-    if (port !== '') requireDetectedPort(port, this.knownPorts)
+    const detected = port !== '' ? requireDetectedPort(port, this.knownPorts) : null
+    this.usbTarget = detected ? installTarget(port, undefined, detected, null) : null
     this.state.selectedPort = port
     this.state.identity = null; this.state.wifi = null; this.state.identityError = ''
     this.identityPort = null
@@ -163,6 +173,7 @@ export class FirmwareInstaller {
       this.state.identity = await this.identify(port)
       this.state.selectedPort = port
       this.identityPort = { ...detected }
+      this.usbTarget = installTarget(port, undefined, detected, this.state.identity)
     }
     catch (error) { this.state.identityError = error.message }
     finally { this.state.busy = false }
@@ -176,20 +187,39 @@ export class FirmwareInstaller {
     try {
       requireDetectedPort(port, await this.ports())
       const identity = await this.identify(port)
-      requireValue(identity.hardware_id === previous.hardware_id, 'The USB display changed. Identify it again.')
+      requireValue(identity.hardware_id === previous.hardware_id && identity.board_target === previous.board_target, 'The USB display changed. Identify it again.')
       this.state.identity = identity; this.state.identityError = ''
     } catch (error) {
       this.state.identity = null; this.state.wifi = null; this.state.identityError = error.message
     } finally { this.state.busy = false }
     return this.snapshot()
   }
-  async select(directory) {
+  captureInstallTarget(port, board) {
+    if (!port) return null
+    requireValue(isSerialPortPath(port) && (!this.state.selectedPort || this.state.selectedPort === port),
+      'The selected USB display changed. Check it again.')
+    requireValue(!this.usbTarget || this.usbTarget.port === port, 'The selected USB display changed. Check it again.')
+    // Keep the original identity even if status polling later clears its UI copy.
+    const identity = this.usbTarget?.identity || (this.state.identity?.port === port ? this.state.identity : null)
+    requireValue(!identity || (typeof identity.hardware_id === 'string' && /^[a-f0-9]{12}$/.test(identity.hardware_id) &&
+      Object.hasOwn(boards, identity.board_target) && (!board || identity.board_target === board)),
+    'The identified display does not match this firmware package. Check the display and choose matching firmware.')
+    const usb = this.usbTarget?.usb || (this.identityPort?.port === port ? this.identityPort : null) ||
+      this.knownPorts?.find(candidate => candidate.port === port)
+    return installTarget(port, board, usb, identity)
+  }
+  async select(directory, target) {
     requireValue(!this.state.busy, 'A firmware operation is already running.')
+    const originalTarget = target || this.captureInstallTarget(this.state.selectedPort || this.state.identity?.port)
     this.state = { ...this.state, busy: true, package: null, error: '', stage: 'validating', progress: null }
     this.selected = null
     try {
       const pkg = await validatePackage(directory)
-      this.selected = { directory: pkg.directory, fingerprint: pkg.fingerprint }
+      requireValue(!originalTarget || ((!originalTarget.board || originalTarget.board === pkg.manifest.board_target) &&
+        (!originalTarget.identity || originalTarget.identity.board_target === pkg.manifest.board_target)),
+      'The identified display does not match this firmware package. Choose matching firmware.')
+      this.selected = { directory: pkg.directory, fingerprint: pkg.fingerprint,
+        target: originalTarget ? installTarget(originalTarget.port, pkg.manifest.board_target, originalTarget.usb, originalTarget.identity) : null }
       this.state.package = { board: pkg.manifest.board_target, version: pkg.manifest.firmware_version, chip: pkg.manifest.chip,
         flashBytes: pkg.manifest.flash.size_bytes, directory: pkg.directory, files: pkg.manifest.segments.map(s => ({ file: s.file, size: s.size_bytes })) }
       this.state.stage = 'ready'; this.state.log = ''
@@ -200,19 +230,55 @@ export class FirmwareInstaller {
   start(port, board, baud) {
     requireValue(!this.state.busy && this.selected, 'Choose a valid package first; only one installation can run.')
     requireValue(isSerialPortPath(port) && board === this.state.package.board && [115200, 460800].includes(baud), 'Confirm the matching physical board, port, and speed.')
-    this.expectedHardwareId = this.state.identity?.port === port ? this.state.identity.hardware_id : undefined
+    const target = this.selected.target || this.captureInstallTarget(port, board)
+    requireValue(target.port === port && target.board === board && (!this.state.selectedPort || this.state.selectedPort === port),
+      'The selected USB display changed. Check it again and choose matching firmware.')
+    this.selected.target = target
+    this.usbTarget = target
+    this.expectedHardwareId = target.identity?.hardware_id
     this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', progress: null, port, selectedPort: port, identity: null, identityError: '', wifi: null }
-    this.completion = this.install(port, baud).catch(e => {
+    this.completion = this.install(port, baud, target).catch(e => {
       this.state.stage = 'failed'; this.state.error = e.message
     }).finally(() => { this.state.busy = false; this.child = null })
     return this.snapshot()
   }
-  async install(port, baud) {
+  async revalidateInstallTarget(target, board) {
+    const checkPort = async () => {
+      const current = requireDetectedPort(target.port, await this.ports())
+      requireValue(sameUSBDevice(target.usb, current), 'The USB device changed. Nothing was written. Select its port and check the display again.')
+      return current
+    }
+    await checkPort()
+    let identity
+    if (this.identify) {
+      try {
+        identity = await this.identify(target.port)
+        requireValue(identity, 'Invalid USB firmware identity response.')
+      }
+      catch (error) {
+        requireValue(target.mode === 'manual' && ['USB_IDENTITY_TIMEOUT', 'USB_IDENTITY_UNSUPPORTED'].includes(error.code),
+          `Could not confirm the USB display before installation. Nothing was written. Check the display again: ${error.message}`)
+      }
+    } else requireValue(target.mode === 'manual', 'USB identification is unavailable. Nothing was written. Check the display again.')
+    if (identity) {
+      requireValue(identity.port === target.port && /^[a-f0-9]{12}$/.test(identity.hardware_id) && identity.board_target === board &&
+        (!target.identity || (identity.hardware_id === target.identity.hardware_id && identity.board_target === target.identity.board_target)),
+      'The responding USB display does not match the original device or firmware package. Nothing was written. Check the display again.')
+      this.expectedHardwareId = identity.hardware_id
+    } else requireValue(target.mode === 'manual', 'The USB display did not identify itself. Nothing was written. Check the display again.')
+    // identifyPort releases its serial connection before returning. Check the
+    // original USB descriptors again before handing the port to esptool.
+    return checkPort()
+  }
+  async install(port, baud, target) {
     let staged
     try {
       const pkg = await validatePackage(this.selected.directory)
       requireValue(pkg.fingerprint === this.selected.fingerprint, 'Package changed since selection. Choose it again.')
-      const originalPort = requireDetectedPort(port, await this.ports())
+      const detected = requireDetectedPort(port, await this.ports())
+      target = installTarget(target.port, target.board, target.usb || detected, target.identity)
+      requireValue(sameUSBDevice(target.usb, detected), 'The USB device changed. Nothing was written. Select its port and check the display again.')
+      this.usbTarget = target
       // Flash an immutable snapshot of verified bytes, not mutable source paths.
       staged = await mkdtemp(path.join(os.tmpdir(), 'espimage-flash-'))
       for (const s of pkg.segments) await writeFile(path.join(staged, s.file), s.data)
@@ -222,6 +288,8 @@ export class FirmwareInstaller {
       this.state.stage = 'connecting'
       const probe = await this.run(this.toolPath, ['--chip', pkg.manifest.chip, '--port', port, '--baud', '115200', '--before', 'default-reset', '--after', 'hard-reset', 'flash-id'], options)
       parseProbe(probe, pkg.manifest.chip, pkg.manifest.flash.size_bytes)
+      this.state.stage = 'checking_identity'
+      const originalPort = await this.revalidateInstallTarget(target, pkg.manifest.board_target)
       this.state.stage = 'writing_and_verifying'
       const progress = firmwareProgress(pkg.segments, value => {
         this.state.progress = value
@@ -237,11 +305,14 @@ export class FirmwareInstaller {
       if (this.reconnect) {
         this.state.stage = 'identifying'
         try {
-          this.state.identity = await this.reconnect(originalPort, {
+          const identity = await this.reconnect(originalPort, {
             board: pkg.manifest.board_target, version: pkg.manifest.firmware_version, hardwareId: this.expectedHardwareId
           })
-          this.state.selectedPort = this.state.identity.port
-          this.identityPort = null
+          const reconnected = requireDetectedPort(identity.port, await this.ports())
+          this.state.identity = identity
+          this.state.selectedPort = identity.port
+          this.identityPort = { ...reconnected }
+          this.usbTarget = installTarget(identity.port, undefined, reconnected, identity)
           this.state.stage = 'boot_verified'
         } catch (error) {
           this.state.stage = 'written'

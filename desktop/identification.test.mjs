@@ -53,8 +53,19 @@ for (const portName of ['COM8', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/cu.usbmode
 })
 test('timeout releases the serial port and explains recovery', async () => {
   const port = new FakePort(false)
-  await assert.rejects(identifyPort('COM8', { timeout: 10, createPort: () => port }), /identify your display/)
+  await assert.rejects(identifyPort('COM8', { timeout: 10, createPort: () => port }), error => {
+    assert.equal(error.code, 'USB_IDENTITY_TIMEOUT')
+    assert.match(error.message, /identify your display/)
+    return true
+  })
   assert.ok(port.closed)
+})
+
+test('a timeout cannot hide a failure to release the USB serial port', async () => {
+  const port = new FakePort(false)
+  const closeError = Object.assign(new Error('Could not close USB port'), { code: 'EIO' })
+  port.close = callback => callback(closeError)
+  await assert.rejects(identifyPort('COM8', { timeout: 10, createPort: () => port }), error => error === closeError)
 })
 test('a disconnected board releases its identification attempt', async () => {
   const port = new FakePort(false)

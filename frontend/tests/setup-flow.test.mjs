@@ -169,6 +169,10 @@ test('installation progress distinguishes download, upload, verification, and st
   assert.equal(form.installationProgress.label, 'Checking downloaded firmware')
   form.download = {busy:false}
   form.pending = false
+  form.state = {...form.state,busy:true,stage:'checking_identity',progress:null}
+  assert.equal(form.installationProgress.label, 'Checking the connected display')
+  assert.equal(form.installationProgress.percent, null)
+  assert.match(form.installationProgress.detail, /before writing firmware/)
   form.state = {...form.state,busy:true,stage:'writing_and_verifying',progress:{percent:62.9,verified:3,total:4,phase:'writing'}}
   assert.equal(form.installationProgress.percent, 62)
   assert.equal(form.installationProgress.detail, '3 of 4 firmware files verified.')

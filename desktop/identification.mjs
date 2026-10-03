@@ -31,7 +31,7 @@ export function responseDecoder(id, onResult, maxLength = 2048) {
 }
 
 export function validateIdentity(message) {
-  if (message.protocol !== 1 || !message.ok) throw new Error('Unsupported USB identification protocol.')
+  if (message.protocol !== 1 || !message.ok) throw Object.assign(new Error('Unsupported USB identification protocol.'), { code: 'USB_IDENTITY_UNSUPPORTED' })
   const r = message.result
   if (!r || r.protocol_version !== 1 || !/^[a-f0-9]{12}$/.test(r.hardware_id) ||
       !['JC4827W543', 'ST7701_320X820', 'ESP32_C6_LCD_147', 'CHEAP_YELLOW_DISPLAY', 'ESP32_S3_AMOLED_143'].includes(r.board_target) ||
@@ -58,7 +58,7 @@ export async function identifyPort(portName, { timeout = 5000, createPort = opti
     const finish = (error, value) => {
       if (settled) return
       settled = true; clearTimeout(timer); clearInterval(retry)
-      const done = closeError => error || closeError ? reject(error || closeError) : resolve({ ...value, port: portName })
+      const done = closeError => error || closeError ? reject(closeError || error) : resolve({ ...value, port: portName })
       const release = () => { if (port.isOpen) port.close(done); else done() }
       // An open already in flight must finish and close before releasing the
       // application operation lock, even if its handshake deadline elapsed.
@@ -70,7 +70,7 @@ export async function identifyPort(portName, { timeout = 5000, createPort = opti
     port.on('data', responseDecoder(id, message => {
       try { finish(null, validateIdentity(message)) } catch (error) { finish(error) }
     }))
-    timer = setTimeout(() => finish(new Error('We couldn’t identify your display. Check the USB port and close Serial Monitor, then retry. If this board hasn’t been set up yet, choose “Install firmware on this display”.')), timeout)
+    timer = setTimeout(() => finish(Object.assign(new Error('We couldn’t identify your display. Check the USB port and close Serial Monitor, then retry. If this board hasn’t been set up yet, choose “Install firmware on this display”.'), { code: 'USB_IDENTITY_TIMEOUT' })), timeout)
     port.open(error => {
       opening = false
       if (settled) { finishOpen?.(); return }

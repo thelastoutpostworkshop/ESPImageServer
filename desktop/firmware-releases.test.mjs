@@ -65,7 +65,7 @@ async function setup(t, overrides = {}) {
     return f.data
   }
   const service = new FirmwareReleases(root,{download})
-  const installer = new FirmwareInstaller('unused')
+  const installer = new FirmwareInstaller('unused', overrides.installer)
   installer.knownPorts = [{ port: 'COM3' }, { port: 'COM4' }]
   installer.selectPort('COM3')
   const request = {id:'1',board:'CHEAP_YELLOW_DISPLAY',port:'COM3'}
@@ -115,6 +115,102 @@ test('board change during download prevents selection',async t=> {
   s.service.download = async(...args)=>{const data=await original(...args); if(args[0].endsWith(filename))s.installer.selectPort('COM4'); return data}
   await assert.rejects(s.service.select(s.request,s.installer),/USB display changed/)
   assert.equal(s.installer.selected,undefined)
+})
+test('same-port physical replacement during download is rejected before firmware writes', async t => {
+  const port = { port: 'COM3', vendorId: '1a86', productId: '7523', serialNumber: '' }
+  const original = { port: port.port, board_target: 'CHEAP_YELLOW_DISPLAY', hardware_id: 'aabbccddeeff' }
+  let physical = original
+  const commands = [], identities = []
+  const s = await setup(t, { installer: {
+    ports: async () => [{ ...port }],
+    identify: async selectedPort => {
+      identities.push(selectedPort)
+      return { ...physical }
+    },
+    run: async (_, args) => {
+      commands.push(args)
+      return args.includes('flash-id') ? 'Chip type: ESP32-D0WD-V3\nDetected flash size: 4MB\n' : 'Hash of data verified.\n'.repeat(4)
+    }
+  } })
+  await s.installer.refreshPorts()
+  await s.installer.identifyFirmware(port.port)
+  const download = s.service.download
+  s.service.download = async (...args) => {
+    const data = await download(...args)
+    if (args[0].endsWith(filename)) physical = { ...original, hardware_id: '112233445566' }
+    return data
+  }
+  await s.service.select(s.request, s.installer)
+  assert.equal(s.installer.state.identity.hardware_id, original.hardware_id, 'cached identity has not observed the swap')
+  s.installer.start(port.port, original.board_target, 115200)
+  await s.installer.completion
+  assert.equal(s.installer.state.stage, 'failed')
+  assert.match(s.installer.state.error, /changed|match|original/i)
+  assert.ok(identities.length >= 2, 'installation must request a fresh identity')
+  assert.ok(commands.some(args => args.includes('flash-id')), 'the replacement shares the same chip family')
+  assert.equal(commands.filter(args => args.includes('write-flash')).length, 0)
+})
+test('downloaded selection retains its identified target after cached identity is cleared', async t => {
+  const original = { port: 'COM3', board_target: 'CHEAP_YELLOW_DISPLAY', hardware_id: 'aabbccddeeff' }
+  let physical = original
+  const commands = []
+  const s = await setup(t, { installer: {
+    ports: async () => [{ port: original.port }],
+    identify: async () => ({ ...physical }),
+    run: async (_, args) => {
+      commands.push(args)
+      return args.includes('flash-id') ? 'Chip type: ESP32-D0WD-V3\nDetected flash size: 4MB\n' : 'Hash of data verified.\n'.repeat(4)
+    }
+  } })
+  await s.installer.identifyFirmware(original.port)
+  await s.service.select(s.request, s.installer)
+  s.installer.state.identity = null
+  physical = { ...original, hardware_id: '112233445566' }
+  s.installer.start(original.port, original.board_target, 115200)
+  await s.installer.completion
+  assert.equal(s.installer.state.stage, 'failed')
+  assert.match(s.installer.state.error, /changed|match|original/i)
+  assert.equal(commands.filter(args => args.includes('write-flash')).length, 0)
+})
+test('clearing an identified display during download cannot select a manual installation', async t => {
+  const s = await setup(t, { installer: {
+    ports: async () => [{ port: 'COM3' }],
+    identify: async port => ({ port, board_target: 'CHEAP_YELLOW_DISPLAY', hardware_id: 'aabbccddeeff' })
+  } })
+  await s.installer.identifyFirmware('COM3')
+  const download = s.service.download
+  s.service.download = async (...args) => {
+    const data = await download(...args)
+    if (args[0].endsWith(filename)) s.installer.state.identity = null
+    return data
+  }
+  await assert.rejects(s.service.select(s.request, s.installer), /USB display changed/)
+  assert.equal(s.installer.selected, undefined)
+  assert.equal(s.installer.completion, undefined)
+})
+test('manual downloaded selection uses the fresh matching identity for its startup check', async t => {
+  const physical = { port: 'COM3', board_target: 'CHEAP_YELLOW_DISPLAY', hardware_id: '112233445566', firmware_version: '1.1.5' }
+  const commands = []
+  let identities = 0
+  const s = await setup(t, { installer: {
+    ports: async () => [{ port: physical.port }],
+    identify: async () => { identities++; return { ...physical } },
+    run: async (_, args) => {
+      commands.push(args)
+      return args.includes('flash-id') ? 'Chip type: ESP32-D0WD-V3\nDetected flash size: 4MB\n' : 'Hash of data verified.\n'.repeat(4)
+    },
+    reconnect: async (_, expected) => {
+      assert.equal(expected.hardwareId, physical.hardware_id)
+      return { ...physical }
+    }
+  } })
+  await s.service.select(s.request, s.installer)
+  s.installer.state.identity = { ...physical, hardware_id: 'aabbccddeeff' }
+  s.installer.start(physical.port, physical.board_target, 115200)
+  await s.installer.completion
+  assert.equal(s.installer.state.stage, 'boot_verified')
+  assert.equal(identities, 1)
+  assert.equal(commands.filter(args => args.includes('write-flash')).length, 1)
 })
 test('preview firmware cannot be selected even with a legacy opt in',async t=> {
   const {service,installer,request} = await setup(t)
