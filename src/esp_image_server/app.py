@@ -16,6 +16,7 @@ import subprocess
 from threading import Timer
 from time import perf_counter
 from typing import Literal, Protocol
+from uuid import uuid4
 import webbrowser
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, status
@@ -1972,7 +1973,7 @@ def create_app(
         output_width = profile.width if profile else request.width
         output_height = profile.height if profile else request.height
         rotation = profile.video_rotation if isinstance(profile, DisplayDevice) else display_settings_store.get_video_rotation()
-        filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.mp4"
+        filename = f"ltx-video-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid4().hex}.mp4"
         output_path = video_output_path / filename
         video_metadata: dict[str, object] = {
             "label": request.prompt[:80], "model": {"id": request.model_id, "name": video_model["name"]},
