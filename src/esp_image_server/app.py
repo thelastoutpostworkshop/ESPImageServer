@@ -235,6 +235,7 @@ class DisplayExperienceRequest(BaseModel):
 
 class VideoGenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=1_000)
+    negative_prompt: str | None = Field(default=None, max_length=1_000)
     width: int = Field(default=512, ge=1, le=768)
     height: int = Field(default=320, ge=1, le=768)
     num_frames: int = Field(default=25, ge=9, le=249)
@@ -1974,6 +1975,8 @@ def create_app(
                 "recommended_steps": model["recommended_steps"],
                 "installed": video_model_is_cached(model_id),
                 "supports_image": model["family"] != "wan",
+                "supports_negative_prompt": model["supports_negative_prompt"],
+                "default_negative_prompt": model["default_negative_prompt"],
                 "removal_note": "Removes shared LTX-Video files used by both LTX choices." if model["family"] == "ltx" else "",
             }
             for model_id, model in VIDEO_MODELS.items()
@@ -1996,6 +1999,21 @@ def create_app(
         video_model = VIDEO_MODELS.get(request.model_id)
         if video_model is None:
             raise HTTPException(status_code=422, detail="This video model is not available")
+        if video_model["supports_negative_prompt"]:
+            negative_prompt = (
+                request.negative_prompt
+                if "negative_prompt" in request.model_fields_set
+                else video_model["default_negative_prompt"]
+            )
+            if negative_prompt is not None and not negative_prompt.strip():
+                negative_prompt = ""
+        else:
+            if request.negative_prompt and request.negative_prompt.strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail="This video model does not support negative prompts. Choose LTX-Video 2B quality or Wan 2.1, or clear the negative prompt.",
+                )
+            negative_prompt = None
         require_generation_gpu(video_model["family"])
         if not video_model["minimum_steps"] <= request.steps <= video_model["maximum_steps"]:
             raise HTTPException(status_code=422, detail=(
@@ -2016,6 +2034,7 @@ def create_app(
         video_metadata: dict[str, object] = {
             "label": request.prompt[:80], "model": {"id": request.model_id, "name": video_model["name"]},
             "prompt": request.prompt, "steps": request.steps, "seed": request.seed,
+            "negative_prompt": negative_prompt,
             "frames": request.num_frames, "fps": request.fps, "source_image_id": request.source_image_id,
             "rotation": rotation,
             "display_id": profile.id if isinstance(profile, DisplayDevice) else None,
@@ -2033,6 +2052,7 @@ def create_app(
                 request.prompt, output_width, output_height, request.num_frames, request.fps,
                 request.steps, request.seed, output_path, progress, cancelled, source_image_path, request.model_id,
                 rotation=rotation,
+                negative_prompt=negative_prompt,
             )
             video_metadata["generation_time_seconds"] = round(perf_counter() - generation_started_at, 2)
             if auto_save_videos:

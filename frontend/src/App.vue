@@ -72,6 +72,7 @@ function loadVideoGenerationSettings() {
         : [4, 5, 6, 7, 8]
     return {
       prompt: typeof saved.prompt === 'string' ? saved.prompt : 'Gentle cinematic camera movement, subtle natural motion',
+      negativePrompt: typeof saved.negativePrompt === 'string' ? saved.negativePrompt : null,
       frames: Number.isInteger(saved.frames) && saved.frames >= 9 && saved.frames <= 249 && (saved.frames - 1) % 8 === 0 ? saved.frames : 25,
       fps: [8, 12, 15, 24].includes(saved.fps) ? saved.fps : 8,
       steps: validSteps.includes(saved.steps) ? saved.steps : modelId === 'ltx-2b-0.9.6-distilled' ? 8 : 30,
@@ -80,7 +81,7 @@ function loadVideoGenerationSettings() {
       randomizeSeed: saved.randomizeSeed === true
     }
   } catch {
-    return { prompt: 'Gentle cinematic camera movement, subtle natural motion', frames: 25, fps: 8, steps: 8, modelId: 'ltx-2b-0.9.6-distilled', seed: createRandomSeed(), randomizeSeed: false }
+    return { prompt: 'Gentle cinematic camera movement, subtle natural motion', negativePrompt: null, frames: 25, fps: 8, steps: 8, modelId: 'ltx-2b-0.9.6-distilled', seed: createRandomSeed(), randomizeSeed: false }
   }
 }
 
@@ -129,6 +130,7 @@ const savingVideoToDisplaySdCard = ref(false)
 const showingVideoOnDisplay = ref(false)
 const videoSourceImage = ref(null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
+const videoNegativePrompt = ref(savedVideoGenerationSettings.negativePrompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
 const randomizeVideoSeed = ref(savedVideoGenerationSettings.randomizeSeed)
 const videoFrames = ref(savedVideoGenerationSettings.frames)
@@ -534,6 +536,12 @@ const videoModels = [
   { title: 'Wan 2.1 T2V 1.3B — text-to-video', value: 'wan-2.1-t2v-1.3b', description: 'A detailed text-to-video alternative. Slower and uses system memory to work with 8 GB graphics cards.' },
 ]
 const selectedVideoModel = computed(() => videoModels.find(model => model.value === videoModelId.value) || videoModels[0])
+const selectedVideoModelCapabilities = computed(() => availableVideoModels.value.find(model => model.id === videoModelId.value))
+const videoSupportsNegativePrompt = computed(() => selectedVideoModelCapabilities.value?.supports_negative_prompt === true)
+const videoNegativePromptValue = computed({
+  get: () => videoNegativePrompt.value ?? selectedVideoModelCapabilities.value?.default_negative_prompt ?? '',
+  set: value => { videoNegativePrompt.value = value }
+})
 const videoStepOptions = computed(() => {
   if (videoModelId.value === 'ltx-2b-0.9.6-dev') return [10, 15, 20, 25, 30, 35, 40]
   if (videoModelId.value === 'wan-2.1-t2v-1.3b') return [20, 25, 30, 35, 40, 45, 50]
@@ -763,9 +771,10 @@ watch([prompt, negativePrompt, steps, seed, randomizeImageSeed, activeModelId], 
   }))
 })
 
-watch([videoPrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed, randomizeVideoSeed], () => {
+watch([videoPrompt, videoNegativePrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed, randomizeVideoSeed], () => {
   window.localStorage.setItem(videoGenerationSettingsKey, JSON.stringify({
     prompt: videoPrompt.value,
+    negativePrompt: videoNegativePrompt.value,
     frames: Number(videoFrames.value),
     fps: Number(videoFps.value),
     steps: Number(videoSteps.value),
@@ -1100,9 +1109,10 @@ async function loadModels() {
 async function loadVideoModels() {
   try {
     const response = await fetch('/video-models')
-    availableVideoModels.value = response.ok ? (await response.json()).filter(model => videoModelIds.includes(model.id)) : []
+    if (!response.ok) return
+    availableVideoModels.value = (await response.json()).filter(model => videoModelIds.includes(model.id))
   } catch {
-    availableVideoModels.value = []
+    // Keep the last known capabilities when a background refresh fails.
   }
 }
 
@@ -1595,6 +1605,9 @@ async function useSavedVideoSettings(metadata, setting) {
   if (!metadata) return
   savedVideoContextMenu.value = false
   if (setting === 'prompt' || setting === 'all') videoPrompt.value = metadata.prompt || videoPrompt.value
+  if (setting === 'prompt' || setting === 'all') {
+    videoNegativePrompt.value = Object.hasOwn(metadata, 'negative_prompt') ? metadata.negative_prompt ?? '' : null
+  }
   if (setting === 'frames' || setting === 'fps' || setting === 'all') videoDurationPresetSeconds.value = null
   if (setting === 'frames' || setting === 'all') videoFrames.value = metadata.frames || videoFrames.value
   if (setting === 'fps' || setting === 'all') videoFps.value = metadata.fps || videoFps.value
@@ -2912,6 +2925,10 @@ async function cancelGeneration() {
 
 async function generateVideo() {
   if (savingVideoRotation.value) return
+  if (!selectedVideoModelCapabilities.value) {
+    videoError.value = 'Video model settings are not available yet. Refresh the page and try again.'
+    return
+  }
   const frames = Number(videoFrames.value)
   if (!Number.isInteger(frames) || frames < 9 || frames > 249 || (frames - 1) % 8 !== 0) {
     videoError.value = 'Choose a duration preset or enter an advanced frame count from 9 to 249 in steps of 8.'
@@ -2933,6 +2950,7 @@ async function generateVideo() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt: videoPrompt.value,
+        negative_prompt: videoSupportsNegativePrompt.value ? videoNegativePromptValue.value : null,
         num_frames: frames,
         fps: Number(videoFps.value),
         steps: Number(videoSteps.value),
@@ -4040,6 +4058,20 @@ onUnmounted(() => {
                 @update:model-value="setAutoSaveVideos"
               />
               <v-textarea v-model="videoPrompt" label="Describe the video" hint="For best results, specify the subject, setting, lighting, camera shot, and one simple movement." persistent-hint maxlength="1000" counter="1000" required variant="outlined" rows="4" auto-grow class="mb-4" />
+              <v-textarea
+                v-if="videoSupportsNegativePrompt"
+                v-model="videoNegativePromptValue"
+                label="What should the video avoid? (optional)"
+                hint="For example: blurry, distorted, flickering, text. Clear this field to use no negative prompt."
+                persistent-hint
+                maxlength="1000"
+                counter="1000"
+                variant="outlined"
+                rows="2"
+                auto-grow
+                max-rows="8"
+                class="mb-4"
+              />
               <v-row dense class="mt-1">
                 <v-col cols="12" sm="6"><v-select v-model="videoFps" label="Frames per second" variant="outlined" density="comfortable" :items="[8, 12, 15, 24]" /></v-col>
                 <v-col cols="12">

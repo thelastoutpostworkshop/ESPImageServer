@@ -20,7 +20,7 @@ test('previously selected removed model falls back with compatible steps and kee
 const restore = source.slice(source.indexOf('async function useSavedVideoSettings('), source.indexOf('async function saveSavedVideoToDisplaySdCard('))
 test('restoring an older video cannot reselect a removed model or invalid step count', async () => {
   const context = { nextTick: async () => { context.videoSteps.value = 8 }, createRandomSeed: () => 7 }
-  for (const name of ['savedVideoContextMenu', 'videoPrompt', 'videoDurationPresetSeconds', 'videoFrames', 'videoFps', 'videoModelId', 'videoSteps', 'videoSeed', 'videoSourceImage', 'page', 'videoStage', 'metadataPanePinned', 'metadataPane']) context[name] = { value: null }
+  for (const name of ['savedVideoContextMenu', 'videoPrompt', 'videoNegativePrompt', 'videoDurationPresetSeconds', 'videoFrames', 'videoFps', 'videoModelId', 'videoSteps', 'videoSeed', 'videoSourceImage', 'page', 'videoStage', 'metadataPanePinned', 'metadataPane']) context[name] = { value: null }
   context.savedImages = { value: [] }
   context.videoStepOptions = { value: [4, 5, 6, 7, 8] }
   vm.createContext(context)

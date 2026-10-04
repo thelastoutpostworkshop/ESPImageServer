@@ -16,18 +16,23 @@ from .generation_capabilities import GenerationCapabilities, detect_generation_d
 from .download_progress import huggingface_progress, model_snapshot_download_options
 
 
+DEFAULT_VIDEO_NEGATIVE_PROMPT = "worst quality, blurry, jittery, distorted, flickering"
+
 VIDEO_MODELS = {
     "ltx-2b-0.9.6-distilled": {
         "name": "LTX-Video 2B distilled", "description": "Fast short animations with low graphics-card memory use.",
         "family": "ltx", "checkpoint": "ltxv-2b-0.9.6-distilled-04-25.safetensors", "minimum_steps": 4, "maximum_steps": 8, "recommended_steps": 8, "guidance_scale": 1.0,
+        "supports_negative_prompt": False, "default_negative_prompt": None,
     },
     "ltx-2b-0.9.6-dev": {
         "name": "LTX-Video 2B quality", "description": "More detail and prompt accuracy, but much slower and more demanding.",
         "family": "ltx", "checkpoint": "ltxv-2b-0.9.6-dev-04-25.safetensors", "minimum_steps": 10, "maximum_steps": 40, "recommended_steps": 30, "guidance_scale": 3.0,
+        "supports_negative_prompt": True, "default_negative_prompt": DEFAULT_VIDEO_NEGATIVE_PROMPT,
     },
     "wan-2.1-t2v-1.3b": {
         "name": "Wan 2.1 T2V 1.3B", "description": "Detailed text-to-video alternative. Slower, with CPU memory offload for 8 GB graphics cards.",
         "family": "wan", "repository": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers", "minimum_steps": 20, "maximum_steps": 50, "recommended_steps": 30, "guidance_scale": 6.0,
+        "supports_negative_prompt": True, "default_negative_prompt": DEFAULT_VIDEO_NEGATIVE_PROMPT,
     },
 
 }
@@ -292,6 +297,7 @@ class LTXVideoGenerator:
         seed: int | None, output_path: Path, progress: Callable[[int, int, str], None],
         cancelled: Callable[[], bool], source_image_path: Path | None = None,
         model_id: str = "ltx-2b-0.9.6-distilled", rotation: int = 0,
+        negative_prompt: str | None = None,
     ) -> Path:
         with self._lock:
             model = VIDEO_MODELS.get(model_id)
@@ -345,7 +351,7 @@ class LTXVideoGenerator:
             )
             frames = generation_pipeline(
                 prompt=prompt,
-                negative_prompt="worst quality, blurry, jittery, distorted, flickering",
+                negative_prompt=negative_prompt,
                 width=generation_width,
                 height=generation_height,
                 num_frames=num_frames,
