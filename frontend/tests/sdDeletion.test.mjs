@@ -51,6 +51,7 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, onInve
     AbortSignal,
     waitForSdCardDeletion: options => waitForSdCardDeletion({ ...options, now: () => elapsed, wait: async ms => { elapsed += ms } }),
     sdCardLoadSequence: 0,
+    sdCardRefreshTarget: null,
     displaySdCardLoading: { value: true },
     displaySdCardScope: { value: scope },
     displaySdCard: { value: { available: true, files } },
@@ -70,6 +71,7 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, onInve
     videoRotation: { value: 0 },
     page: { value: 'sd-card' },
     loadDisplaySettings: () => {},
+    loadSavedImages: () => {},
     loadDisplayExperience: () => {},
     displaySdCardFiles: () => ui.displaySdCard.value.files || [],
     selectedSdCardFiles: {

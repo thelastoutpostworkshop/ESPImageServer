@@ -12,6 +12,7 @@ import logging
 from math import gcd
 import os
 from pathlib import Path
+import re
 import subprocess
 from threading import Timer
 from time import perf_counter
@@ -802,6 +803,9 @@ def create_app(
             rotation=display_settings_store.get_rotation(),
             aspect_mode=assignment.aspect_mode,
         )
+        image_library.remember_sd_card_rendition(
+            assignment.image.jpeg, f"v1-{hashlib.sha256(jpeg).hexdigest()[:16]}",
+        )
         return queue_image_save(jpeg)
 
     @app.post("/display-commands/save-saved-image/{image_id}", status_code=status.HTTP_202_ACCEPTED)
@@ -901,50 +905,73 @@ def create_app(
             return f"/display-sd-card/thumbnails/{Path(filename).name}"
         return f"/displays/{display_id}/display-sd-card/thumbnails/{Path(filename).name}"
 
-    def saved_image_sd_card_content_keys(image_path: Path) -> list[str]:
-        """Return identities for both a gallery original and its first display rendition.
-
-        Saving a Creation Gallery item directly writes the original JPEG to the
-        SD card. Saving the latest generated image writes a display-sized JPEG
-        instead. The latter has a different hash even though it represents the
-        same creation, so retain both identities for the gallery's SD-card
-        status check.
-        """
+    def saved_image_sd_card_content_keys(
+        image_path: Path,
+        record: dict[str, object],
+        current_display: tuple[int, int, int] | None,
+    ) -> list[str]:
+        """Match originals, remembered saves, and recoverable display renditions."""
         try:
             original_jpeg = image_path.read_bytes()
         except OSError:
             return []
-        content_keys = [f"v1-{hashlib.sha256(original_jpeg).hexdigest()[:16]}"]
+        source_sha256 = hashlib.sha256(original_jpeg).hexdigest()
+        content_keys = [f"v1-{source_sha256[:16]}"]
+        if record.get("source_sha256") == source_sha256:
+            remembered_keys = record.get("sd_card_rendition_keys", [])
+            if isinstance(remembered_keys, list):
+                for key in remembered_keys:
+                    if (
+                        isinstance(key, str)
+                        and re.fullmatch(r"v1-[0-9a-f]{16}", key)
+                        and key not in content_keys
+                    ):
+                        content_keys.append(key)
         metadata = extract_jpeg_metadata(original_jpeg)
         display = metadata.get("display") if isinstance(metadata, dict) else None
-        if not isinstance(display, dict):
-            return content_keys
-        width, height = display.get("width"), display.get("height")
-        rotation = metadata.get("rotation")
-        aspect_mode = metadata.get("broadcast_aspect_mode", "crop")
-        if (
-            not isinstance(width, int)
-            or not isinstance(height, int)
-            or not isinstance(rotation, int)
-            or rotation not in VALID_ROTATIONS
-            or aspect_mode not in {"crop", "fit"}
-        ):
+        renditions: list[tuple[int, int, int, str]] = []
+        if isinstance(display, dict):
+            width, height = display.get("width"), display.get("height")
+            rotation = metadata.get("rotation")
+            aspect_mode = metadata.get("broadcast_aspect_mode", "crop")
+            if aspect_mode == "separate":
+                aspect_mode = "crop"
+            if (
+                isinstance(width, int)
+                and isinstance(height, int)
+                and width > 0
+                and height > 0
+                and isinstance(rotation, int)
+                and rotation in VALID_ROTATIONS
+                and aspect_mode in {"crop", "fit"}
+            ):
+                renditions.append((width, height, rotation, aspect_mode))
+        if current_display is not None:
+            width, height, rotation = current_display
+            for aspect_mode in ("crop", "fit"):
+                rendition = (width, height, rotation, aspect_mode)
+                if rendition not in renditions:
+                    renditions.append(rendition)
+        if not renditions:
             return content_keys
         try:
             with Image.open(BytesIO(original_jpeg)) as source:
-                display_jpeg = to_display_jpeg(
-                    source,
-                    width=width,
-                    height=height,
-                    rotation=rotation,
-                    quality=jpeg_quality,
-                    aspect_mode=aspect_mode,
-                )
+                for width, height, rotation, aspect_mode in renditions:
+                    display_jpeg = to_display_jpeg(
+                        source,
+                        width=width,
+                        height=height,
+                        rotation=rotation,
+                        quality=jpeg_quality,
+                        aspect_mode=aspect_mode,
+                    )
+                    if isinstance(metadata, dict):
+                        display_jpeg = embed_jpeg_metadata(display_jpeg, metadata)
+                    key = f"v1-{hashlib.sha256(display_jpeg).hexdigest()[:16]}"
+                    if key not in content_keys:
+                        content_keys.append(key)
         except (OSError, ValueError):
             return content_keys
-        content_keys.append(
-            f"v1-{hashlib.sha256(embed_jpeg_metadata(display_jpeg, metadata)).hexdigest()[:16]}"
-        )
         return content_keys
 
     def write_sd_thumbnail(
@@ -1096,6 +1123,9 @@ def create_app(
             height=display.height,
             rotation=display.rotation,
             aspect_mode=assignment.aspect_mode,
+        )
+        image_library.remember_sd_card_rendition(
+            assignment.image.jpeg, f"v1-{hashlib.sha256(jpeg).hexdigest()[:16]}",
         )
         return queue_image_save(jpeg, display_id=display_id)
 
@@ -1405,13 +1435,21 @@ def create_app(
         return response
 
     @app.get("/saved-images")
-    def saved_images() -> list[dict[str, object]]:
+    def saved_images(display_id: str | None = None) -> list[dict[str, object]]:
+        current_display = None
+        if display_id is not None:
+            display = get_registered_display(display_id)
+            current_display = (display.width, display.height, display.rotation)
+        else:
+            profile = active_display_store.get()
+            if profile is not None:
+                current_display = (profile.width, profile.height, display_settings_store.get_rotation())
         records: list[dict[str, object]] = []
         for record in image_library.list():
             image_path = image_library.find_path(str(record.get("id", "")))
             if image_path is None:
                 continue
-            content_keys = saved_image_sd_card_content_keys(image_path)
+            content_keys = saved_image_sd_card_content_keys(image_path, record, current_display)
             records.append({
                 **record,
                 # Keep the original field for clients that save a gallery

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -44,11 +45,52 @@ class ImageLibrary:
                 "filename": filename,
                 "created_at": created_at,
                 "metadata": metadata,
+                "source_sha256": hashlib.sha256(jpeg).hexdigest(),
             }
             records = self._read_index()
             records.insert(0, record)
             self._write_index(records)
             return record
+
+    def remember_sd_card_rendition(self, source_jpeg: bytes, content_key: str) -> bool:
+        """Associate bytes sent to a display with their exact saved source JPEG.
+
+        Metadata alone cannot identify a creation: two images can share the
+        same settings. Older index records are lazily given their full source
+        hash so they can participate without changing the image files.
+        """
+        source_sha256 = hashlib.sha256(source_jpeg).hexdigest()
+        changed = False
+        matched = False
+        with self._lock:
+            records = self._read_index()
+            for record in records:
+                if not record.get("source_sha256"):
+                    image_path = self.path / str(record.get("filename", ""))
+                    try:
+                        # Exact source bytes must have the same length. Avoid
+                        # reading every old image just to find one creation.
+                        if image_path.stat().st_size != len(source_jpeg):
+                            continue
+                        jpeg = image_path.read_bytes()
+                    except OSError:
+                        continue
+                    if hashlib.sha256(jpeg).hexdigest() != source_sha256:
+                        continue
+                    record["source_sha256"] = source_sha256
+                    changed = True
+                if record.get("source_sha256") != source_sha256:
+                    continue
+                matched = True
+                keys = record.get("sd_card_rendition_keys", [])
+                keys = list(keys) if isinstance(keys, list) else []
+                if content_key not in keys:
+                    keys.append(content_key)
+                    record["sd_card_rendition_keys"] = keys
+                    changed = True
+            if changed:
+                self._write_index(records)
+        return matched
 
     def list(self, limit: int = 50) -> list[dict[str, object]]:
         with self._lock:

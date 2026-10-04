@@ -12,6 +12,7 @@ function gallery(files, overrides = {}) {
   const context = vm.createContext({
     displaySdCard: { value: report }, displaySdCardFiles: () => report.files,
     creationSdCardInventoryConfirmed: { value: true },
+    savedImages: { value: [] },
     display: { value: { connected: true, width: 320, height: 820 } },
     savedVideoFps: () => 15, onDisplaySdCardLabel: { value: 'On display SD card' },
   })
@@ -56,4 +57,21 @@ test('legacy filenames without current content keys are not matched', () => {
   ])
   assert.equal(ui.creationIsOnDisplaySdCard({ sd_card_content_keys: ['v1-imagehash'] }, 'image'), false)
   assert.equal(ui.creationIsOnDisplaySdCard({ id: 'videoid' }, 'video'), false)
+})
+
+test('an open image menu uses refreshed keys for its existing image ID', () => {
+  const staleMenuImage = { id: 'saved-image', sd_card_content_keys: ['old-key'] }
+  const ui = gallery([{ name: 'saved.jpg', type: 'image', content_key: 'new-key', verified: true }])
+  assert.equal(ui.creationIsSavedForCurrentDisplay(staleMenuImage, 'image'), false)
+  ui.savedImages.value = [{ id: 'saved-image', sd_card_content_keys: ['new-key'] }]
+  assert.equal(ui.creationIsOnDisplaySdCard(staleMenuImage, 'image'), true)
+  assert.equal(ui.creationIsSavedForCurrentDisplay(staleMenuImage, 'image'), true)
+})
+
+test('refreshed image keys replace stale matches rather than merging them', () => {
+  const staleImage = { id: 'saved-image', sd_card_content_keys: ['old-key'] }
+  const ui = gallery([{ name: 'old.jpg', type: 'image', content_key: 'old-key', verified: true }])
+  ui.savedImages.value = [{ id: 'saved-image', sd_card_content_key: 'new-key' }]
+  assert.equal(ui.creationIsOnDisplaySdCard(staleImage, 'image'), false)
+  assert.equal(ui.creationIsSavedForCurrentDisplay(staleImage, 'image'), false)
 })

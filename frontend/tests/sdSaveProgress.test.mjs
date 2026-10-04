@@ -34,13 +34,20 @@ for (const switchAt of ['initial inventory', 'command polling']) {
     let selected = '/displays/original'
     const requests = []
     const context = {
+      sdCardRefreshTarget: null, sdCardLoadSequence: 0, sdCardDisplaySelectionVersion: 0,
       requireSdCardCommandAvailable, sdCardDeletionActive: { value: false }, sdCardInventoryRefreshing: { value: false },
       activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} }, displaySdCardScope: { value: null },
       selectedDisplayEndpoint: suffix => selected + suffix,
       sdSaveCommandEndpoint,
-      fetchDisplaySdCardReport: async () => { if (switchAt === 'initial inventory') selected = '/displays/other'; return { report_version: 1 } },
+      fetchDisplaySdCardReport: async () => {
+        if (switchAt === 'initial inventory') {
+          selected = '/displays/other'
+          context.displaySdCardLoading.value = false
+        }
+        return { report_version: 1 }
+      },
       fetch: async url => { requests.push(url); return { ok: true, json: async () => ({ id: 'refresh', display_id: 'original' }) } },
-      window: { setTimeout: callback => { selected = '/displays/other'; callback() } },
+      window: { setTimeout: callback => { selected = '/displays/other'; context.displaySdCardLoading.value = false; callback() } },
     }
     const refresh = vm.runInNewContext(`(${refreshFunction.trim()})`, context)
     await assert.rejects(refresh(), /Active display changed/)
@@ -53,6 +60,7 @@ for (const delay of [12000, Infinity]) {
   test(`SD refresh waits for fresh inventory after acknowledgement (delay ${delay})`, async () => {
     let elapsed = 0, reports = 0
     const context = {
+      sdCardRefreshTarget: null, sdCardLoadSequence: 0, sdCardDisplaySelectionVersion: 0,
       requireSdCardCommandAvailable, sdCardDeletionActive: { value: false }, sdCardInventoryRefreshing: { value: false },
       activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} }, displaySdCardScope: { value: null },
       selectedDisplayEndpoint: suffix => '/displays/original' + suffix,

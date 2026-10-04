@@ -597,7 +597,10 @@ function creationSdCardStatus(creation, mediaType) {
     .filter(file => file.type === mediaType)
     .sort((a, b) => Number(b.verified === true) - Number(a.verified === true))
   if (mediaType === 'image') {
-    const contentKeys = creation.sd_card_content_keys || []
+    const currentCreation = creation.id
+      ? savedImages.value.find(item => item.id === creation.id) || creation
+      : creation
+    const contentKeys = currentCreation.sd_card_content_keys || [currentCreation.sd_card_content_key].filter(Boolean)
     const file = files.find(item => contentKeys.includes(item.content_key)) || null
     return { known: true, present: Boolean(file), file, activeFormat: Boolean(file) }
   }
@@ -854,6 +857,7 @@ watch(activeDisplayId, displayId => {
   displaySdCardScope.value = null
   displaySdCard.value = { available: false, files: [] }
   displaySdCardLoading.value = false
+  void loadSavedImages()
   if (!display.value?.connected) {
     displayRotation.value = 0
     videoRotation.value = 0
@@ -993,6 +997,8 @@ async function loadDisplay() {
 }
 
 async function loadDisplaySettings() {
+  const scope = selectedDisplayEndpoint('')
+  const selectionVersion = sdCardDisplaySelectionVersion
   if (!display.value?.connected) {
     displayRotation.value = 0
     videoRotation.value = 0
@@ -1003,9 +1009,11 @@ async function loadDisplaySettings() {
       fetch(selectedDisplayEndpoint('/display-settings')).then(response => response.json()),
       fetch(selectedDisplayEndpoint('/video-display-settings')).then(response => response.json())
     ])
+    if (scope !== selectedDisplayEndpoint('') || selectionVersion !== sdCardDisplaySelectionVersion) return
     displayRotation.value = imageSettings.rotation
     videoRotation.value = videoSettings.rotation
   } catch {
+    if (scope !== selectedDisplayEndpoint('') || selectionVersion !== sdCardDisplaySelectionVersion) return
     displayRotation.value = 0
     videoRotation.value = 0
   }
@@ -1013,6 +1021,8 @@ async function loadDisplaySettings() {
 
 async function setDisplayRotation(rotation) {
   if (!display.value?.connected) return
+  const scope = selectedDisplayEndpoint('')
+  const selectionVersion = sdCardDisplaySelectionVersion
   const previousRotation = displayRotation.value
   displayRotation.value = rotation
   error.value = ''
@@ -1027,6 +1037,7 @@ async function setDisplayRotation(rotation) {
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     const settings = await response.json()
+    if (scope !== selectedDisplayEndpoint('') || selectionVersion !== sdCardDisplaySelectionVersion) return
     displayRotation.value = settings.rotation
     if (selectedRegisteredDisplay.value) {
       displays.value = displays.value.map(display => (
@@ -1034,7 +1045,9 @@ async function setDisplayRotation(rotation) {
       ))
     }
     status.value = `Image rotation saved for ${display.value.name}. It will be used for the next image.`
+    await loadSavedImages()
   } catch (requestError) {
+    if (scope !== selectedDisplayEndpoint('') || selectionVersion !== sdCardDisplaySelectionVersion) return
     displayRotation.value = previousRotation
     error.value = `Could not save image rotation: ${requestError.message}`
   }
@@ -1494,25 +1507,45 @@ async function cancelSDCardSave() {
   finally { cancellingSDCardSave.value = false }
 }
 
-async function loadSavedImages() {
+let savedImagesLoadSequence = 0
+async function loadSavedImages({ throwOnError = false } = {}) {
+  const sequence = ++savedImagesLoadSequence
+  const scope = selectedDisplayEndpoint('')
+  const displayId = selectedRegisteredDisplay.value?.id
+  const endpoint = displayId ? `/saved-images?display_id=${encodeURIComponent(displayId)}` : '/saved-images'
   savedImagesLoading.value = true
   try {
-    const response = await fetch('/saved-images')
+    const response = await fetch(endpoint, { cache: 'no-store' })
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
-    savedImages.value = await response.json()
-  } catch {
-    savedImages.value = []
+    const records = await response.json()
+    if (!Array.isArray(records)) throw new Error('Invalid image library response')
+    if (sequence !== savedImagesLoadSequence || scope !== selectedDisplayEndpoint('')) return null
+    savedImages.value = records
+    return records
+  } catch (requestError) {
+    if (sequence !== savedImagesLoadSequence || scope !== selectedDisplayEndpoint('')) return null
+    if (throwOnError) throw requestError
+    return null
   } finally {
-    savedImagesLoading.value = false
+    if (sequence === savedImagesLoadSequence) savedImagesLoading.value = false
   }
 }
 
-async function loadSavedVideos() {
+let savedVideosLoadSequence = 0
+async function loadSavedVideos({ throwOnError = false } = {}) {
+  const sequence = ++savedVideosLoadSequence
   try {
-    const response = await fetch('/saved-videos')
-    savedVideos.value = response.ok ? await response.json() : []
-  } catch {
-    savedVideos.value = []
+    const response = await fetch('/saved-videos', { cache: 'no-store' })
+    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    const records = await response.json()
+    if (!Array.isArray(records)) throw new Error('Invalid video library response')
+    if (sequence !== savedVideosLoadSequence) return null
+    savedVideos.value = records
+    return records
+  } catch (requestError) {
+    if (sequence !== savedVideosLoadSequence) return null
+    if (throwOnError) throw requestError
+    return null
   }
 }
 
@@ -1715,13 +1748,15 @@ async function deleteSavedVideo() {
 
 async function fetchDisplaySdCardReport() {
   if (!display.value?.connected) throw new Error('Choose one display first')
-  const response = await fetch(selectedDisplayEndpoint('/display-sd-card'))
+  const response = await fetch(selectedDisplayEndpoint('/display-sd-card'), { cache: 'no-store' })
   if (!response.ok) throw new Error(`Request failed (${response.status})`)
   return response.json()
 }
 
 let sdCardLoadSequence = 0
+let sdCardRefreshTarget = null
 async function loadDisplaySdCard() {
+  if (sdCardRefreshTarget?.scope === selectedDisplayEndpoint('') && sdCardRefreshTarget.selectionVersion === sdCardDisplaySelectionVersion) return displaySdCard.value
   if (sdCardDeletionActive.value && sdCardDeleteTarget.value?.scope === selectedDisplayEndpoint('')) return displaySdCard.value
   const sequence = ++sdCardLoadSequence
   const scope = selectedDisplayEndpoint('')
@@ -1752,8 +1787,16 @@ async function refreshDisplaySdCardInventory() {
   requireSdCardCommandAvailable(sdCardDeletionActive.value)
   if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
   const displayScope = selectedDisplayEndpoint('')
+  if (sdCardRefreshTarget?.scope === displayScope && sdCardRefreshTarget.selectionVersion === sdCardDisplaySelectionVersion) {
+    throw new Error('An SD card refresh is already running. Wait for it to finish, then try again.')
+  }
+  const target = { scope: displayScope, selectionVersion: sdCardDisplaySelectionVersion }
+  sdCardRefreshTarget = target
+  ++sdCardLoadSequence
   const checkDisplay = () => {
-    if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Refresh its SD card and try again.')
+    if (sdCardRefreshTarget !== target || target.selectionVersion !== sdCardDisplaySelectionVersion || displayScope !== selectedDisplayEndpoint('')) {
+      throw new Error('Active display changed. Refresh its SD card and try again.')
+    }
   }
   displaySdCardLoading.value = true
   sdCardInventoryRefreshing.value = true
@@ -1773,7 +1816,7 @@ async function refreshDisplaySdCardInventory() {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
       checkDisplay()
-      const commandResponse = await fetch(sdSaveCommandEndpoint(command))
+      const commandResponse = await fetch(sdSaveCommandEndpoint(command), { cache: 'no-store' })
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
       if (result.status === 'failed') throw new Error(result.detail || 'The display could not refresh its SD card list')
@@ -1798,8 +1841,11 @@ async function refreshDisplaySdCardInventory() {
     }
     throw new Error('The display did not confirm the SD card refresh. Keep it connected and try again.')
   } finally {
-    displaySdCardLoading.value = false
-    sdCardInventoryRefreshing.value = false
+    if (sdCardRefreshTarget === target) {
+      sdCardRefreshTarget = null
+      sdCardInventoryRefreshing.value = false
+      if (target.selectionVersion === sdCardDisplaySelectionVersion && displayScope === selectedDisplayEndpoint('')) displaySdCardLoading.value = false
+    }
   }
 }
 
@@ -2401,10 +2447,13 @@ async function openMetadataPane() {
 
 async function refreshCreationLibrarySdCardStatus() {
   metadataError.value = ''
+  const scope = selectedDisplayEndpoint('')
   try {
     await refreshDisplaySdCardInventory()
+    if (scope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Refresh its SD card and try again.')
+    await Promise.all([loadSavedImages({ throwOnError: true }), loadSavedVideos({ throwOnError: true })])
   } catch (requestError) {
-    metadataError.value = `Could not refresh the display SD card status: ${requestError.message}`
+    if (scope === selectedDisplayEndpoint('')) metadataError.value = `Could not refresh the display SD card status: ${requestError.message}`
   }
 }
 
@@ -2653,7 +2702,7 @@ async function saveImageToDisplaySdCard(savedImage = null) {
     const command = await response.json()
     if (command.status === 'already_saved') {
       showSDCardSaveStatus(command.detail || 'This image is already on the display SD card.', 'success')
-      await loadDisplaySdCard()
+      await Promise.all([loadDisplaySdCard(), loadSavedImages()])
       return
     }
     showSDCardSaveStatus('Save request sent to the display. Waiting for SD-card confirmation…')
@@ -2669,7 +2718,7 @@ async function saveImageToDisplaySdCard(savedImage = null) {
       if (progressMessage) showSDCardSaveStatus(progressMessage)
       if (currentCommand.status === 'complete') {
         showSDCardSaveStatus(`Saved to the display SD card: ${currentCommand.detail}`, 'success')
-        await loadDisplaySdCard()
+        await Promise.all([loadDisplaySdCard(), loadSavedImages()])
         return
       }
       if (currentCommand.status === 'failed') throw new Error(currentCommand.detail || 'The display could not save the image')
