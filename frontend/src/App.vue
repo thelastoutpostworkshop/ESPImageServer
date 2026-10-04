@@ -3475,8 +3475,24 @@ onUnmounted(() => {
       <v-card v-if="creationPreview" @click="creationPreviewDialog = false">
         <v-card-title class="d-flex align-center ga-2">
           <v-icon>{{ creationPreview.type === 'image' ? 'mdi-image-outline' : 'mdi-movie-open-outline' }}</v-icon>
-          {{ creationPreview.type === 'image' ? 'Image preview' : 'Video preview' }}
+          <span class="text-truncate">{{ creationPreview.type === 'image' ? 'Image preview' : 'Video preview' }}</span>
           <v-spacer />
+          <v-tooltip v-if="creationPreview.type === 'image'" text="Download JPEG">
+            <template #activator="{ props }">
+              <v-btn
+                v-bind="props"
+                :href="`/saved-images/${encodeURIComponent(creationPreview.item.id)}/image`"
+                :download="creationPreview.item.filename || `esp-image-${creationPreview.item.id}.jpg`"
+                icon="mdi-download"
+                color="primary"
+                variant="tonal"
+                size="small"
+                aria-label="Download JPEG"
+                title="Download JPEG"
+                @click.stop
+              />
+            </template>
+          </v-tooltip>
           <v-btn icon="mdi-close" variant="text" size="small" aria-label="Close preview" title="Close preview" @click="creationPreviewDialog = false" />
         </v-card-title>
         <v-card-text>
