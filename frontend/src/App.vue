@@ -4926,7 +4926,7 @@ onUnmounted(() => {
               <v-switch
                 v-model="autoCheckAppUpdates"
                 label="Automatically check for app updates"
-                hint="Notify me when a newer public ESPImageServer release is available. Checks GitHub once an hour; download and install updates when ready."
+                hint="Notify me when a newer public ESPImageServer release is available. Checks GitHub at most once every 24 hours; download and install updates when ready."
                 persistent-hint
                 color="primary"
                 class="mb-4"

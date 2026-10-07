@@ -314,7 +314,10 @@ def create_app(
     sd_thumbnail_path = cache_dir() / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
     firmware_update_checker = firmware_update_checker or FirmwareUpdateChecker()
-    app_update_checker = app_update_checker or AppUpdateChecker(installed_version=APP_VERSION)
+    app_update_checker = app_update_checker or AppUpdateChecker(
+        installed_version=APP_VERSION,
+        state_store=AppSettingsStore(cache_dir() / "app_update_cache.json"),
+    )
     persisted_app_settings = app_settings_store.get()
     auto_check_firmware_updates = persisted_app_settings.get("auto_check_firmware_updates") is not False
     auto_check_app_updates = persisted_app_settings.get("auto_check_app_updates") is not False

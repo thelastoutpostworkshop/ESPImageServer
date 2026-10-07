@@ -9,9 +9,10 @@ from urllib.error import HTTPError
 import pytest
 
 from esp_image_server.app_updates import (
-    API, INSTALLER_NAMES, MAX_RELEASE_PAGES, MAX_RESPONSE_BYTES, REPOSITORY,
+    API, CHECK_INTERVAL_SECONDS, INSTALLER_NAMES, MAX_RELEASE_PAGES, MAX_RESPONSE_BYTES, REPOSITORY,
     AppUpdateChecker, fetch_releases, host_platform, latest_release,
 )
+from esp_image_server.app_settings import AppSettingsStore
 
 
 def release(version, platforms=("win32-x64", "linux-x64"), **extra):
@@ -93,28 +94,31 @@ def test_equal_or_older_published_release_does_not_notify(version):
     assert same["download_url"] is None
 
 
-def test_success_cache_and_manual_minimum_cooldown():
+def test_automatic_and_manual_checks_share_one_daily_deadline():
     calls = []
     now = [0]
     instance = checker(lambda: calls.append(True) or [release("1.0.110")], clock=lambda: now[0])
     result = instance.check()
     assert result["installed_version"] == "1.0.105"
     assert result["checked_successfully"] and result["checked_at"]
-    assert result["retry_after_seconds"] == 60
+    assert result["retry_after_seconds"] == CHECK_INTERVAL_SECONDS == 86_400
     instance.check(force=True)
     now[0] = 59
     instance.check(force=True)
-    assert len(calls) == 1
     now[0] = 60
     instance.check()
+    instance.check(force=True)
+    now[0] = CHECK_INTERVAL_SECONDS - 1
+    instance.check()
+    instance.check(force=True)
     assert len(calls) == 1
+    now[0] = CHECK_INTERVAL_SECONDS
+    instance.check()
+    assert len(calls) == 2
     instance.check(force=True)
     assert len(calls) == 2
-    now[0] = 3659
-    instance.check()
-    assert len(calls) == 2
-    now[0] = 3660
-    instance.check()
+    now[0] = CHECK_INTERVAL_SECONDS * 2
+    instance.check(force=True)
     assert len(calls) == 3
 
 
@@ -153,10 +157,10 @@ def test_private_or_inaccessible_repository_is_unavailable_not_up_to_date(code):
     assert not result["update_available"] and not result["checked_successfully"]
     assert result["checked_at"] is None
     assert "private" in result["error"]
-    now[0] = 899
+    now[0] = CHECK_INTERVAL_SECONDS - 1
     instance.check(force=True)
     assert len(calls) == 1
-    now[0] = 900
+    now[0] = CHECK_INTERVAL_SECONDS
     instance.check(force=True)
     assert len(calls) == 2
 
@@ -173,7 +177,7 @@ def test_offline_failure_retains_previous_known_update_as_stale_and_respects_ret
 
     instance = checker(fetch, clock=lambda: now[0])
     success = instance.check()
-    now[0] = 3600
+    now[0] = CHECK_INTERVAL_SECONDS
     failed = instance.check()
     assert failed["status"] == "error"
     assert failed["update_available"] and failed["stale"]
@@ -182,18 +186,20 @@ def test_offline_failure_retains_previous_known_update_as_stale_and_respects_ret
     assert failed["download_url"] == success["download_url"]
     instance.check(force=True)
     assert len(calls) == 2
-    now[0] = 4500
+    now[0] = CHECK_INTERVAL_SECONDS * 2
     instance.check(force=True)
     assert len(calls) == 3
 
 
 @pytest.mark.parametrize(("code", "headers", "expected_retry"), [
-    (429, {"Retry-After": "1800"}, 1800),
-    (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "8200"}, 7200),
-    (429, {"Retry-After": "invalid"}, 900),
-    (429, {"Retry-After": "inf"}, 900),
-    (429, {"Retry-After": "1e9999"}, 900),
-    (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "inf"}, 900),
+    (429, {"Retry-After": "1800"}, CHECK_INTERVAL_SECONDS),
+    (429, {"Retry-After": "172800"}, 172800),
+    (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "8200"}, CHECK_INTERVAL_SECONDS),
+    (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "173800"}, 172800),
+    (429, {"Retry-After": "invalid"}, CHECK_INTERVAL_SECONDS),
+    (429, {"Retry-After": "inf"}, CHECK_INTERVAL_SECONDS),
+    (429, {"Retry-After": "1e9999"}, CHECK_INTERVAL_SECONDS),
+    (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "inf"}, CHECK_INTERVAL_SECONDS),
 ])
 def test_rate_limit_backoff_cannot_be_bypassed_manually(monkeypatch, code, headers, expected_retry):
     monkeypatch.setattr("esp_image_server.app_updates.time.time", lambda: 1000)
@@ -204,7 +210,7 @@ def test_rate_limit_backoff_cannot_be_bypassed_manually(monkeypatch, code, heade
         calls.append(True)
         raise HTTPError(API, code, "rate limit", headers, None)
 
-    instance = checker(fetch, clock=lambda: now[0])
+    instance = checker(fetch, clock=lambda: now[0], wall_clock=lambda: 1000)
     assert instance.check()["retry_after_seconds"] == expected_retry
     now[0] = expected_retry - 1
     instance.check(force=True)
@@ -212,6 +218,151 @@ def test_rate_limit_backoff_cannot_be_bypassed_manually(monkeypatch, code, heade
     now[0] = expected_retry
     instance.check(force=True)
     assert len(calls) == 2
+
+
+def test_daily_cache_survives_restart_and_repeated_manual_checks(tmp_path):
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    wall, monotonic = [1_000], [10]
+    calls = []
+
+    def fetch():
+        calls.append(True)
+        return [release("1.0.110")]
+
+    first = checker(fetch, clock=lambda: monotonic[0], wall_clock=lambda: wall[0], state_store=store)
+    confirmed = first.check()
+    assert confirmed["update_available"]
+    wall[0] += 3_600
+    monotonic[0] = 200
+    restarted = checker(fetch, clock=lambda: monotonic[0], wall_clock=lambda: wall[0], state_store=store)
+    for force in (False, True, True, False):
+        cached = restarted.check(force=force)
+        assert cached["update_available"]
+        assert cached["checked_at"] == confirmed["checked_at"]
+        assert cached["retry_after_seconds"] == CHECK_INTERVAL_SECONDS - 3_600
+    assert len(calls) == 1
+    wall[0] += CHECK_INTERVAL_SECONDS - 3_600
+    monotonic[0] += CHECK_INTERVAL_SECONDS - 3_600
+    restarted.check(force=True)
+    assert len(calls) == 2
+
+
+def test_cached_release_is_recompared_to_upgraded_installed_version_without_network(tmp_path):
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    calls = []
+
+    def fetch():
+        calls.append(True)
+        return [release("1.0.110")]
+
+    first = checker(fetch, clock=lambda: 10, wall_clock=lambda: 1_000, state_store=store)
+    assert first.check()["update_available"]
+    upgraded = AppUpdateChecker(
+        "1.0.110", platform_name="win32", machine="AMD64", fetch=fetch,
+        clock=lambda: 20, wall_clock=lambda: 1_100, state_store=store,
+    )
+    result = upgraded.check(force=True)
+    assert len(calls) == 1
+    assert result["status"] == "up_to_date"
+    assert result["installed_version"] == "1.0.110"
+    assert not result["update_available"]
+    assert result["download_url"] is None
+
+
+@pytest.mark.parametrize("private", [False, True], ids=["offline", "private"])
+def test_failed_check_deadline_survives_restart_and_subsequent_failure(tmp_path, private):
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    wall, monotonic = [1_000], [10]
+    calls = []
+
+    def fetch():
+        calls.append(True)
+        if private:
+            raise HTTPError(API, 404, "not public", {}, None)
+        raise OSError("offline")
+
+    first = checker(fetch, clock=lambda: monotonic[0], wall_clock=lambda: wall[0], state_store=store)
+    initial = first.check()
+    assert initial["status"] == ("unavailable" if private else "error")
+    wall[0] += 3_600
+    monotonic[0] = 200
+    restarted = checker(fetch, clock=lambda: monotonic[0], wall_clock=lambda: wall[0], state_store=store)
+    for force in (True, False, True):
+        result = restarted.check(force=force)
+        assert result["status"] == initial["status"]
+        assert result["retry_after_seconds"] == CHECK_INTERVAL_SECONDS - 3_600
+    assert len(calls) == 1
+    wall[0] += CHECK_INTERVAL_SECONDS - 3_600
+    monotonic[0] += CHECK_INTERVAL_SECONDS - 3_600
+    assert restarted.check(force=True)["status"] == initial["status"]
+    assert len(calls) == 2
+    again = checker(fetch, clock=lambda: 1, wall_clock=lambda: wall[0], state_store=store)
+    assert again.check(force=True)["retry_after_seconds"] == CHECK_INTERVAL_SECONDS
+    assert len(calls) == 2
+
+
+def test_last_confirmed_update_survives_failed_check_and_restart_as_stale(tmp_path):
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    wall, monotonic = [1_000], [10]
+    calls = []
+
+    def fetch():
+        calls.append(True)
+        if len(calls) > 1:
+            raise OSError("offline")
+        return [release("1.0.110")]
+
+    first = checker(fetch, clock=lambda: monotonic[0], wall_clock=lambda: wall[0], state_store=store)
+    success = first.check()
+    wall[0] += CHECK_INTERVAL_SECONDS
+    monotonic[0] += CHECK_INTERVAL_SECONDS
+    assert first.check()["stale"]
+    restarted = checker(fetch, clock=lambda: 1, wall_clock=lambda: wall[0], state_store=store)
+    result = restarted.check(force=True)
+    assert len(calls) == 2
+    assert result["status"] == "error"
+    assert result["update_available"] and result["stale"]
+    assert result["download_url"] == success["download_url"]
+    assert result["checked_at"] == success["checked_at"]
+
+
+def test_prefetch_daily_reservation_survives_a_crash_before_result_is_saved(tmp_path):
+    class SimulatedCrash(BaseException):
+        pass
+
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    calls = []
+
+    def interrupted_fetch():
+        calls.append(True)
+        # The deadline must already be on disk when the first request starts.
+        assert store.get()["next_check_at"] == 1_000 + CHECK_INTERVAL_SECONDS
+        raise SimulatedCrash()
+
+    first = checker(interrupted_fetch, clock=lambda: 10, wall_clock=lambda: 1_000, state_store=store)
+    with pytest.raises(SimulatedCrash):
+        first.check()
+    restarted = checker(interrupted_fetch, clock=lambda: 1, wall_clock=lambda: 1_100, state_store=store)
+    for force in (False, True, True):
+        result = restarted.check(force=force)
+        assert result["retry_after_seconds"] == CHECK_INTERVAL_SECONDS - 100
+        assert result["status"] != "up_to_date"
+    assert len(calls) == 1
+
+
+def test_server_retry_longer_than_one_day_is_restored_after_restart(tmp_path):
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    calls = []
+
+    def fetch():
+        calls.append(True)
+        raise HTTPError(API, 429, "rate limit", {"Retry-After": "172800"}, None)
+
+    first = checker(fetch, clock=lambda: 10, wall_clock=lambda: 1_000, state_store=store)
+    assert first.check()["retry_after_seconds"] == 172_800
+    restarted = checker(fetch, clock=lambda: 1, wall_clock=lambda: 1_000 + CHECK_INTERVAL_SECONDS, state_store=store)
+    assert restarted.check(force=True)["retry_after_seconds"] == CHECK_INTERVAL_SECONDS
+    assert len(calls) == 1
 
 
 def test_empty_feed_and_unknown_installed_version_never_claim_up_to_date():
@@ -223,6 +374,60 @@ def test_empty_feed_and_unknown_installed_version_never_claim_up_to_date():
     unknown = AppUpdateChecker("unknown", fetch=lambda: calls.append(True)).check()
     assert unknown["status"] == "error"
     assert calls == []
+
+
+@pytest.mark.parametrize("deadline", [10**400, float("inf"), float("nan"), "tomorrow"],
+                         ids=["huge-integer", "infinity", "nan", "text"])
+def test_invalid_persisted_deadline_does_not_break_update_checks(tmp_path, deadline):
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    store.set({"next_check_at": deadline})
+    calls = []
+    instance = checker(lambda: calls.append(True) or [release("1.0.110")], state_store=store)
+    assert instance.check()["update_available"]
+    assert len(calls) == 1
+
+
+def test_invalid_persisted_outcome_keeps_daily_limit_without_crashing(tmp_path):
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    store.set({"next_check_at": 1_000 + CHECK_INTERVAL_SECONDS, "outcome": {}})
+    calls = []
+    instance = checker(lambda: calls.append(True), wall_clock=lambda: 1_000, state_store=store)
+    assert instance.check(force=True)["status"] == "error"
+    assert not calls
+
+
+@pytest.mark.parametrize("defect", ["url", "platform"])
+def test_cached_metadata_is_revalidated_without_bypassing_daily_limit(tmp_path, defect):
+    store = AppSettingsStore(tmp_path / "app_update_cache.json")
+    checker(wall_clock=lambda: 1_000, state_store=store).check()
+    state = store.get()
+    if defect == "url":
+        state["latest"]["download_url"] = "https://example.com/installer.exe"
+    else:
+        state["platform"] = "linux-x64"
+    store.set(state)
+    calls = []
+    instance = checker(lambda: calls.append(True), wall_clock=lambda: 1_000, state_store=store)
+    result = instance.check(force=True)
+    assert result["status"] == "unavailable"
+    assert result["download_url"] is None
+    assert not calls
+
+
+def test_unwritable_daily_reservation_prevents_network_check():
+    class UnwritableStore:
+        def get(self):
+            return {}
+
+        def set(self, state):
+            raise PermissionError("App data is read-only")
+
+    calls = []
+    instance = checker(lambda: calls.append(True), state_store=UnwritableStore())
+    result = instance.check(force=True)
+    assert result["status"] == "error"
+    assert "save the daily" in result["error"]
+    assert not calls
 
 
 def test_disabled_result_has_no_network_calls_or_cached_update_metadata():

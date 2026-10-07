@@ -21,6 +21,7 @@ const statusColor = computed(() => ['error', 'unavailable'].includes(result.valu
       <v-btn variant="tonal" color="primary" prepend-icon="mdi-update" :loading="checkingManually" :disabled="checkingManually" @click="checkManually">Check for updates</v-btn>
     </div>
     <div v-if="installedVersion" class="text-body-2 text-medium-emphasis mt-2">Installed version: {{ installedVersion }}</div>
+    <div class="text-caption text-medium-emphasis mt-2">GitHub is checked at most once every 24 hours. Manual checks use the cached result during that time.</div>
     <v-alert class="mt-3" :type="statusColor" variant="tonal" density="compact" role="status" aria-live="polite">
       {{ checking ? 'Checking for app updates…' : statusMessage }}
       <div v-if="result?.stale && result?.update_available" class="mt-1">Last known available release: {{ result.latest_version }}.</div>

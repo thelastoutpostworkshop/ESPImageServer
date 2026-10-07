@@ -13,15 +13,14 @@ import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from .app_settings import AppSettingsStore
 from .firmware_updates import version_key
 from .version import APP_VERSION
 
 
 REPOSITORY = "https://github.com/thelastoutpostworkshop/ESPImageServer"
 API = "https://api.github.com/repos/thelastoutpostworkshop/ESPImageServer/releases"
-SUCCESS_CACHE_SECONDS = 3600
-MANUAL_COOLDOWN_SECONDS = 60
-ERROR_RETRY_SECONDS = 900
+CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_RELEASE_PAGES = 10
 FETCH_TIMEOUT_SECONDS = 20
@@ -121,7 +120,7 @@ def latest_release(releases: list[dict[str, object]], target_platform: str) -> d
 
 def _error_retry_seconds(error: HTTPError) -> float:
     """Respect GitHub's retry/reset headers, including on a manual check."""
-    retry = float(ERROR_RETRY_SECONDS)
+    retry = float(CHECK_INTERVAL_SECONDS)
     headers = error.headers or {}
     value = headers.get("Retry-After")
     if value:
@@ -153,18 +152,71 @@ class AppUpdateChecker:
         machine: str | None = None,
         fetch=None,
         clock=time.monotonic,
+        wall_clock=time.time,
+        state_store: AppSettingsStore | None = None,
     ) -> None:
         self.installed_version = installed_version
         self.platform = host_platform(platform_name, machine)
         self.fetch = fetch or fetch_releases
         self.clock = clock
+        self.wall_clock = wall_clock
+        self.state_store = state_store
         self.lock = Lock()
         self.latest = None
         self.checked_at = None
         self.next_check = 0.0
-        self.manual_check_after = 0.0
+        self.next_check_at = 0.0
         self.outcome = "not_checked"
         self.error = ""
+        self._restore_state()
+
+    def _restore_state(self) -> None:
+        if self.state_store is None:
+            return
+        state = self.state_store.get()
+        deadline = state.get("next_check_at")
+        if not isinstance(deadline, (int, float)) or isinstance(deadline, bool):
+            return
+        try:
+            deadline = float(deadline)
+        except OverflowError:
+            return
+        if not isfinite(deadline):
+            return
+        self.next_check_at = deadline
+        self.next_check = self.clock() + max(0, deadline - self.wall_clock())
+        outcome = state.get("outcome")
+        self.outcome = outcome if isinstance(outcome, str) and outcome in {"ok", "unavailable", "error"} else "error"
+        self.error = state.get("error") if isinstance(state.get("error"), str) else ""
+        self.checked_at = state.get("checked_at") if isinstance(state.get("checked_at"), str) else None
+        cached = state.get("latest")
+        if isinstance(cached, dict) and state.get("platform") == self.platform:
+            version = cached.get("version")
+            if version_key(version) is not None:
+                release_url = f"{REPOSITORY}/releases/tag/v{version}"
+                template = INSTALLER_NAMES.get(self.platform)
+                download_url = f"{REPOSITORY}/releases/download/v{version}/{template.format(version=version)}" if template else None
+                checksum_url = download_url + ".sha256" if download_url else None
+                if (cached.get("release_url") == release_url and cached.get("download_url") == download_url
+                        and cached.get("checksum_url") == checksum_url):
+                    self.latest = {"version": version, "release_url": release_url,
+                                   "download_url": download_url, "checksum_url": checksum_url}
+        if self.outcome == "ok" and self.latest is None:
+            self.outcome = "unavailable"
+            self.error = "Cached release information is unavailable. The app will check again after the daily limit."
+
+    def _save_state(self) -> bool:
+        if self.state_store is None:
+            return True
+        try:
+            self.state_store.set({
+                "next_check_at": self.next_check_at, "platform": self.platform,
+                "latest": self.latest, "checked_at": self.checked_at,
+                "outcome": self.outcome, "error": self.error,
+            })
+            return True
+        except OSError:
+            return False
 
     def disabled_result(self) -> dict[str, object]:
         return {
@@ -182,13 +234,21 @@ class AppUpdateChecker:
                 result = self.disabled_result()
                 result.update(status="error", error="The installed app version is not recorded; releases cannot be compared.")
                 return result
-            next_allowed = self.manual_check_after if force else self.next_check
-            if self.clock() >= next_allowed:
+            # Explicit checks use the same daily budget as automatic checks.
+            if self.clock() >= self.next_check:
                 self._refresh_locked()
             return self._result_locked()
 
     def _refresh_locked(self) -> None:
-        retry = ERROR_RETRY_SECONDS
+        retry = CHECK_INTERVAL_SECONDS
+        self.next_check = self.clock() + CHECK_INTERVAL_SECONDS
+        self.next_check_at = self.wall_clock() + CHECK_INTERVAL_SECONDS
+        self.outcome = "error"
+        self.error = "The previous update check did not finish. The app will check again after the daily limit."
+        # Reserve the daily budget before network access, including across crashes.
+        if not self._save_state():
+            self.error = "Could not save the daily update-check limit. Check that ESPImageServer can write its app data folder."
+            return
         try:
             releases = self.fetch()
             if not isinstance(releases, list):
@@ -197,8 +257,7 @@ class AppUpdateChecker:
             self.checked_at = datetime.now(UTC).isoformat()
             self.outcome = "ok" if self.latest else "unavailable"
             self.error = "" if self.latest else "No published app release with a complete installer is publicly available yet."
-            self.next_check = self.clock() + SUCCESS_CACHE_SECONDS
-            self.manual_check_after = self.clock() + MANUAL_COOLDOWN_SECONDS
+            self._save_state()
             return
         except HTTPError as exc:
             retry = _error_retry_seconds(exc)
@@ -214,7 +273,9 @@ class AppUpdateChecker:
         except (OSError, ValueError):
             self.outcome = "error"
             self.error = "Could not check app releases. Check your internet connection or try again later."
-        self.next_check = self.manual_check_after = self.clock() + retry
+        self.next_check = self.clock() + retry
+        self.next_check_at = self.wall_clock() + retry
+        self._save_state()
 
     def _result_locked(self) -> dict[str, object]:
         result = self.disabled_result()
@@ -228,7 +289,7 @@ class AppUpdateChecker:
             download_url=self.latest["download_url"] if newer and self.latest else None,
             checksum_url=self.latest["checksum_url"] if newer and self.latest else None,
             checked_at=self.checked_at, checked_successfully=successful, error=self.error,
-            retry_after_seconds=max(0, ceil(self.manual_check_after - self.clock())),
+            retry_after_seconds=max(0, ceil(self.next_check - self.clock())),
             stale=self.latest is not None and not successful,
         )
         return result

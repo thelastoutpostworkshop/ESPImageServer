@@ -230,7 +230,7 @@ test('the notice starts background checks, polls, and stops when its preference 
   mounted[0]()
   await lastCheck
   assert.deepEqual(requests, ['/app-updates'])
-  assert.equal(timers[0].delay, 60_000)
+  assert.equal(timers[0].delay, 24 * 60 * 60 * 1000)
   await timers[0].callback()
   assert.equal(requests.length, 2)
   props.enabled = false

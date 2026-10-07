@@ -14,7 +14,7 @@ onMounted(() => {
   updates.setAutomaticEnabled(props.enabled)
   if (props.enabled) void updates.checkAutomatically()
   // The server caches checks and handles retry delays for the public feed.
-  timer = window.setInterval(updates.checkAutomatically, 60_000)
+  timer = window.setInterval(updates.checkAutomatically, 24 * 60 * 60 * 1000)
 })
 onUnmounted(() => {
   window.clearInterval(timer)
