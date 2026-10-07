@@ -1,4 +1,6 @@
 <script setup>
+import AppUpdateStatus from './AppUpdateStatus.vue'
+
 defineProps({ serverInfo: Object, health: Object, displayMessage: String })
 defineEmits(['navigate'])
 const features = [
@@ -43,6 +45,7 @@ const features = [
         <div><dt>Selected image model</dt><dd>{{ serverInfo?.model_description || 'Loading model information…' }}</dd></div>
         <div><dt>Active display</dt><dd>{{ displayMessage }}</dd></div>
       </dl>
+      <AppUpdateStatus :current-version="serverInfo?.version" />
     </section>
 
     <footer class="about-footer">

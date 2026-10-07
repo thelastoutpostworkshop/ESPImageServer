@@ -7,6 +7,7 @@ import FirmwareInstaller from './components/FirmwareInstaller.vue'
 import AboutPage from './components/AboutPage.vue'
 import BoardShopping from './components/BoardShopping.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
+import AppUpdateNotice from './components/AppUpdateNotice.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
 import { requireSdCardCommandAvailable, waitForSdCardDeletion } from './sdDeletion.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
@@ -244,6 +245,7 @@ const autoSaveImages = ref(true)
 const autoSaveVideos = ref(true)
 const confirmDeletion = ref(true)
 const autoCheckFirmwareUpdates = ref(true)
+const autoCheckAppUpdates = ref(true)
 const appTheme = useTheme()
 const themePreferenceError = ref('')
 const themeOptions = [{ title: 'Dark', value: 'dark' }, { title: 'Light', value: 'light' }]
@@ -259,6 +261,7 @@ const selectedTheme = computed({
 })
 const themeToggleLabel = computed(() => selectedTheme.value === 'dark' ? 'Switch to light theme' : 'Switch to dark theme')
 const firmwareChecksEnabled = ref(false)
+const appChecksEnabled = ref(false)
 const autoSaveSaving = ref(false)
 const autoSaveVideoSaving = ref(false)
 const settingsSaving = ref(false)
@@ -2480,6 +2483,8 @@ async function loadAppSettings() {
     confirmDeletion.value = settings.confirm_deletion !== false
     autoCheckFirmwareUpdates.value = settings.auto_check_firmware_updates !== false
     firmwareChecksEnabled.value = autoCheckFirmwareUpdates.value
+    autoCheckAppUpdates.value = settings.auto_check_app_updates !== false
+    appChecksEnabled.value = autoCheckAppUpdates.value
   } catch {
     // The rest of the app remains usable while settings are unavailable.
   }
@@ -2500,7 +2505,8 @@ async function saveAppSettings() {
         auto_save_images: autoSaveImages.value,
         auto_save_videos: autoSaveVideos.value,
         confirm_deletion: confirmDeletion.value,
-        auto_check_firmware_updates: autoCheckFirmwareUpdates.value
+        auto_check_firmware_updates: autoCheckFirmwareUpdates.value,
+        auto_check_app_updates: autoCheckAppUpdates.value
       })
     })
     if (!response.ok) {
@@ -2518,6 +2524,8 @@ async function saveAppSettings() {
     confirmDeletion.value = settings.confirm_deletion !== false
     autoCheckFirmwareUpdates.value = settings.auto_check_firmware_updates !== false
     firmwareChecksEnabled.value = autoCheckFirmwareUpdates.value
+    autoCheckAppUpdates.value = settings.auto_check_app_updates !== false
+    appChecksEnabled.value = autoCheckAppUpdates.value
     await loadSavedImages()
     settingsStatus.value = 'Settings saved. Image and video quality settings apply to future exports.'
   } catch (requestError) {
@@ -3981,6 +3989,7 @@ onUnmounted(() => {
       <v-container fluid class="app-container py-4 py-sm-7">
         <v-alert v-if="themePreferenceError" type="warning" variant="tonal" density="compact" class="mb-4">{{ themePreferenceError }}</v-alert>
         <FirmwareUpdateNotice :displays="displays" :enabled="firmwareChecksEnabled" @setup="navigate('firmware')" />
+        <AppUpdateNotice :enabled="appChecksEnabled" />
         <v-alert v-if="!compact && !mobileAccessPromptDismissed" type="info" variant="tonal" icon="mdi-cellphone-link" class="mb-4">
           <div class="font-weight-medium">Use ESPImageServer from your phone</div>
           <div class="text-body-2 mt-1">Control generation and your display from another device on the same Wi-Fi network.</div>
@@ -4914,6 +4923,14 @@ onUnmounted(() => {
               <div class="text-body-2 text-medium-emphasis mb-5">
                 Used when saving videos to the display SD card. Lower values retain more detail but create larger files; 10 is recommended.
               </div>
+              <v-switch
+                v-model="autoCheckAppUpdates"
+                label="Automatically check for app updates"
+                hint="Notify me when a newer public ESPImageServer release is available. Checks GitHub once an hour; download and install updates when ready."
+                persistent-hint
+                color="primary"
+                class="mb-4"
+              />
               <v-switch
                 v-model="autoCheckFirmwareUpdates"
                 label="Automatically check for firmware updates"

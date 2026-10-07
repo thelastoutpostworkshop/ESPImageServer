@@ -34,6 +34,7 @@ from . import folder_actions
 from .config import Settings
 from .generation_capabilities import GenerationCapabilities
 from .app_settings import AppSettingsStore
+from .app_updates import AppUpdateChecker
 from .firmware_updates import FirmwareUpdateChecker
 from .display import ActiveDisplayStore
 from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandBusyError, DisplayCommandStore
@@ -194,6 +195,7 @@ class AppSettingsRequest(BaseModel):
     auto_save_videos: bool | None = None
     confirm_deletion: bool | None = None
     auto_check_firmware_updates: bool | None = None
+    auto_check_app_updates: bool | None = None
 
 
 class RegisterDeviceRequest(BaseModel):
@@ -277,6 +279,7 @@ def create_app(
     video_generator: LTXVideoGenerator | None = None,
     enable_mdns: bool = True,
     firmware_update_checker: FirmwareUpdateChecker | None = None,
+    app_update_checker: AppUpdateChecker | None = None,
 ) -> FastAPI:
     supplied_settings = settings is not None
     settings = settings or Settings.from_env()
@@ -311,8 +314,10 @@ def create_app(
     sd_thumbnail_path = cache_dir() / "display_sd_thumbnails"
     app_settings_store = app_settings_store or AppSettingsStore()
     firmware_update_checker = firmware_update_checker or FirmwareUpdateChecker()
+    app_update_checker = app_update_checker or AppUpdateChecker(installed_version=APP_VERSION)
     persisted_app_settings = app_settings_store.get()
     auto_check_firmware_updates = persisted_app_settings.get("auto_check_firmware_updates") is not False
+    auto_check_app_updates = persisted_app_settings.get("auto_check_app_updates") is not False
     library_location = persisted_app_settings.get("image_library_location")
     image_library = image_library or ImageLibrary(Path(library_location) if isinstance(library_location, str) else None)
     video_library = VideoLibrary(image_library.path)
@@ -1430,6 +1435,23 @@ def create_app(
             return {"enabled": False, "updates": [], "checked_at": None, "error": ""}
         return {"enabled": True, **result}
 
+    @app.get("/app-updates")
+    def get_app_updates() -> JSONResponse:
+        if not auto_check_app_updates:
+            result = app_update_checker.disabled_result()
+        else:
+            result = app_update_checker.check()
+            # A settings request can disable checks while the network request runs.
+            if not auto_check_app_updates:
+                result = app_update_checker.disabled_result()
+        return JSONResponse({**result, "enabled": auto_check_app_updates}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/app-updates/check")
+    def check_app_updates() -> JSONResponse:
+        # An explicit check remains available when automatic checks are disabled.
+        result = app_update_checker.check(force=True)
+        return JSONResponse({**result, "enabled": auto_check_app_updates}, headers={"Cache-Control": "no-store"})
+
     @app.get("/app-settings")
     def get_app_settings() -> dict[str, object]:
         return {
@@ -1441,12 +1463,13 @@ def create_app(
             "auto_save_videos": auto_save_videos,
             "confirm_deletion": confirm_deletion,
             "auto_check_firmware_updates": auto_check_firmware_updates,
+            "auto_check_app_updates": auto_check_app_updates,
         }
 
     @app.put("/app-settings")
     def update_app_settings(request: AppSettingsRequest) -> dict[str, object]:
         nonlocal jpeg_quality, video_jpeg_quality, auto_save_images, auto_save_videos, confirm_deletion
-        nonlocal auto_check_firmware_updates
+        nonlocal auto_check_firmware_updates, auto_check_app_updates
         if request.image_library_location is not None:
             if sd_save_batches.has_active():
                 raise HTTPException(status_code=409, detail="Wait for the bulk SD-card save to finish before moving the image library")
@@ -1470,6 +1493,8 @@ def create_app(
             confirm_deletion = request.confirm_deletion
         if request.auto_check_firmware_updates is not None:
             auto_check_firmware_updates = request.auto_check_firmware_updates
+        if request.auto_check_app_updates is not None:
+            auto_check_app_updates = request.auto_check_app_updates
         app_settings_store.set({
             "image_library_location": str(image_library.path),
             "jpeg_quality": jpeg_quality,
@@ -1478,6 +1503,7 @@ def create_app(
             "auto_save_videos": auto_save_videos,
             "confirm_deletion": confirm_deletion,
             "auto_check_firmware_updates": auto_check_firmware_updates,
+            "auto_check_app_updates": auto_check_app_updates,
         })
         return get_app_settings()
 

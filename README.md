@@ -25,6 +25,8 @@ Choose the installer for your computer from the release's **Assets** list. Insta
 
 Both platforms require a supported NVIDIA GPU with CUDA for image and video generation. macOS installers are not included in the current release.
 
+The app checks for newer public GitHub releases when opened and once an hour while running. An update notice links to the matching installer and release notes; close the app when you are ready to install the update. Use **About > Check for updates** for a manual check, or turn off **Automatically check for app updates** in **Settings** and save. Drafts and prereleases are ignored. While the repository is private or GitHub is unavailable, automatic checks stay quiet; the same feature starts notifying once a newer release with its installer and checksum is published publicly. Checks use public release metadata without a GitHub token.
+
 ## Supported boards
 
 Check the model and variant when ordering. Some purchase links are affiliate links.
