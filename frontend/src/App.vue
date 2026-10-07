@@ -190,6 +190,8 @@ const displaySdCard = ref({ available: false, files: [] })
 const displaySdCardScope = ref(null)
 const displaySdCardLoading = ref(false)
 const sdCardItemsPerPage = ref(loadSDCardItemsPerPage())
+const sdCardMediaFilter = ref('all')
+const sdCardPage = ref(1)
 const displayExperience = ref({ current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_ms: 15000, slideshow_order: 'newest_first' })
 const displayExperienceIntervalSeconds = ref(15)
 const displayExperienceLoading = ref(false)
@@ -572,6 +574,11 @@ const sdCardTableHeaders = [
   { title: 'Size', key: 'size', width: '120px', align: 'end' },
   { title: 'Actions', key: 'actions', sortable: false, align: 'end', width: '120px' }
 ]
+const sdCardMediaFilterOptions = [
+  { title: 'All', value: 'all' },
+  { title: 'Pictures', value: 'image' },
+  { title: 'Videos', value: 'video' }
+]
 function creationModelName(creation) {
   return creation.metadata?.model?.name || 'Other creations'
 }
@@ -590,9 +597,23 @@ function displaySdCardFiles() {
   return Array.isArray(displaySdCard.value?.files) ? displaySdCard.value.files : []
 }
 
+const filteredSdCardFiles = computed(() => displaySdCardFiles().filter(file => (
+  sdCardMediaFilter.value === 'all' || displaySdCardMediaType(file) === sdCardMediaFilter.value
+)))
+const sdCardEmptyMessage = computed(() => {
+  if (!displaySdCardFiles().length) return 'No saved SD card images or videos yet.'
+  return sdCardMediaFilter.value === 'video' ? 'No videos match this filter.' : 'No pictures match this filter.'
+})
+
+watch(filteredSdCardFiles, files => {
+  const visibleNames = new Set(files.map(file => file.name))
+  selectedSdCardFileNames.value = selectedSdCardFileNames.value.filter(name => visibleNames.has(name))
+})
+watch(sdCardMediaFilter, () => { sdCardPage.value = 1 })
+
 const selectedSdCardFiles = computed(() => {
   const selectedNames = new Set(selectedSdCardFileNames.value)
-  return displaySdCardFiles().filter(file => selectedNames.has(file.name))
+  return filteredSdCardFiles.value.filter(file => selectedNames.has(file.name))
 })
 
 function setSdCardFileSelected(filename, selected) {
@@ -4676,9 +4697,22 @@ onUnmounted(() => {
             <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-4">
               Last confirmed by {{ display?.name || 'the display' }}: {{ formatDateTime(displaySdCard.reported_at) }}
             </div>
+            <div class="d-flex align-center flex-wrap ga-3 mb-4">
+              <v-select
+                v-model="sdCardMediaFilter"
+                :items="sdCardMediaFilterOptions"
+                label="Media type"
+                :disabled="sdCardDeletionActive || deleteSdCardFileDialog || deleteSdCardFilesDialog"
+                density="compact"
+                variant="outlined"
+                hide-details
+                style="flex: 0 1 240px; min-width: 180px"
+              />
+              <span class="text-caption text-medium-emphasis" role="status">Showing {{ filteredSdCardFiles.length }} of {{ displaySdCardFiles().length }} files</span>
+            </div>
             <v-progress-linear v-if="compact && displaySdCardLoading" indeterminate color="primary" class="mb-3" />
             <v-list v-if="compact" class="sd-card-mobile-list border rounded" lines="three">
-              <v-list-item v-for="item in displaySdCard.files || []" :key="item.name">
+              <v-list-item v-for="item in filteredSdCardFiles" :key="item.name">
                 <template #prepend>
                   <div class="d-flex align-center ga-1">
                     <v-checkbox-btn
@@ -4705,14 +4739,15 @@ onUnmounted(() => {
                   </div>
                 </template>
               </v-list-item>
-              <div v-if="!(displaySdCard.files || []).length && !displaySdCardLoading" class="py-8 text-center text-medium-emphasis">No saved SD card images or videos yet.</div>
+              <div v-if="!filteredSdCardFiles.length && !displaySdCardLoading" class="py-8 text-center text-medium-emphasis">{{ sdCardEmptyMessage }}</div>
             </v-list>
             <v-data-table
               v-else
               :headers="sdCardTableHeaders"
-              :items="displaySdCard.files || []"
+              :items="filteredSdCardFiles"
               :loading="displaySdCardLoading"
               v-model:items-per-page="sdCardItemsPerPage"
+              v-model:page="sdCardPage"
               v-model="selectedSdCardFileNames"
               item-value="name"
               :item-selectable="() => !sdCardCommandsBlocked"
@@ -4727,7 +4762,7 @@ onUnmounted(() => {
                   :model-value="allSelected"
                   :indeterminate="someSelected && !allSelected"
                   :disabled="sdCardCommandsBlocked"
-                  aria-label="Select all SD-card files for deletion"
+                  aria-label="Select all filtered SD-card files for deletion"
                   @update:model-value="selectAll"
                 />
               </template>
@@ -4769,7 +4804,7 @@ onUnmounted(() => {
                 </div>
               </template>
               <template #no-data>
-                <div class="py-8 text-center text-medium-emphasis">No saved SD card images or videos yet.</div>
+                <div class="py-8 text-center text-medium-emphasis">{{ sdCardEmptyMessage }}</div>
               </template>
             </v-data-table>
           </v-card-text>
