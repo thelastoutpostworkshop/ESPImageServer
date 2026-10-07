@@ -29,6 +29,7 @@ from PIL import Image
 from starlette.background import BackgroundTask
 
 from .paths import cache_dir
+from .prompt_export import format_gallery_prompts
 from . import folder_actions
 from .config import Settings
 from .generation_capabilities import GenerationCapabilities
@@ -1545,6 +1546,21 @@ def create_app(
         if response.status_code == status.HTTP_200_OK:
             display_registry.record_activity(display_id, "Latest image sent")
         return response
+
+    @app.get("/creation-library/prompts.txt", response_class=Response)
+    def export_creation_library_prompts() -> Response:
+        exported_at = datetime.now(UTC)
+        images = [
+            record for record in image_library.list(limit=None)
+            if isinstance(record, dict) and (image_library.path / str(record.get("filename", ""))).is_file()
+        ]
+        text = format_gallery_prompts(images, video_library.list(limit=None), exported_at=exported_at)
+        filename = f"ESPImageServer-prompts-{exported_at.strftime('%Y-%m-%d')}.txt"
+        return Response(
+            text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"},
+        )
 
     @app.get("/saved-images")
     def saved_images(display_id: str | None = None) -> list[dict[str, object]]:

@@ -219,6 +219,8 @@ const savedImagesLoading = ref(false)
 const creationModelFilter = ref(null)
 const creationDisplayFilter = ref(null)
 const creationSdCardFilter = ref(null)
+const exportingAllPrompts = ref(false)
+const promptExportError = ref('')
 const selectedCreationKeys = ref([])
 const galleryBulkSave = ref(null)
 const galleryBulkSaveLoading = ref(false)
@@ -2641,6 +2643,40 @@ async function openMetadataPane() {
   void loadGalleryBulkSave(true)
 }
 
+async function exportAllPrompts() {
+  if (exportingAllPrompts.value) return
+  exportingAllPrompts.value = true
+  promptExportError.value = ''
+  let downloadUrl = ''
+  let downloadLink = null
+  try {
+    const response = await fetch('/creation-library/prompts.txt', {
+      cache: 'no-store', headers: { Accept: 'text/plain' }, signal: AbortSignal.timeout(60000)
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(typeof body.detail === 'string' ? body.detail : `Request failed (${response.status})`)
+    }
+    const file = await response.blob()
+    const now = new Date()
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    downloadUrl = URL.createObjectURL(file)
+    downloadLink = document.createElement('a')
+    downloadLink.href = downloadUrl
+    downloadLink.download = `ESPImageServer-prompts-${date}.txt`
+    document.body.appendChild(downloadLink)
+    downloadLink.click()
+    status.value = 'All saved creation prompts and settings exported.'
+  } catch (requestError) {
+    promptExportError.value = `Could not export prompts: ${requestError.message}`
+  } finally {
+    downloadLink?.remove()
+    // Let the browser begin downloading before releasing its temporary URL.
+    if (downloadUrl) window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000)
+    exportingAllPrompts.value = false
+  }
+}
+
 async function refreshCreationLibrarySdCardStatus() {
   metadataError.value = ''
   const scope = selectedDisplayEndpoint('')
@@ -3511,6 +3547,11 @@ onUnmounted(() => {
         </div>
         <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-3">
           Last reported by {{ display?.name || 'the display' }}: {{ formatDateTime(displaySdCard.reported_at) }}
+        </div>
+        <div class="mb-3">
+          <v-btn prepend-icon="mdi-download-outline" variant="tonal" size="small" :loading="exportingAllPrompts" :disabled="exportingAllPrompts" @click="exportAllPrompts">Export all prompts (.txt)</v-btn>
+          <div class="text-caption text-medium-emphasis mt-2">Includes prompts and settings for all saved images and videos, regardless of the filters below.</div>
+          <v-alert v-if="promptExportError" type="warning" variant="tonal" density="compact" class="mt-2">{{ promptExportError }}</v-alert>
         </div>
         <div class="creation-library-filters mb-3">
             <v-select

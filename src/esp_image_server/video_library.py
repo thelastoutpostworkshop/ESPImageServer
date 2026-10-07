@@ -55,7 +55,7 @@ class VideoLibrary:
         (destination.with_suffix(".json")).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         return record
 
-    def list(self, limit: int = 50) -> list[dict[str, object]]:
+    def list(self, limit: int | None = 50) -> list[dict[str, object]]:
         if not self.path.is_dir():
             return []
         records = []

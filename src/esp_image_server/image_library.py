@@ -92,7 +92,7 @@ class ImageLibrary:
                 self._write_index(records)
         return matched
 
-    def list(self, limit: int = 50) -> list[dict[str, object]]:
+    def list(self, limit: int | None = 50) -> list[dict[str, object]]:
         with self._lock:
             return self._read_index()[:limit]
 
