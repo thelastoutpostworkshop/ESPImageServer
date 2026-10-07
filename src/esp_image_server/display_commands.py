@@ -14,6 +14,10 @@ from .retention import DISPLAY_COMMAND_RETENTION, RetentionPolicy
 LEGACY_DISPLAY_ID = "__legacy__"
 
 
+class DisplayCommandBusyError(RuntimeError):
+    """A bulk save owns the display's command channel."""
+
+
 class DisplayCommandStore:
     def __init__(self, retention: RetentionPolicy = DISPLAY_COMMAND_RETENTION) -> None:
         self._lock = Lock()
@@ -23,6 +27,19 @@ class DisplayCommandStore:
         self._retention = retention
         self._sd_card_report_versions: dict[str, int] = {}
         self._sd_card_reports: dict[str, dict[str, object]] = {}
+        self._reservations: dict[str, str] = {}
+
+    def reserve(self, display_id: str, owner_id: str) -> None:
+        """Reserve an idle channel without replacing any pending command."""
+        with self._lock:
+            if display_id in self._reservations or display_id in self._pending:
+                raise DisplayCommandBusyError("The display is busy; wait for its current operation to finish")
+            self._reservations[display_id] = owner_id
+
+    def release(self, display_id: str, owner_id: str) -> None:
+        with self._lock:
+            if self._reservations.get(display_id) == owner_id and display_id not in self._pending:
+                del self._reservations[display_id]
 
     def queue_save(
         self,
@@ -32,6 +49,8 @@ class DisplayCommandStore:
         *,
         display_id: str = LEGACY_DISPLAY_ID,
         thumbnail_url: str | None = None,
+        owner_id: str | None = None,
+        **values: object,
     ) -> dict[str, object]:
         command = self.queue(
             "save_saved_image" if image_id else "save_latest",
@@ -40,13 +59,17 @@ class DisplayCommandStore:
             image_id=image_id,
             content_key=content_key,
             thumbnail_url=thumbnail_url or f"/display-sd-card/thumbnails/{filename}",
+            owner_id=owner_id,
+            **values,
         )
         return command
 
     def queue(
-        self, command_type: str, *, display_id: str = LEGACY_DISPLAY_ID, **values: object,
+        self, command_type: str, *, display_id: str = LEGACY_DISPLAY_ID,
+        owner_id: str | None = None, **values: object,
     ) -> dict[str, object]:
         with self._lock:
+            self._check_owner_locked(display_id, owner_id)
             pending = self._pending.get(display_id)
             if pending is not None:
                 previous_id = str(pending["id"])
@@ -179,12 +202,15 @@ class DisplayCommandStore:
                 command["progress"] = {"stage": stage, "received_bytes": received, "total_bytes": total}
             return dict(command)
 
-    def cancel(self, command_id: str, *, display_id: str) -> dict[str, object] | None:
+    def cancel(
+        self, command_id: str, *, display_id: str, owner_id: str | None = None,
+    ) -> dict[str, object] | None:
         with self._lock:
+            self._check_owner_locked(display_id, owner_id)
             original = self._completed.get(command_id)
             if original is None or original.get("display_id") != display_id:
                 return None
-            if original.get("status") != "pending" or original.get("type") not in {"save_latest", "save_saved_image", "save_saved_video"}:
+            if original.get("status") != "pending" or original.get("type") not in {"save_latest", "save_saved_image", "save_saved_video", "refresh_sd_card"}:
                 return dict(original)
             if self._pending.get(display_id, {}).get("id") != command_id:
                 return dict(original)
@@ -192,9 +218,16 @@ class DisplayCommandStore:
             cancel_id = uuid4().hex
             command = {"id": cancel_id, "type": "cancel_operation", "status": "pending", "display_id": display_id,
                        "cancelled_command_id": command_id}
+            if original.get("bulk_save_id"):
+                command["bulk_save_id"] = original["bulk_save_id"]
             self._pending[display_id] = command
             self._completed[cancel_id] = command
             return dict(original)
+
+    def _check_owner_locked(self, display_id: str, owner_id: str | None) -> None:
+        reservation = self._reservations.get(display_id)
+        if reservation is not None and reservation != owner_id:
+            raise DisplayCommandBusyError("A bulk SD-card save is using this display; cancel it or wait for it to finish")
 
     def get(
         self, command_id: str, *, display_id: str = LEGACY_DISPLAY_ID,
@@ -221,6 +254,11 @@ class DisplayCommandStore:
     def _prune_completed_locked(self, now: float | None = None) -> int:
         now = time() if now is None else now
         active_ids = {str(command["id"]) for command in self._pending.values()}
+        active_ids.update(
+            str(command["cancelled_command_id"])
+            for command in self._pending.values()
+            if command.get("type") == "cancel_operation" and command.get("cancelled_command_id")
+        )
         finished_ids = [
             command_id for command_id in self._completed
             if command_id not in active_ids and command_id in self._finished_at

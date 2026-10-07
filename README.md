@@ -8,6 +8,8 @@ ESPImageServer is a free app that creates images and videos using AI models runn
 
 Turn a supported ESP32 board into a small digital art display: show images, play videos, and save your favorites to its SD card over Wi-Fi. Configure a **Display Experience** to keep playing saved images and videos when the server is unavailable.
 
+To save several creations, switch the Creation Library to **list view**, check the images and videos you want (or **Select all filtered**), then choose **Save selected to SD card**. The batch stays on the selected display, saves one item at a time, and skips verified copies. **Cancel bulk save** stops the current transfer and remaining items while keeping completed files. Cancellation waits for the display's confirmation; reconnect an offline display to finish stopping it. The batch continues through gallery navigation and page reloads while the server stays running. Updated firmware also shows the item count and finishes each item's optional thumbnail before moving on.
+
 ## Download and install
 
 **[Download installers from the latest release](https://github.com/thelastoutpostworkshop/ESPImageServer/releases/latest)**

@@ -35,7 +35,8 @@ from .generation_capabilities import GenerationCapabilities
 from .app_settings import AppSettingsStore
 from .firmware_updates import FirmwareUpdateChecker
 from .display import ActiveDisplayStore
-from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandStore
+from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandBusyError, DisplayCommandStore
+from .sd_save_batches import SDSaveBatchStore
 from .display_registry import (
     DisplayDevice,
     DisplayNotFoundError,
@@ -214,6 +215,17 @@ class DisplayCommandProgress(BaseModel):
     total_bytes: int = Field(ge=0, le=64 * 1024 * 1024)
 
 
+class SDSaveBatchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=128)
+    type: Literal["image", "video"]
+
+
+class SDSaveBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[SDSaveBatchItem] = Field(min_length=1, max_length=500)
+
+
 class DisplaySDCardReport(BaseModel):
     available: bool
     offline_experience_saved: bool | None = None
@@ -318,7 +330,9 @@ def create_app(
         """Bound disposable data without ever evicting active or in-use media."""
         removed_jobs = generation_queue.prune_completed()
         removed_commands = display_command_store.prune_completed()
-        referenced_cache_files = mjpeg_cache.paths_for_video_ids(display_command_store.referenced_video_ids())
+        referenced_cache_files = mjpeg_cache.paths_for_video_ids(
+            display_command_store.referenced_video_ids() | sd_save_batches.references("video"),
+        )
         removed_conversions = mjpeg_cache.cleanup(referenced_cache_files)
         if removed_jobs or removed_commands or removed_conversions:
             logger.info(
@@ -369,6 +383,7 @@ def create_app(
         finally:
             cleanup_stop.set()
             await cleanup_task
+            sd_save_batches.close()
             if mdns is not None:
                 mdns.close()
             cleanup_temporary_data()
@@ -378,6 +393,11 @@ def create_app(
             uvicorn_logger.removeHandler(console_output)
 
     app = FastAPI(title="ESPImageServer", version=APP_VERSION, lifespan=lifespan)
+
+    @app.exception_handler(DisplayCommandBusyError)
+    async def display_command_busy(_: Request, exc: DisplayCommandBusyError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
     app.state.device_manager = device_manager
     app.state.latest_image_store = latest_image_store
     app.state.active_display_store = active_display_store
@@ -830,6 +850,9 @@ def create_app(
         height: int,
         *,
         display_id: str = LEGACY_DISPLAY_ID,
+        owner_id: str | None = None,
+        bulk_save_index: int | None = None,
+        bulk_save_total: int | None = None,
     ) -> dict[str, object]:
         if video_library.find_path(video_id) is None:
             raise HTTPException(status_code=404, detail="Saved video not found")
@@ -868,10 +891,15 @@ def create_app(
             "save_saved_video", display_id=display_id, filename=filename, video_id=video_id,
             video_url=f"/saved-videos/{video_id}/mjpeg-download", fps=fps,
             content_key=content_key, thumbnail_url=f"/saved-videos/{video_id}/thumbnail",
+            owner_id=owner_id, bulk_save_id=owner_id,
+            bulk_save_index=bulk_save_index, bulk_save_total=bulk_save_total,
         )
 
     def queue_image_save(
         jpeg: bytes, image_id: str | None = None, *, display_id: str = LEGACY_DISPLAY_ID,
+        owner_id: str | None = None,
+        bulk_save_index: int | None = None,
+        bulk_save_total: int | None = None,
     ) -> dict[str, object]:
         image_hash = hashlib.sha256(jpeg).hexdigest()[:16]
         content_key = f"v1-{image_hash}"
@@ -887,15 +915,96 @@ def create_app(
         # timestamp when it reports the SD-card inventory.
         saved_at = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         filename = f"esp-image-{saved_at}-{content_key}.jpg"
+        write_sd_thumbnail(filename, jpeg, display_id=display_id)
         command = display_command_store.queue_save(
             filename,
             image_id,
             content_key=content_key,
             display_id=display_id,
             thumbnail_url=sd_thumbnail_url(display_id, filename),
+            owner_id=owner_id, bulk_save_id=owner_id,
+            bulk_save_index=bulk_save_index, bulk_save_total=bulk_save_total,
         )
-        write_sd_thumbnail(filename, jpeg, display_id=display_id)
         return command
+
+    def batch_display_connected(display_id: str) -> bool:
+        if display_id == LEGACY_DISPLAY_ID:
+            return active_display_store.get() is not None
+        try:
+            return bool(display_registry.get(display_id).as_dict()["online"])
+        except DisplayNotFoundError:
+            return False
+
+    def queue_batch_item(
+        display_id: str, item: dict[str, object], batch_id: str, index: int, total: int,
+    ) -> dict[str, object]:
+        arguments = {"display_id": display_id, "owner_id": batch_id,
+                     "bulk_save_index": index, "bulk_save_total": total}
+        if item["type"] == "image":
+            image_path = image_library.find_path(str(item["id"]))
+            if image_path is None:
+                raise HTTPException(status_code=404, detail="Saved image not found")
+            return queue_image_save(image_path.read_bytes(), str(item["id"]), **arguments)
+        display = active_display_store.get() if display_id == LEGACY_DISPLAY_ID else get_registered_display(display_id)
+        if display is None:
+            raise HTTPException(status_code=409, detail="Connect a display before saving to its SD card")
+        return queue_saved_video_to_display_sd_card(str(item["id"]), display.width, display.height, **arguments)
+
+    sd_save_batches = SDSaveBatchStore(display_command_store, queue_batch_item, batch_display_connected)
+    app.state.sd_save_batches = sd_save_batches
+
+    def start_sd_save_batch(display_id: str, request: SDSaveBatchRequest) -> dict[str, object]:
+        display = active_display_store.get() if display_id == LEGACY_DISPLAY_ID else get_registered_display(display_id)
+        if display is None or not batch_display_connected(display_id):
+            raise HTTPException(status_code=409, detail="Connect the selected display before saving to its SD card")
+        for item in request.items:
+            library = image_library if item.type == "image" else video_library
+            if library.find_path(item.id) is None:
+                raise HTTPException(status_code=404, detail=f"Saved {item.type} not found: {item.id}")
+        if any(item.type == "video" for item in request.items) and bundled_ffmpeg_executable() is None:
+            raise HTTPException(status_code=503, detail="Video conversion is unavailable on this computer (FFmpeg is missing)")
+        return sd_save_batches.start(display_id, display.name, [item.model_dump() for item in request.items])
+
+    @app.post("/sd-card-save-batches", status_code=status.HTTP_202_ACCEPTED)
+    def start_legacy_sd_save_batch(request: SDSaveBatchRequest) -> dict[str, object]:
+        return start_sd_save_batch(LEGACY_DISPLAY_ID, request)
+
+    @app.post("/displays/{display_id}/sd-card-save-batches", status_code=status.HTTP_202_ACCEPTED)
+    def start_registered_sd_save_batch(display_id: str, request: SDSaveBatchRequest) -> dict[str, object]:
+        return start_sd_save_batch(display_id, request)
+
+    @app.get("/sd-card-save-batches/active")
+    def active_legacy_sd_save_batch() -> dict[str, object] | None:
+        return sd_save_batches.active(LEGACY_DISPLAY_ID)
+
+    @app.get("/displays/{display_id}/sd-card-save-batches/active")
+    def active_registered_sd_save_batch(display_id: str) -> dict[str, object] | None:
+        get_registered_display(display_id)
+        return sd_save_batches.active(display_id)
+
+    def find_sd_save_batch(display_id: str, batch_id: str, *, cancel: bool = False) -> dict[str, object]:
+        batch = sd_save_batches.cancel(display_id, batch_id) if cancel else sd_save_batches.get(display_id, batch_id)
+        if batch is None:
+            raise HTTPException(status_code=404, detail="Bulk SD-card save not found")
+        return batch
+
+    @app.get("/sd-card-save-batches/{batch_id}")
+    def get_legacy_sd_save_batch(batch_id: str) -> dict[str, object]:
+        return find_sd_save_batch(LEGACY_DISPLAY_ID, batch_id)
+
+    @app.get("/displays/{display_id}/sd-card-save-batches/{batch_id}")
+    def get_registered_sd_save_batch(display_id: str, batch_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        return find_sd_save_batch(display_id, batch_id)
+
+    @app.post("/sd-card-save-batches/{batch_id}/cancel")
+    def cancel_legacy_sd_save_batch(batch_id: str) -> dict[str, object]:
+        return find_sd_save_batch(LEGACY_DISPLAY_ID, batch_id, cancel=True)
+
+    @app.post("/displays/{display_id}/sd-card-save-batches/{batch_id}/cancel")
+    def cancel_registered_sd_save_batch(display_id: str, batch_id: str) -> dict[str, object]:
+        get_registered_display(display_id)
+        return find_sd_save_batch(display_id, batch_id, cancel=True)
 
     def sd_thumbnail_path_for(display_id: str, filename: str) -> Path:
         folder = sd_thumbnail_path if display_id == LEGACY_DISPLAY_ID else sd_thumbnail_path / display_id
@@ -1338,6 +1447,8 @@ def create_app(
         nonlocal jpeg_quality, video_jpeg_quality, auto_save_images, auto_save_videos, confirm_deletion
         nonlocal auto_check_firmware_updates
         if request.image_library_location is not None:
+            if sd_save_batches.has_active():
+                raise HTTPException(status_code=409, detail="Wait for the bulk SD-card save to finish before moving the image library")
             location = Path(request.image_library_location)
             if not location.is_absolute():
                 raise HTTPException(status_code=422, detail="Choose an absolute folder path for the image library")
@@ -1518,6 +1629,8 @@ def create_app(
 
     @app.delete("/saved-videos/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_saved_video(video_id: str) -> Response:
+        if video_id in sd_save_batches.references("video") or video_id in display_command_store.referenced_video_ids():
+            raise HTTPException(status_code=409, detail="This video is being saved to a display SD card")
         try:
             deleted = video_library.delete(video_id)
         except OSError as exc:
@@ -1605,6 +1718,8 @@ def create_app(
 
     @app.delete("/saved-images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_saved_image(image_id: str) -> Response:
+        if image_id in sd_save_batches.references("image"):
+            raise HTTPException(status_code=409, detail="This image is part of an active bulk SD-card save")
         try:
             deleted = image_library.delete(image_id)
         except OSError as exc:

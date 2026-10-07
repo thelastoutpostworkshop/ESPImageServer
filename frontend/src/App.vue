@@ -11,6 +11,7 @@ import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.j
 import { requireSdCardCommandAvailable, waitForSdCardDeletion } from './sdDeletion.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
 import { saveThemePreference } from './themePreference.js'
+import { gallerySelectionKey, selectAllGalleryItems, selectedGalleryItems, filterGallerySelection, reconcileGallerySelection, isGalleryBulkSaveActive, galleryBulkSaveProgressMessage } from './galleryBulkSave.js'
 
 let displaySelectionInitialized = false
 let sdCardDisplaySelectionVersion = 0
@@ -216,6 +217,17 @@ const savedImagesLoading = ref(false)
 const creationModelFilter = ref(null)
 const creationDisplayFilter = ref(null)
 const creationSdCardFilter = ref(null)
+const selectedCreationKeys = ref([])
+const galleryBulkSave = ref(null)
+const galleryBulkSaveLoading = ref(false)
+const galleryBulkSaveStarting = ref(false)
+const galleryBulkSaveCancelling = ref(false)
+const galleryBulkSaveError = ref('')
+const galleryBulkSavePollError = ref('')
+const galleryBulkSaveActive = computed(() => isGalleryBulkSaveActive(galleryBulkSave.value))
+const galleryBulkSaveBusy = computed(() => galleryBulkSaveActive.value || galleryBulkSaveStarting.value || galleryBulkSaveCancelling.value)
+const sdCardCommandsBlocked = computed(() => sdCardDeletionActive.value || galleryBulkSaveBusy.value)
+const galleryBulkSaveMessage = computed(() => galleryBulkSaveProgressMessage(galleryBulkSave.value))
 const imageLibraryLocation = ref('')
 const savedImageLibraryLocation = ref('')
 const windowDesktop = Boolean(window.espImageServerDesktop)
@@ -741,6 +753,40 @@ const creationDisplayOptions = computed(() => {
 const filteredSavedImages = computed(() => savedImages.value.filter(image => matchesCreationFilters(image, 'image')))
 const filteredSavedVideos = computed(() => savedVideos.value.filter(video => matchesCreationFilters(video, 'video')))
 const filteredCreationsCount = computed(() => filteredSavedImages.value.length + filteredSavedVideos.value.length)
+const filteredGalleryItems = computed(() => [
+  ...filteredSavedImages.value.map(item => ({ id: item.id, type: 'image' })),
+  ...filteredSavedVideos.value.map(item => ({ id: item.id, type: 'video' }))
+])
+const selectedGalleryCreations = computed(() => selectedGalleryItems(filteredGalleryItems.value, selectedCreationKeys.value))
+const allFilteredCreationsSelected = computed(() => filteredGalleryItems.value.length > 0 && selectedGalleryCreations.value.length === filteredGalleryItems.value.length)
+const canStartGalleryBulkSave = computed(() => activeDisplayOnline.value && selectedGalleryCreations.value.length > 0
+  && selectedGalleryCreations.value.length <= 500
+  && !galleryBulkSaveBusy.value && !galleryBulkSaveLoading.value && !galleryBulkSavePollError.value
+  && !sdCardDeletionActive.value && !sdCardInventoryRefreshing.value
+  && !savingToDisplaySdCard.value && !savingVideoToDisplaySdCard.value && !displayingSdCardFile.value
+  && !displayExperienceSaving.value && !displayExperiencePreviewChanging.value && !displayExperiencePreviewing.value)
+
+watch(filteredGalleryItems, items => {
+  selectedCreationKeys.value = filterGallerySelection(selectedCreationKeys.value, items)
+})
+
+function galleryCreationSelected(creation, type) {
+  return selectedCreationKeys.value.includes(gallerySelectionKey({ id: creation.id, type }))
+}
+
+function setGalleryCreationSelected(creation, type, selected) {
+  if (galleryBulkSaveBusy.value) return
+  const key = gallerySelectionKey({ id: creation.id, type })
+  const keys = new Set(selectedCreationKeys.value)
+  if (selected) keys.add(key)
+  else keys.delete(key)
+  selectedCreationKeys.value = [...keys]
+}
+
+function selectAllFilteredCreations(selected) {
+  if (galleryBulkSaveBusy.value) return
+  selectedCreationKeys.value = selected ? selectAllGalleryItems(filteredGalleryItems.value) : []
+}
 const savedImageGroups = computed(() => {
   const groups = new Map()
   for (const savedImage of filteredSavedImages.value) {
@@ -811,6 +857,7 @@ watch(metadataPanePinned, pinned => {
 })
 
 watch(imageLibraryView, view => {
+  if (view !== 'list' && !galleryBulkSaveBusy.value) selectedCreationKeys.value = []
   window.localStorage.setItem(imageLibraryViewSettingsKey, view)
 })
 
@@ -857,6 +904,12 @@ watch(page, (nextPage, previousPage) => {
 })
 
 watch(activeDisplayId, displayId => {
+  ++galleryBulkSaveRequestVersion
+  galleryBulkSave.value = null
+  galleryBulkSaveError.value = ''
+  galleryBulkSavePollError.value = ''
+  selectedCreationKeys.value = []
+  void loadGalleryBulkSave(true)
   if (displayId) window.localStorage.setItem(activeDisplaySettingsKey, displayId)
   else window.localStorage.removeItem(activeDisplaySettingsKey)
   displayExperiencePreviewing.value = false
@@ -898,6 +951,105 @@ function selectedDisplayEndpoint(suffix) {
 
 function selectedDisplayCommandEndpoint(commandId) {
   return `${selectedDisplayEndpoint('/display-commands')}/${encodeURIComponent(commandId)}`
+}
+
+function requireDisplayCommandAvailable() {
+  if (galleryBulkSaveBusy.value) throw new Error('Wait for the bulk save to finish or cancel it before sending another display command.')
+  requireSdCardCommandAvailable(sdCardDeletionActive.value)
+}
+
+let galleryBulkSaveTimer = null
+let galleryBulkSaveRequestVersion = 0
+let galleryBulkSavePollInFlight = false
+let galleryBulkSaveLastPollAt = 0
+
+async function galleryBulkSaveRequest(endpoint, options = {}) {
+  const response = await fetch(endpoint, { cache: 'no-store', signal: AbortSignal.timeout(15000), ...options })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail || `Request failed (${response.status})`)
+  }
+  return response.json()
+}
+
+function applyGalleryBulkSave(batch) {
+  const previous = galleryBulkSave.value
+  galleryBulkSave.value = batch
+  selectedCreationKeys.value = reconcileGallerySelection(selectedCreationKeys.value, batch)
+  if (batch && !isGalleryBulkSaveActive(batch) && (previous?.id !== batch.id || isGalleryBulkSaveActive(previous))) {
+    void Promise.all([loadDisplaySdCard(), loadSavedImages(), loadSavedVideos()])
+  }
+}
+
+async function loadGalleryBulkSave(force = false) {
+  if (!display.value?.connected || galleryBulkSaveStarting.value || galleryBulkSaveCancelling.value) return
+  if (!force && (galleryBulkSavePollInFlight || (!galleryBulkSaveActive.value && Date.now() - galleryBulkSaveLastPollAt < 5000))) return
+  const version = ++galleryBulkSaveRequestVersion
+  const scope = selectedDisplayEndpoint('')
+  const knownBatch = galleryBulkSave.value
+  galleryBulkSavePollInFlight = true
+  galleryBulkSaveLastPollAt = Date.now()
+  if (!knownBatch) galleryBulkSaveLoading.value = true
+  try {
+    const batch = await galleryBulkSaveRequest(`${scope}/sd-card-save-batches/${isGalleryBulkSaveActive(knownBatch) ? encodeURIComponent(knownBatch.id) : 'active'}`)
+    if (version !== galleryBulkSaveRequestVersion || scope !== selectedDisplayEndpoint('')) return
+    // Keep the final result visible until another batch starts.
+    if (batch || isGalleryBulkSaveActive(knownBatch)) applyGalleryBulkSave(batch)
+    galleryBulkSavePollError.value = ''
+    if (batch && (!isGalleryBulkSaveActive(knownBatch) || batch.status !== 'running')) galleryBulkSaveError.value = ''
+  } catch (requestError) {
+    if (version === galleryBulkSaveRequestVersion && scope === selectedDisplayEndpoint('')) {
+      galleryBulkSavePollError.value = `Could not check the bulk save: ${requestError.message}. Reconnecting automatically; its last reported state is shown.`
+    }
+  } finally {
+    if (version === galleryBulkSaveRequestVersion) {
+      galleryBulkSavePollInFlight = false
+      galleryBulkSaveLoading.value = false
+    }
+  }
+}
+
+async function saveSelectedCreationsToSdCard() {
+  if (!canStartGalleryBulkSave.value || imageLibraryView.value !== 'list') return
+  const scope = selectedDisplayEndpoint('')
+  const version = ++galleryBulkSaveRequestVersion
+  const items = selectedGalleryCreations.value.map(item => ({ ...item }))
+  galleryBulkSaveStarting.value = true
+  galleryBulkSaveError.value = ''
+  try {
+    const batch = await galleryBulkSaveRequest(`${scope}/sd-card-save-batches`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items })
+    })
+    if (scope === selectedDisplayEndpoint('') && version === galleryBulkSaveRequestVersion) applyGalleryBulkSave(batch)
+  } catch (requestError) {
+    if (scope === selectedDisplayEndpoint('') && version === galleryBulkSaveRequestVersion) {
+      galleryBulkSaveError.value = `Could not start the bulk save: ${requestError.message}`
+    }
+  } finally {
+    galleryBulkSaveStarting.value = false
+    // Recover a batch whose POST succeeded even if its response was lost.
+    void loadGalleryBulkSave(true)
+  }
+}
+
+async function cancelGalleryBulkSave() {
+  const batch = galleryBulkSave.value
+  if (!isGalleryBulkSaveActive(batch) || galleryBulkSaveCancelling.value) return
+  const scope = selectedDisplayEndpoint('')
+  const version = ++galleryBulkSaveRequestVersion
+  galleryBulkSaveCancelling.value = true
+  galleryBulkSaveError.value = ''
+  try {
+    const updated = await galleryBulkSaveRequest(`${scope}/sd-card-save-batches/${encodeURIComponent(batch.id)}/cancel`, { method: 'POST' })
+    if (scope === selectedDisplayEndpoint('') && version === galleryBulkSaveRequestVersion) applyGalleryBulkSave(updated)
+  } catch (requestError) {
+    if (scope === selectedDisplayEndpoint('') && version === galleryBulkSaveRequestVersion) {
+      galleryBulkSaveError.value = `Could not confirm the cancellation request: ${requestError.message}. Check the batch status before retrying.`
+    }
+  } finally {
+    galleryBulkSaveCancelling.value = false
+    void loadGalleryBulkSave(true)
+  }
 }
 
 function activeDisplayCommandUnavailableMessage() {
@@ -1202,6 +1354,14 @@ function latestCompletedGenerationJob(jobs, kind) {
 function resultPanelQueueStatus(job) {
   if (!job) return ''
   return job.status === 'cancelling' ? 'Cancellation pending' : job.stage
+}
+
+function queueJobModelLabel(job) {
+  const metadata = job?.metadata || {}
+  const modelId = metadata.model?.id || metadata.model_id
+  const catalog = job?.kind === 'video' ? availableVideoModels.value : models.value
+  const modelName = metadata.model?.name || catalog.find(model => model.id === modelId)?.name || modelId
+  return `Model: ${modelName || 'Not recorded'}`
 }
 
 function queueJobDisplayTarget(job) {
@@ -1646,7 +1806,7 @@ async function saveVideoToDisplaySdCard(videoId) {
     showSDCardSaveStatus(`Checking ${display.value.name}'s SD card for this video…`)
     await refreshDisplaySdCardInventory()
     if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Start the save again for the selected display.')
-    requireSdCardCommandAvailable(sdCardDeletionActive.value)
+    requireDisplayCommandAvailable()
     const response = await fetch(
       `${selectedDisplayEndpoint('/display-commands/save-saved-video')}/${encodeURIComponent(videoId)}`,
       { method: 'POST' }
@@ -1797,7 +1957,7 @@ async function loadDisplaySdCard() {
 }
 
 async function refreshDisplaySdCardInventory() {
-  requireSdCardCommandAvailable(sdCardDeletionActive.value)
+  requireDisplayCommandAvailable()
   if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
   const displayScope = selectedDisplayEndpoint('')
   if (sdCardRefreshTarget?.scope === displayScope && sdCardRefreshTarget.selectionVersion === sdCardDisplaySelectionVersion) {
@@ -1819,7 +1979,7 @@ async function refreshDisplaySdCardInventory() {
     displaySdCard.value = previousReport
     displaySdCardScope.value = displayScope
     const previousVersion = Number(previousReport.report_version) || 0
-    requireSdCardCommandAvailable(sdCardDeletionActive.value)
+    requireDisplayCommandAvailable()
     const response = await fetch(selectedDisplayEndpoint('/display-sd-card/refresh'), { method: 'POST' })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -1937,7 +2097,7 @@ async function saveDisplayExperience() {
     slideshow_order: displayExperience.value.slideshow_order
   }
   try {
-    requireSdCardCommandAvailable(sdCardDeletionActive.value)
+    requireDisplayCommandAvailable()
     const response = await fetch(selectedDisplayEndpoint('/display-experience'), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
@@ -1974,7 +2134,7 @@ async function previewDisplayExperience() {
   displayExperienceError.value = ''
   displayExperiencePreviewChanging.value = true
   try {
-    requireSdCardCommandAvailable(sdCardDeletionActive.value)
+    requireDisplayCommandAvailable()
     const response = await fetch(selectedDisplayEndpoint('/display-experience/preview'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2016,7 +2176,7 @@ async function sendDisplaySdCardCommand(endpoint, method = 'POST', notify = true
   }
   error.value = ''
   try {
-    requireSdCardCommandAvailable(sdCardDeletionActive.value)
+    requireDisplayCommandAvailable()
     const response = await fetch(selectedDisplayEndpoint(endpoint), { method })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -2037,6 +2197,7 @@ function displaySdCardMediaType(file) {
 
 function captureSdCardDeleteTarget(files) {
   if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
+  requireDisplayCommandAvailable()
   if (sdCardInventoryRefreshing.value || savingToDisplaySdCard.value || savingVideoToDisplaySdCard.value ||
     displayingSdCardFile.value || displayExperienceSaving.value || displayExperiencePreviewChanging.value || displayExperiencePreviewing.value) {
     throw new Error('Wait for the current display operation to finish before deleting SD-card files.')
@@ -2249,7 +2410,7 @@ async function showSDCardFileOnDisplay(filename) {
   error.value = ''
   status.value = ''
   try {
-    requireSdCardCommandAvailable(sdCardDeletionActive.value)
+    requireDisplayCommandAvailable()
     if (!activeDisplayOnline.value) throw new Error(activeDisplayCommandUnavailableMessage())
     const response = await fetch(
       selectedDisplayEndpoint(`/display-sd-card/files/${encodeURIComponent(filename)}/display`),
@@ -2456,6 +2617,7 @@ async function openMetadataPane() {
   metadataPane.value = true
   await loadSavedImages()
   await loadDisplaySdCard()
+  void loadGalleryBulkSave(true)
 }
 
 async function refreshCreationLibrarySdCardStatus() {
@@ -2512,7 +2674,7 @@ async function showSavedImageOnDisplay(savedImage = selectedSavedImage.value) {
   showingSavedImageOnDisplay.value = true
   error.value = ''
   try {
-    requireSdCardCommandAvailable(sdCardDeletionActive.value)
+    requireDisplayCommandAvailable()
     const response = await fetch(`/saved-images/${encodeURIComponent(savedImage.id)}/display`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2703,7 +2865,7 @@ async function saveImageToDisplaySdCard(savedImage = null) {
     showSDCardSaveStatus(`Checking ${display.value.name}'s SD card for this image…`)
     await refreshDisplaySdCardInventory()
     if (displayScope !== selectedDisplayEndpoint('')) throw new Error('Active display changed. Start the save again for the selected display.')
-    requireSdCardCommandAvailable(sdCardDeletionActive.value)
+    requireDisplayCommandAvailable()
     const endpoint = savedImage
       ? `${selectedDisplayEndpoint('/display-commands/save-saved-image')}/${encodeURIComponent(savedImage.id)}`
       : selectedDisplayEndpoint('/display-commands/save-latest')
@@ -3082,6 +3244,8 @@ onMounted(async () => {
   await loadSavedVideos()
   await loadAppSettings()
   await loadGenerationQueue()
+  await loadGalleryBulkSave(true)
+  galleryBulkSaveTimer = window.setInterval(loadGalleryBulkSave, 1000)
   await clearDiagnostics()
   if (metadataPanePinned.value && !compact.value) metadataPane.value = true
   statusTimer = window.setInterval(() => {
@@ -3096,6 +3260,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.clearInterval(galleryBulkSaveTimer)
+  ++galleryBulkSaveRequestVersion
   window.clearInterval(statusTimer)
   window.clearInterval(consoleRefreshTimer)
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
@@ -3122,6 +3288,13 @@ onUnmounted(() => {
         <span>{{ sdCardSnackbarMessage }}</span>
       </div>
       <template #actions><v-btn v-if="activeSDCardSave?.progress && sdCardSnackbarKind === 'progress'" variant="text" :disabled="activeSDCardSave.status === 'cancelling' || cancellingSDCardSave" :loading="cancellingSDCardSave" @click="cancelSDCardSave">Cancel save</v-btn><v-btn variant="text" @click="sdCardSnackbar = false">Close</v-btn></template>
+    </v-snackbar>
+    <v-snackbar :model-value="galleryBulkSaveActive && !metadataPane" color="info" location="bottom" :timeout="-1">
+      <span role="status" aria-live="polite">{{ galleryBulkSave?.display_name }}: {{ galleryBulkSaveMessage }}</span>
+      <template #actions>
+        <v-btn variant="text" @click="openMetadataPane">Open gallery</v-btn>
+        <v-btn variant="text" :loading="galleryBulkSaveCancelling" :disabled="galleryBulkSave?.status === 'cancelling'" @click="cancelGalleryBulkSave">Cancel bulk save</v-btn>
+      </template>
     </v-snackbar>
     <v-snackbar v-model="generationQueueSnackbar" color="success" location="bottom" timeout="5000">
       <div class="d-flex align-center ga-2">
@@ -3311,7 +3484,7 @@ onUnmounted(() => {
           <v-chip v-else size="small" variant="tonal" prepend-icon="mdi-help-circle-outline">
             SD card status not checked
           </v-chip>
-          <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="sdCardDeletionActive" @click="refreshCreationLibrarySdCardStatus">
+          <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="sdCardCommandsBlocked" @click="refreshCreationLibrarySdCardStatus">
             Refresh SD card status
           </v-btn>
         </div>
@@ -3357,6 +3530,44 @@ onUnmounted(() => {
               <template #selection="{ item }"><span class="creation-library-filter-value">{{ item.title }}</span></template>
             </v-select>
         </div>
+        <div v-if="imageLibraryView === 'list' && filteredCreationsCount" class="gallery-bulk-selection border rounded pa-3 mb-3">
+          <div class="d-flex align-center flex-wrap ga-2">
+            <v-checkbox-btn
+              :model-value="allFilteredCreationsSelected"
+              :indeterminate="selectedGalleryCreations.length > 0 && !allFilteredCreationsSelected"
+              :disabled="galleryBulkSaveBusy || savedImagesLoading"
+              label="Select all filtered"
+              density="compact"
+              @update:model-value="selectAllFilteredCreations"
+            />
+            <span class="text-caption" role="status">{{ selectedGalleryCreations.length }} selected</span>
+            <v-spacer />
+            <v-btn size="small" variant="text" :disabled="!selectedGalleryCreations.length || galleryBulkSaveBusy" @click="selectedCreationKeys = []">Clear</v-btn>
+          </div>
+          <v-btn
+            block color="primary" variant="tonal" prepend-icon="mdi-sd" class="mt-2"
+            :loading="galleryBulkSaveStarting || galleryBulkSaveLoading"
+            :disabled="!canStartGalleryBulkSave"
+            @click="saveSelectedCreationsToSdCard"
+          >Save selected to SD card</v-btn>
+          <div class="text-caption text-medium-emphasis mt-2">Saves images and videos to {{ display?.name || 'the active display' }}. Verified copies are skipped.</div>
+          <div v-if="selectedGalleryCreations.length > 500" class="text-caption text-warning mt-2">Select up to 500 items per bulk save.</div>
+        </div>
+        <v-card v-if="galleryBulkSave" variant="tonal" class="gallery-bulk-progress pa-3 mb-3" :color="galleryBulkSave.status === 'failed' ? 'warning' : galleryBulkSave.status === 'complete' ? 'success' : 'info'">
+          <div class="text-subtitle-2">Bulk save · {{ galleryBulkSave.display_name }}</div>
+          <div class="text-body-2 mt-1" role="status" aria-live="polite">{{ galleryBulkSaveMessage }}</div>
+          <v-progress-linear
+            :model-value="galleryBulkSave.total ? galleryBulkSave.completed * 100 / galleryBulkSave.total : 0"
+            :indeterminate="galleryBulkSaveActive && !galleryBulkSave.current_index"
+            rounded height="6" class="mt-3"
+          />
+          <div v-if="galleryBulkSaveActive" class="text-caption mt-2">The batch continues if you close the gallery or reload the page.</div>
+          <div v-else-if="galleryBulkSave.status !== 'complete'" class="text-caption mt-2">Completed files are kept. Select the remaining items to try again.</div>
+          <v-btn v-if="galleryBulkSaveActive" variant="outlined" size="small" class="mt-3" prepend-icon="mdi-cancel"
+            :loading="galleryBulkSaveCancelling" :disabled="galleryBulkSave.status === 'cancelling'" @click="cancelGalleryBulkSave">Cancel bulk save</v-btn>
+        </v-card>
+        <v-alert v-if="galleryBulkSaveError" type="warning" variant="tonal" density="compact" class="mb-3">{{ galleryBulkSaveError }}</v-alert>
+        <v-alert v-if="galleryBulkSavePollError" type="warning" variant="tonal" density="compact" class="mb-3">{{ galleryBulkSavePollError }}</v-alert>
         <v-progress-linear v-if="savedImagesLoading" indeterminate color="primary" class="mb-3" />
         <div v-if="!savedImagesLoading && filteredSavedImages.length && imageLibraryView === 'thumbnails'" class="saved-image-library">
           <section v-for="group in savedImageGroups" :key="group.modelName" class="saved-image-group">
@@ -3382,7 +3593,11 @@ onUnmounted(() => {
           </section>
         </div>
         <v-list v-if="!savedImagesLoading && filteredSavedImages.length && imageLibraryView === 'list'" class="saved-image-library saved-image-list" density="compact" lines="two">
-          <v-list-item v-for="savedImage in filteredSavedImages" :key="savedImage.id" prepend-icon="mdi-image" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
+          <v-list-item v-for="savedImage in filteredSavedImages" :key="savedImage.id" :class="{ 'gallery-creation-selected': galleryCreationSelected(savedImage, 'image') }" @click="openSavedImage(savedImage)" @contextmenu="openSavedImageContextMenu($event, savedImage)">
+            <template #prepend>
+              <v-checkbox-btn :model-value="galleryCreationSelected(savedImage, 'image')" :disabled="galleryBulkSaveBusy" :aria-label="`Select image: ${savedImage.metadata?.prompt || 'Generated image'}`" density="compact" class="mr-2" @pointerdown.stop @click.stop @update:model-value="setGalleryCreationSelected(savedImage, 'image', $event)" />
+              <v-icon class="mr-3">mdi-image</v-icon>
+            </template>
             <v-list-item-title>{{ savedImage.metadata?.prompt || 'Generated image' }}</v-list-item-title>
             <template #append>
               <v-icon v-if="creationIsOnDisplaySdCard(savedImage, 'image')" class="mr-3" :color="creationSdCardColor(savedImage, 'image')" :aria-label="creationSdCardLabel(savedImage, 'image')" :title="creationSdCardLabel(savedImage, 'image')">mdi-sd</v-icon>
@@ -3418,7 +3633,11 @@ onUnmounted(() => {
           </section>
         </template>
         <v-list v-if="!savedImagesLoading && filteredSavedVideos.length && imageLibraryView === 'list'" class="saved-image-library saved-image-list mt-6" density="compact" lines="two">
-          <v-list-item v-for="savedVideo in filteredSavedVideos" :key="savedVideo.id" prepend-icon="mdi-movie-open-outline" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
+          <v-list-item v-for="savedVideo in filteredSavedVideos" :key="savedVideo.id" :class="{ 'gallery-creation-selected': galleryCreationSelected(savedVideo, 'video') }" @click="openSavedVideo(savedVideo)" @contextmenu="openSavedVideoContextMenu($event, savedVideo)">
+            <template #prepend>
+              <v-checkbox-btn :model-value="galleryCreationSelected(savedVideo, 'video')" :disabled="galleryBulkSaveBusy" :aria-label="`Select video: ${savedVideo.metadata?.prompt || 'Generated video'}`" density="compact" class="mr-2" @pointerdown.stop @click.stop @update:model-value="setGalleryCreationSelected(savedVideo, 'video', $event)" />
+              <v-icon class="mr-3">mdi-movie-open-outline</v-icon>
+            </template>
             <v-list-item-title>{{ savedVideo.metadata?.prompt || 'Generated video' }}</v-list-item-title>
             <template #append>
               <v-icon v-if="creationIsOnDisplaySdCard(savedVideo, 'video')" class="mr-3" :color="creationSdCardColor(savedVideo, 'video')" :aria-label="creationSdCardLabel(savedVideo, 'video')" :title="creationSdCardLabel(savedVideo, 'video')">mdi-sd</v-icon>
@@ -3448,12 +3667,12 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-rotate-right" title="Use rotation" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'rotation')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedImageSettings(contextMenuSavedImage?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="showOnDisplayLabel" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay || sdCardDeletionActive" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
+        <v-list-item color="primary" prepend-icon="mdi-monitor-dashboard" :title="showOnDisplayLabel" :disabled="!hasDisplayTargets || showingSavedImageOnDisplay || sdCardCommandsBlocked" @click="showSavedImageOnDisplay(contextMenuSavedImage)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? 'mdi-check-circle' : 'mdi-sd'"
           :title="creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image') ? alreadySavedToDisplaySdCardLabel : saveToDisplaySdCardLabel"
-          :disabled="!activeDisplayOnline || savingToDisplaySdCard || sdCardDeletionActive || creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image')"
+          :disabled="!activeDisplayOnline || savingToDisplaySdCard || sdCardCommandsBlocked || creationIsSavedForCurrentDisplay(contextMenuSavedImage, 'image')"
           @click="saveContextMenuImageToDisplaySdCard"
         />
         <v-list-item color="primary" prepend-icon="mdi-movie-open-plus" title="Animate as video" :disabled="health?.device !== 'cuda'" @click="animateSavedImage(contextMenuSavedImage)" />
@@ -3475,12 +3694,12 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-speedometer" title="Use frame rate" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'fps')" />
         <v-divider class="my-1" />
         <v-list-item color="primary" prepend-icon="mdi-restore" title="Use all" @click="useSavedVideoSettings(contextMenuSavedVideo?.metadata, 'all')" />
-        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" :title="showOnDisplayLabel" :disabled="!activeDisplayOnline || showingVideoOnDisplay || sdCardDeletionActive" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
+        <v-list-item color="primary" prepend-icon="mdi-play-circle-outline" :title="showOnDisplayLabel" :disabled="!activeDisplayOnline || showingVideoOnDisplay || sdCardCommandsBlocked" @click="showSavedVideoOnDisplay(contextMenuSavedVideo?.id)" />
         <v-list-item
           color="primary"
           :prepend-icon="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? 'mdi-check-circle' : 'mdi-sd'"
           :title="creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video') ? alreadySavedToDisplaySdCardLabel : saveToDisplaySdCardLabel"
-          :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardDeletionActive || creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video')"
+          :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardCommandsBlocked || creationIsSavedForCurrentDisplay(contextMenuSavedVideo, 'video')"
           @click="saveSavedVideoToDisplaySdCard"
         />
         <v-list-item prepend-icon="mdi-download" title="Download MP4" :href="contextMenuSavedVideo ? `/saved-videos/${encodeURIComponent(contextMenuSavedVideo.id)}/video` : undefined" />
@@ -3729,6 +3948,7 @@ onUnmounted(() => {
                 </v-avatar>
               </template>
               <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
+              <v-list-item-subtitle class="generation-job-detail font-weight-medium">{{ queueJobModelLabel(job) }}</v-list-item-subtitle>
               <v-list-item-subtitle class="generation-job-detail">{{ generationJobDetail(job) }}</v-list-item-subtitle>
               <v-list-item-subtitle>{{ queueJobDisplayLabel(job) }}</v-list-item-subtitle>
               <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || job.status === 'cancelling' || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" :title="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
@@ -3749,6 +3969,7 @@ onUnmounted(() => {
                   <v-icon v-else :color="job.status === 'failed' ? 'error' : 'warning'" :icon="job.status === 'failed' ? 'mdi-alert-circle' : 'mdi-cancel'" />
                 </template>
                 <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
+                <v-list-item-subtitle class="generation-job-detail font-weight-medium">{{ queueJobModelLabel(job) }}</v-list-item-subtitle>
                 <v-list-item-subtitle>{{ job.status === 'complete' ? `${job.kind === 'video' ? 'Video' : 'Image'} generation complete${formatGenerationTime(job.generation_time_seconds) ? ` · Generated in ${formatGenerationTime(job.generation_time_seconds)}` : ''}` : job.error || job.stage }}</v-list-item-subtitle>
                 <v-list-item-subtitle>{{ queueJobDisplayLabel(job) }}</v-list-item-subtitle>
                 <template #append>
@@ -3974,13 +4195,13 @@ onUnmounted(() => {
               <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-restore" aria-label="Use saved settings" @click="useSelectedSavedImageSettings" /></template>
             </v-tooltip>
             <v-tooltip v-if="selectedSavedImage" :text="showOnDisplayLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets || sdCardDeletionActive" :aria-label="showOnDisplayLabel" @click="showSavedImageOnDisplay()" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-monitor-dashboard" :loading="showingSavedImageOnDisplay" :disabled="!hasDisplayTargets || sdCardCommandsBlocked" :aria-label="showOnDisplayLabel" @click="showSavedImageOnDisplay()" /></template>
             </v-tooltip>
             <v-tooltip text="Download JPEG">
               <template #activator="{ props }"><v-btn v-bind="props" :href="imageUrl" download="esp-image.jpg" color="secondary" icon="mdi-download" aria-label="Download JPEG" /></template>
             </v-tooltip>
             <v-tooltip :text="saveToDisplaySdCardLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!activeDisplayOnline || sdCardDeletionActive" :aria-label="saveToDisplaySdCardLabel" @click="saveImageToDisplaySdCard(selectedSavedImage)" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingToDisplaySdCard" :disabled="!activeDisplayOnline || sdCardCommandsBlocked" :aria-label="saveToDisplaySdCardLabel" @click="saveImageToDisplaySdCard(selectedSavedImage)" /></template>
             </v-tooltip>
             <v-tooltip text="Open Creation Library">
               <template #activator="{ props }"><v-btn v-bind="props" variant="text" icon="mdi-image-text" aria-label="Open Creation Library" @click="openMetadataPane" /></template>
@@ -4176,10 +4397,10 @@ onUnmounted(() => {
               <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" :aria-label="videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery'" @click="saveVideoToCreationLibrary" /></template>
             </v-tooltip>
             <v-tooltip :text="showOnDisplayLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardDeletionActive" :aria-label="showOnDisplayLabel" @click="showSavedVideoOnDisplay" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardCommandsBlocked" :aria-label="showOnDisplayLabel" @click="showSavedVideoOnDisplay" /></template>
             </v-tooltip>
             <v-tooltip :text="saveToDisplaySdCardLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardDeletionActive" :aria-label="saveToDisplaySdCardLabel" @click="saveCompletedVideoToDisplaySdCard" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardCommandsBlocked" :aria-label="saveToDisplaySdCardLabel" @click="saveCompletedVideoToDisplaySdCard" /></template>
             </v-tooltip>
           </v-card-actions>
         </v-card>
@@ -4385,8 +4606,8 @@ onUnmounted(() => {
                 variant="outlined"
                 class="mb-3"
               />
-              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline || sdCardDeletionActive" prepend-icon="mdi-content-save">Save {{ display?.name || 'display' }} experience</v-btn>
-              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperiencePreviewing || displayExperiencePreviewChanging || sdCardDeletionActive" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }} on {{ display?.name || 'display' }}</v-btn>
+              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline || sdCardCommandsBlocked" prepend-icon="mdi-content-save">Save {{ display?.name || 'display' }} experience</v-btn>
+              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperiencePreviewing || displayExperiencePreviewChanging || sdCardCommandsBlocked" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }} on {{ display?.name || 'display' }}</v-btn>
               <div v-if="!activeDisplayOnline" class="text-caption text-medium-emphasis mt-3">Reconnect the display to save or preview these settings.</div>
               <v-alert v-if="displayExperienceStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ displayExperienceStatus }}</v-alert>
               <v-alert v-if="displayExperienceError" type="error" variant="tonal" density="compact" class="mt-4">{{ displayExperienceError }}</v-alert>
@@ -4446,7 +4667,7 @@ onUnmounted(() => {
               <v-btn
                 v-if="selectedSdCardFiles.length"
                 variant="text"
-                :disabled="sdCardDeletionActive"
+                :disabled="sdCardCommandsBlocked"
                 @click="selectedSdCardFileNames = []"
               >
                 Clear selection
@@ -4494,7 +4715,7 @@ onUnmounted(() => {
               v-model:items-per-page="sdCardItemsPerPage"
               v-model="selectedSdCardFileNames"
               item-value="name"
-              :item-selectable="() => !sdCardDeletionActive"
+              :item-selectable="() => !sdCardCommandsBlocked"
               :show-select="activeDisplayOnline"
               select-strategy="all"
               hover
@@ -4505,7 +4726,7 @@ onUnmounted(() => {
                 <v-checkbox-btn
                   :model-value="allSelected"
                   :indeterminate="someSelected && !allSelected"
-                  :disabled="sdCardDeletionActive"
+                  :disabled="sdCardCommandsBlocked"
                   aria-label="Select all SD-card files for deletion"
                   @update:model-value="selectAll"
                 />
@@ -4667,7 +4888,8 @@ onUnmounted(() => {
               <v-list-item v-for="job in generationQueue.filter(item => ['queued', 'running', 'cancelling'].includes(item.status))" :key="job.id">
                 <template #prepend><v-icon :icon="job.kind === 'video' ? 'mdi-movie-open-outline' : 'mdi-image-outline'" /></template>
                 <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
-              <v-list-item-subtitle class="generation-job-detail">{{ generationJobDetail(job) }}</v-list-item-subtitle>
+                <v-list-item-subtitle class="generation-job-detail font-weight-medium">{{ queueJobModelLabel(job) }}</v-list-item-subtitle>
+                <v-list-item-subtitle class="generation-job-detail">{{ generationJobDetail(job) }}</v-list-item-subtitle>
                 <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || job.status === 'cancelling' || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
               </v-list-item>
             </v-list>

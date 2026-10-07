@@ -29,6 +29,7 @@ test('invalid totals do not show NaN or an unbounded percentage', () => {
 // No Vue DOM or device commands are needed to reproduce this race.
 const appSource = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
 const refreshFunction = appSource.slice(appSource.indexOf('async function refreshDisplaySdCardInventory()'), appSource.indexOf('async function refreshDisplaySdCard()'))
+const commandGuardFunction = appSource.slice(appSource.indexOf('function requireDisplayCommandAvailable()'), appSource.indexOf('let galleryBulkSaveTimer = null'))
 for (const switchAt of ['initial inventory', 'command polling']) {
   test(`changing displays during ${switchAt} never redirects the save preflight`, async () => {
     let selected = '/displays/original'
@@ -36,6 +37,7 @@ for (const switchAt of ['initial inventory', 'command polling']) {
     const context = {
       sdCardRefreshTarget: null, sdCardLoadSequence: 0, sdCardDisplaySelectionVersion: 0,
       requireSdCardCommandAvailable, sdCardDeletionActive: { value: false }, sdCardInventoryRefreshing: { value: false },
+      galleryBulkSaveBusy: { value: false },
       activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} }, displaySdCardScope: { value: null },
       selectedDisplayEndpoint: suffix => selected + suffix,
       sdSaveCommandEndpoint,
@@ -49,7 +51,7 @@ for (const switchAt of ['initial inventory', 'command polling']) {
       fetch: async url => { requests.push(url); return { ok: true, json: async () => ({ id: 'refresh', display_id: 'original' }) } },
       window: { setTimeout: callback => { selected = '/displays/other'; context.displaySdCardLoading.value = false; callback() } },
     }
-    const refresh = vm.runInNewContext(`(${refreshFunction.trim()})`, context)
+    const refresh = vm.runInNewContext(`${commandGuardFunction}; (${refreshFunction.trim()})`, context)
     await assert.rejects(refresh(), /Active display changed/)
     assert.deepEqual(requests, switchAt === 'initial inventory' ? [] : ['/displays/original/display-sd-card/refresh'])
     assert.equal(context.displaySdCardLoading.value, false)
@@ -62,6 +64,7 @@ for (const delay of [12000, Infinity]) {
     const context = {
       sdCardRefreshTarget: null, sdCardLoadSequence: 0, sdCardDisplaySelectionVersion: 0,
       requireSdCardCommandAvailable, sdCardDeletionActive: { value: false }, sdCardInventoryRefreshing: { value: false },
+      galleryBulkSaveBusy: { value: false },
       activeDisplayOnline: { value: true }, displaySdCardLoading: { value: false }, displaySdCard: { value: {} }, displaySdCardScope: { value: null },
       selectedDisplayEndpoint: suffix => '/displays/original' + suffix,
       sdSaveCommandEndpoint,
@@ -71,7 +74,7 @@ for (const delay of [12000, Infinity]) {
         : { status: 'complete', report_version: 2 } }),
       window: { setTimeout: (callback, ms) => { elapsed += ms; callback() } },
     }
-    const refresh = vm.runInNewContext(`(${refreshFunction.trim()})`, context)
+    const refresh = vm.runInNewContext(`${commandGuardFunction}; (${refreshFunction.trim()})`, context)
     if (Number.isFinite(delay)) {
       assert.equal((await refresh()).report_version, 2)
       assert.ok(elapsed >= delay)

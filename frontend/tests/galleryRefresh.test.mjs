@@ -16,6 +16,7 @@ const inventoryCode = functions('async function fetchDisplaySdCardReport()', 'as
 const manualRefreshCode = functions('async function refreshCreationLibrarySdCardStatus()', 'async function toggleMetadataPanePin()')
 const imageSaveCode = functions('async function saveImageToDisplaySdCard(', 'async function saveContextMenuImageToDisplaySdCard()')
 const rotationCode = functions('async function loadDisplaySettings()', 'async function setVideoRotation(')
+const commandGuardCode = functions('function requireDisplayCommandAvailable()', 'let galleryBulkSaveTimer = null')
 
 function deferred() {
   let resolve, reject
@@ -41,6 +42,7 @@ function setup() {
     displaySdCard: { value: report(1, 'initial.jpg') },
     displaySdCardScope: { value: '/displays/one' }, displaySdCardLoading: { value: false },
     sdCardDeletionActive: { value: false }, sdCardDeleteTarget: { value: null },
+    galleryBulkSaveBusy: { value: false },
     sdCardInventoryRefreshing: { value: false },
     savingToDisplaySdCard: { value: false }, savingVideoToDisplaySdCard: { value: false },
     activeSDCardSave: { value: null },
@@ -51,7 +53,7 @@ function setup() {
     window: { setTimeout: callback => callback() },
     fetch: async () => assert.fail('Unexpected request'),
   })
-  vm.runInContext(galleryCode + inventoryCode + manualRefreshCode + imageSaveCode, ui)
+  vm.runInContext(commandGuardCode + galleryCode + inventoryCode + manualRefreshCode + imageSaveCode, ui)
   ui.select = id => {
     ui.scope = `/displays/${encodeURIComponent(id)}`
     ui.selectedRegisteredDisplay.value = { id }
@@ -64,6 +66,15 @@ function setup() {
   }
   return ui
 }
+
+test('a bulk save prevents an inventory refresh or single image save from sending a command', async () => {
+  const ui = setup()
+  ui.galleryBulkSaveBusy.value = true
+  await assert.rejects(ui.refreshDisplaySdCardInventory(), /bulk save to finish or cancel/)
+  await ui.saveImageToDisplaySdCard({ id: 'image' })
+  assert.match(ui.error.value, /bulk save to finish or cancel/)
+  assert.equal(ui.savingToDisplaySdCard.value, false)
+})
 
 for (const outcome of ['success', 'failure']) {
   test(`a delayed inventory poll ${outcome} cannot replace an explicit fresh report`, async () => {

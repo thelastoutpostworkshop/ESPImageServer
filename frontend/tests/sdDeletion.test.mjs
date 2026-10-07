@@ -8,6 +8,7 @@ import { requireSdCardCommandAvailable, waitForSdCardDeletion } from '../src/sdD
 const source = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
 const deletionCode = source.slice(source.indexOf('function displaySdCardMediaType('), source.indexOf('async function showSDCardFileOnDisplay('))
 const selectionWatcherCode = source.slice(source.indexOf('watch(activeDisplayId,'), source.indexOf('const displayMessage = computed('))
+const commandGuardCode = source.slice(source.indexOf('function requireDisplayCommandAvailable()'), source.indexOf('let galleryBulkSaveTimer = null'))
 
 function deferred() {
   let resolve
@@ -42,6 +43,13 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, onInve
     sdCardDeleteProgress: { value: null },
     sdCardDeletionActive: { get value() { return ui.deletingSdCardFile.value || ui.deletingSdCardFiles.value } },
     sdCardInventoryRefreshing: { value: false },
+    galleryBulkSaveBusy: { value: false },
+    galleryBulkSaveRequestVersion: 0,
+    galleryBulkSave: { value: null },
+    galleryBulkSaveError: { value: '' },
+    galleryBulkSavePollError: { value: '' },
+    selectedCreationKeys: { value: [] },
+    loadGalleryBulkSave: () => {},
     savingToDisplaySdCard: { value: false },
     savingVideoToDisplaySdCard: { value: false },
     displayingSdCardFile: { value: '' },
@@ -116,7 +124,7 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, onInve
       return { ok: true, json: async () => ({ status: result, detail: result === 'complete' ? 'Deleted' : 'Could not delete' }) }
     },
   })
-  vm.runInContext(deletionCode + '\n' + selectionWatcherCode, ui)
+  vm.runInContext(commandGuardCode + deletionCode + '\n' + selectionWatcherCode, ui)
   ui.selectDisplay = (id, { installInventory = true } = {}) => {
     const previousId = ui.activeDisplayId.value
     scope = id ? `/displays/${encodeURIComponent(id)}` : ''
