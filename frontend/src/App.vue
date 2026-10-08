@@ -2825,6 +2825,9 @@ async function useSavedImageSettings(metadata, setting) {
 function animateSavedImage(savedImage) {
   if (!savedImage) return
   savedImageContextMenu.value = false
+  const supportsImage = selectedVideoModelCapabilities.value?.supports_image
+    ?? ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev'].includes(videoModelId.value)
+  if (!supportsImage) videoModelId.value = 'ltx-2b-0.9.6-distilled'
   videoSourceImage.value = savedImage
   videoPrompt.value = 'Subtle natural motion, gentle cinematic camera movement'
   page.value = 'video'
