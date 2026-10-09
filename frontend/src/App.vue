@@ -53,7 +53,7 @@ function loadGenerationSettings() {
     return {
       prompt: typeof saved.prompt === 'string' ? saved.prompt : 'A cheerful small robot holding a paintbrush, friendly illustration',
       steps: Number.isInteger(saved.steps) ? saved.steps : 1,
-      seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed(),
+      seed: saved.seed === null || saved.seed === '' ? '' : Number.isInteger(saved.seed) && saved.seed >= 0 && saved.seed <= 4_294_967_295 ? saved.seed : createRandomSeed(),
       randomizeSeed: saved.randomizeSeed === true,
       negativePrompt: typeof saved.negativePrompt === 'string' ? saved.negativePrompt : '',
       modelId: typeof saved.modelId === 'string' ? saved.modelId : ''
@@ -77,9 +77,12 @@ function loadVideoGenerationSettings() {
       negativePrompt: typeof saved.negativePrompt === 'string' ? saved.negativePrompt : null,
       frames: Number.isInteger(saved.frames) && saved.frames >= 9 && saved.frames <= 249 && (saved.frames - 1) % 8 === 0 ? saved.frames : 25,
       fps: [8, 12, 15, 24].includes(saved.fps) ? saved.fps : 8,
+      durationPresetSeconds: saved.durationPresetSeconds,
+      showAdvancedFrames: saved.showAdvancedFrames === true,
+      sourceImageId: modelId !== 'wan-2.1-t2v-1.3b' && typeof saved.sourceImageId === 'string' && saved.sourceImageId.length > 0 && saved.sourceImageId.length <= 64 ? saved.sourceImageId : null,
       steps: validSteps.includes(saved.steps) ? saved.steps : modelId === 'ltx-2b-0.9.6-distilled' ? 8 : 30,
       modelId,
-      seed: Number.isInteger(saved.seed) ? saved.seed : createRandomSeed(),
+      seed: saved.seed === null || saved.seed === '' ? '' : Number.isInteger(saved.seed) && saved.seed >= 0 && saved.seed <= 4_294_967_295 ? saved.seed : createRandomSeed(),
       randomizeSeed: saved.randomizeSeed === true
     }
   } catch {
@@ -130,15 +133,15 @@ const savedVideoContextMenuPosition = ref([0, 0])
 const contextMenuSavedVideo = ref(null)
 const savingVideoToDisplaySdCard = ref(false)
 const showingVideoOnDisplay = ref(false)
-const videoSourceImage = ref(null)
+const videoSourceImage = ref(savedVideoGenerationSettings.sourceImageId ? { id: savedVideoGenerationSettings.sourceImageId } : null)
 const videoPrompt = ref(savedVideoGenerationSettings.prompt)
 const videoNegativePrompt = ref(savedVideoGenerationSettings.negativePrompt)
 const videoSeed = ref(savedVideoGenerationSettings.seed)
 const randomizeVideoSeed = ref(savedVideoGenerationSettings.randomizeSeed)
 const videoFrames = ref(savedVideoGenerationSettings.frames)
 const videoFps = ref(savedVideoGenerationSettings.fps)
-const videoDurationPresetSeconds = ref(null)
-const showAdvancedVideoFrames = ref(false)
+const videoDurationPresetSeconds = ref(savedVideoGenerationSettings.durationPresetSeconds ?? null)
+const showAdvancedVideoFrames = ref(savedVideoGenerationSettings.showAdvancedFrames === true)
 const videoSteps = ref(savedVideoGenerationSettings.steps)
 const videoModelId = ref(savedVideoGenerationSettings.modelId)
 const generatingVideo = ref(false)
@@ -548,7 +551,13 @@ function matchingVideoDurationPreset() {
   return videoDurationPresets.find(preset => isVideoDurationAvailable(preset.seconds) && Number(videoFrames.value) === validVideoFramesForDuration(preset.seconds))?.seconds ?? null
 }
 
-videoDurationPresetSeconds.value = matchingVideoDurationPreset()
+if (savedVideoGenerationSettings.durationPresetSeconds === undefined) {
+  videoDurationPresetSeconds.value = matchingVideoDurationPreset()
+} else if (!videoDurationPresets.some(preset => preset.seconds === videoDurationPresetSeconds.value)
+  || !isVideoDurationAvailable(videoDurationPresetSeconds.value)
+  || Number(videoFrames.value) !== validVideoFramesForDuration(videoDurationPresetSeconds.value)) {
+  videoDurationPresetSeconds.value = null
+}
 const videoModels = [
   { title: 'LTX-Video 2B distilled — fast', value: 'ltx-2b-0.9.6-distilled', description: 'Best for quick short animations. Uses less graphics-card memory.' },
   { title: 'LTX-Video 2B quality — detailed', value: 'ltx-2b-0.9.6-dev', description: 'Best when detail matters more than speed. Much slower and needs more graphics-card memory.' },
@@ -841,20 +850,23 @@ watch([prompt, negativePrompt, steps, seed, randomizeImageSeed, activeModelId], 
     randomizeSeed: randomizeImageSeed.value,
     modelId: activeModelId.value
   }))
-})
+}, { flush: 'sync' })
 
-watch([videoPrompt, videoNegativePrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed, randomizeVideoSeed], () => {
+watch([videoPrompt, videoNegativePrompt, videoFrames, videoFps, videoSteps, videoModelId, videoSeed, randomizeVideoSeed, videoSourceImage, showAdvancedVideoFrames, videoDurationPresetSeconds], () => {
   window.localStorage.setItem(videoGenerationSettingsKey, JSON.stringify({
     prompt: videoPrompt.value,
     negativePrompt: videoNegativePrompt.value,
     frames: Number(videoFrames.value),
     fps: Number(videoFps.value),
+    durationPresetSeconds: videoDurationPresetSeconds.value,
+    showAdvancedFrames: showAdvancedVideoFrames.value,
+    sourceImageId: videoSourceImage.value?.id || null,
     steps: Number(videoSteps.value),
     modelId: videoModelId.value,
     seed: videoSeed.value === '' ? null : Number(videoSeed.value),
     randomizeSeed: randomizeVideoSeed.value
-}))
-})
+  }))
+}, { flush: 'sync' })
 
 watch(videoModelId, modelId => {
   videoSteps.value = modelId === 'ltx-2b-0.9.6-dev' || modelId === 'wan-2.1-t2v-1.3b' ? 30 : 8
@@ -1728,6 +1740,28 @@ async function loadSavedImages({ throwOnError = false } = {}) {
 }
 
 let savedVideosLoadSequence = 0
+async function restoreVideoSourceImage() {
+  const sourceImageId = videoSourceImage.value?.id
+  if (!sourceImageId) return
+  const supportsImage = selectedVideoModelCapabilities.value?.supports_image
+    ?? ['ltx-2b-0.9.6-distilled', 'ltx-2b-0.9.6-dev'].includes(videoModelId.value)
+  if (!supportsImage) {
+    videoSourceImage.value = null
+    return
+  }
+  const savedImage = savedImages.value.find(image => image.id === sourceImageId)
+  if (savedImage) {
+    videoSourceImage.value = savedImage
+    return
+  }
+  try {
+    const response = await fetch(`/saved-images/${encodeURIComponent(sourceImageId)}/thumbnail`, { cache: 'no-store', signal: AbortSignal.timeout(4000) })
+    if (response.status === 404 && videoSourceImage.value?.id === sourceImageId) videoSourceImage.value = null
+  } catch {
+    // A temporary connection failure must not discard the saved reference image.
+  }
+}
+
 async function loadSavedVideos({ throwOnError = false } = {}) {
   const sequence = ++savedVideosLoadSequence
   try {
@@ -3309,6 +3343,7 @@ onMounted(async () => {
   await loadModels()
   await loadVideoModels()
   await loadSavedImages()
+  await restoreVideoSourceImage()
   await loadSavedVideos()
   await loadAppSettings()
   await loadGenerationQueue()
