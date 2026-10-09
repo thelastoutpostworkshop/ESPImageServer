@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import { generationJobDetail, generationHasMeasuredProgress } from './generationStatus.js'
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
 import AboutPage from './components/AboutPage.vue'
+import MakerTools from './components/MakerTools.vue'
 import BoardShopping from './components/BoardShopping.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import AppUpdateNotice from './components/AppUpdateNotice.vue'
@@ -12,6 +13,7 @@ import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.j
 import { requireSdCardCommandAvailable, waitForSdCardDeletion } from './sdDeletion.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
 import { saveThemePreference } from './themePreference.js'
+import { supportLinks } from './makerResources.js'
 import { gallerySelectionKey, selectAllGalleryItems, selectedGalleryItems, filterGallerySelection, reconcileGallerySelection, isGalleryBulkSaveActive, galleryBulkSaveProgressMessage } from './galleryBulkSave.js'
 
 let displaySelectionInitialized = false
@@ -3517,6 +3519,12 @@ onUnmounted(() => {
         <v-list-item prepend-icon="mdi-brain" title="Models" :active="page === 'models'" @click="navigate('models')" />
         <v-list-item prepend-icon="mdi-cog-outline" title="Settings" :active="page === 'settings'" @click="navigate('settings')" />
         <v-list-item prepend-icon="mdi-information-outline" title="About" :active="page === 'about'" @click="navigate('about')" />
+        <v-divider class="my-2" />
+        <v-list-subheader>Resources</v-list-subheader>
+        <v-list-item prepend-icon="mdi-tools" title="Maker Tools" :active="page === 'maker-tools'" @click="navigate('maker-tools')" />
+        <v-list-item v-for="link in supportLinks" :key="link.href" :prepend-icon="link.icon" :title="link.title" :href="link.href" target="_blank" rel="noopener noreferrer">
+          <template #append><v-icon icon="mdi-open-in-new" size="16" /></template>
+        </v-list-item>
       </v-list>
       <template #append>
         <v-divider />
@@ -4660,6 +4668,8 @@ onUnmounted(() => {
         </v-card>
 
         <AboutPage v-if="page === 'about'" :server-info="serverInfo" :health="health" :display-message="displayMessage" @navigate="navigate" />
+
+        <MakerTools v-if="page === 'maker-tools'" />
 
         <v-card v-if="page === 'display-experience'" class="settings-card">
           <v-card-title class="text-h5 pt-5">Display Experience</v-card-title>
