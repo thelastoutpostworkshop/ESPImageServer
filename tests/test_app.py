@@ -386,6 +386,93 @@ def test_server_side_display_rotation_generates_for_rotated_aspect_ratio(tmp_pat
     assert Image.open(BytesIO(generated.content)).size == (480, 272)
 
 
+@pytest.mark.parametrize("display_kind", ["registered", "legacy", "default"])
+def test_queued_image_jobs_keep_submitted_rotation_during_model_preparation(display_kind) -> None:
+    class PreparingGenerator(FakeGenerator):
+        def __init__(self):
+            super().__init__()
+            self.preparation_started = Event()
+            self.resume_preparation = Event()
+            self.activations = 0
+            self.sizes = []
+
+        def activate_model(self, settings, progress=None):
+            self.activations += 1
+            if self.activations == 1:
+                self.preparation_started.set()
+                assert self.resume_preparation.wait(5), "Model preparation was not released"
+            super().activate_model(settings, progress)
+
+        def generate(self, *args, **kwargs):
+            image = super().generate(*args, **kwargs)
+            self.sizes.append(self.last_size)
+            return image
+
+    generator = PreparingGenerator()
+    queue = GenerationQueue()
+    app = create_app(
+        Settings(output_width=480, output_height=272), generator,
+        generation_queue=queue, enable_mdns=False,
+    )
+    try:
+        with TestClient(app) as client:
+            payload = {"prompt": "a tiny robot"}
+            rotation_path = "/display-settings"
+            display_profile = {
+                "name": "Original display", "width": 480, "height": 272,
+                "firmware_version": "1.0.0",
+            }
+            if display_kind == "registered":
+                display = client.post("/displays/register", json={
+                    **display_profile, "board_target": "JC4827W543",
+                    "hardware_id": "aa:bb:cc:dd:ee:91",
+                }).json()
+                payload["display_ids"] = [display["id"]]
+                rotation_path = f"/displays/{display['id']}/display-settings"
+            elif display_kind == "legacy":
+                assert client.post("/display", json=display_profile).status_code == 201
+
+            first = client.post("/generation-jobs", json=payload)
+            assert first.status_code == 202
+            assert generator.preparation_started.wait(2)
+            first_id = first.json()["id"]
+            assert client.get(f"/generation-jobs/{first_id}").json()["status"] == "running"
+
+            # The running job has not chosen its generation canvas yet. The
+            # second job must retain the new rotation while waiting behind it.
+            assert client.put(rotation_path, json={"rotation": 90}).status_code == 200
+            second = client.post("/generation-jobs", json=payload)
+            assert second.status_code == 202
+            second_id = second.json()["id"]
+            assert client.get(f"/generation-jobs/{second_id}").json()["status"] == "queued"
+            assert client.put(rotation_path, json={"rotation": 180}).status_code == 200
+            if display_kind != "registered":
+                # Legacy profiles can be replaced, and a previously absent
+                # display can appear, while submitted work is still waiting.
+                assert client.post("/display", json={
+                    **display_profile, "name": "New display", "width": 240, "height": 320,
+                }).status_code == 201
+            generator.resume_preparation.set()
+
+            for job_id, rotation in [(first_id, 0), (second_id, 90)]:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    job = client.get(f"/generation-jobs/{job_id}").json()
+                    if job["status"] in {"complete", "failed", "cancelled"}:
+                        break
+                    time.sleep(0.01)
+                assert job["status"] == "complete", job
+                assert job["metadata"]["rotation"] == rotation
+                jpeg = client.get(f"/generation-jobs/{job_id}/image")
+                assert jpeg.status_code == 200
+                assert Image.open(BytesIO(jpeg.content)).size == (480, 272)
+
+            assert generator.sizes == [(512, 288), (288, 512)]
+    finally:
+        generator.resume_preparation.set()
+        queue._executor.shutdown(wait=True, cancel_futures=True)
+
+
 def test_ssd_1b_uses_a_larger_aspect_matched_generation_canvas() -> None:
     generator = FakeGenerator()
     app = create_app(Settings(model_id="segmind/SSD-1B"), generator, enable_mdns=False)

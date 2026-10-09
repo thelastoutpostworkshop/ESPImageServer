@@ -36,7 +36,7 @@ from .generation_capabilities import GenerationCapabilities
 from .app_settings import AppSettingsStore
 from .app_updates import AppUpdateChecker
 from .firmware_updates import FirmwareUpdateChecker
-from .display import ActiveDisplayStore
+from .display import ActiveDisplayStore, DisplayProfile
 from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandBusyError, DisplayCommandStore
 from .sd_save_batches import SDSaveBatchStore
 from .display_registry import (
@@ -1857,6 +1857,7 @@ def create_app(
         target_displays: list[DisplayDevice] | None = None,
         target_display_ids: list[str] | None = None,
         broadcast_aspect_mode: str = "crop",
+        legacy_display_snapshot: tuple[DisplayProfile | None, int] | None = None,
     ) -> bytes:
         generation_started_at = perf_counter()
 
@@ -1884,16 +1885,21 @@ def create_app(
             else [targets]
         )
         source_aspect_mode = "crop" if broadcast_aspect_mode == "separate" else broadcast_aspect_mode
+        legacy_profile, legacy_rotation = (
+            legacy_display_snapshot
+            if legacy_display_snapshot is not None
+            else (active_display_store.get(), display_settings_store.get_rotation())
+        )
         first_preview: bytes | None = None
         first_profile: DisplayDevice | None = None
-        first_rotation = display_settings_store.get_rotation()
+        first_rotation = legacy_rotation
 
         for group_index, group in enumerate(target_groups, start=1):
             ensure_not_cancelled()
-            profile = group[0] if group else active_display_store.get()
+            profile = group[0] if group else legacy_profile
             output_width = profile.width if profile else settings.output_width
             output_height = profile.height if profile else settings.output_height
-            rotation = profile.rotation if isinstance(profile, DisplayDevice) else display_settings_store.get_rotation()
+            rotation = profile.rotation if isinstance(profile, DisplayDevice) else legacy_rotation
             artwork_width, artwork_height = (
                 (output_height, output_width) if rotation in {90, 270} else (output_width, output_height)
             )
@@ -2038,6 +2044,12 @@ def create_app(
         )
         target_display_ids = [display.id for display in target_displays] if request.display_ids is not None else None
         job_model_id = request.model_id or active_model_id
+        # Match registered profiles: waiting jobs keep the display settings they
+        # had when submitted, including the absence of an announced display.
+        legacy_display_snapshot = (
+            (active_display_store.get(), display_settings_store.get_rotation())
+            if not target_displays else None
+        )
         try:
             job_settings = model_settings(settings, job_model_id)
         except ValueError as exc:
@@ -2066,6 +2078,7 @@ def create_app(
                     target_displays,
                     target_display_ids,
                     broadcast_aspect_mode,
+                    legacy_display_snapshot,
                 ),
             )[1],
             image_metadata,

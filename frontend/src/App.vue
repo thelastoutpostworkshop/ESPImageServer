@@ -110,6 +110,7 @@ const displayConnectedMessage = ref('')
 const generationQueueSnackbar = ref(false)
 const generationQueueSnackbarMessage = ref('')
 const displayRotation = ref(0)
+const savingDisplayRotation = ref(false)
 const videoRotation = ref(0)
 const savingVideoRotation = ref(false)
 const models = ref([])
@@ -1221,7 +1222,8 @@ async function loadDisplaySettings() {
 }
 
 async function setDisplayRotation(rotation) {
-  if (!display.value?.connected) return
+  if (!display.value?.connected || savingDisplayRotation.value) return
+  savingDisplayRotation.value = true
   const scope = selectedDisplayEndpoint('')
   const selectionVersion = sdCardDisplaySelectionVersion
   const previousRotation = displayRotation.value
@@ -1251,6 +1253,8 @@ async function setDisplayRotation(rotation) {
     if (scope !== selectedDisplayEndpoint('') || selectionVersion !== sdCardDisplaySelectionVersion) return
     displayRotation.value = previousRotation
     error.value = `Could not save image rotation: ${requestError.message}`
+  } finally {
+    savingDisplayRotation.value = false
   }
 }
 
@@ -3070,6 +3074,7 @@ function showQueueAddedFeedback(kind, queuePosition) {
 }
 
 async function generate() {
+  if (savingDisplayRotation.value) return
   if (health.value?.device !== 'cuda') {
     error.value = 'Generation requires a working NVIDIA GPU with CUDA.'
     return
@@ -4189,8 +4194,9 @@ onUnmounted(() => {
                 :label="display?.connected ? `Image rotation for ${display.name}` : 'Image rotation'"
                 variant="outlined"
                 density="comfortable"
-                :disabled="generationBusy || Boolean(displays.length && !display?.connected)"
-                :hint="display?.connected ? activeDisplayOnline ? 'Applied by ESPImageServer before the JPEG is sent. Your ESP32 firmware does not need to change.' : 'Saved by ESPImageServer and used when this display next receives an image.' : 'Choose one display to change its rotation.'"
+                :loading="savingDisplayRotation"
+                :disabled="savingDisplayRotation || Boolean(displays.length && !display?.connected)"
+                :hint="display?.connected ? 'Each image job captures the rotation selected when it is added to the queue.' : 'Choose one display to change its rotation.'"
                 persistent-hint
                 class="mb-4"
                 @update:model-value="setDisplayRotation"
@@ -4240,7 +4246,7 @@ onUnmounted(() => {
                 </v-col>
               </v-row>
               <div class="generation-form-actions">
-                <v-btn type="submit" color="primary" :disabled="health?.device !== 'cuda' || models.length === 0" prepend-icon="mdi-image-plus">
+                <v-btn type="submit" color="primary" :disabled="savingDisplayRotation || health?.device !== 'cuda' || models.length === 0" prepend-icon="mdi-image-plus">
                   {{ generationBusy ? 'Add image to queue' : 'Generate image' }}
                 </v-btn>
                 <v-btn v-if="generating" color="warning" variant="tonal" :loading="cancelling" :disabled="cancelling" prepend-icon="mdi-cancel" @click="cancelGeneration">

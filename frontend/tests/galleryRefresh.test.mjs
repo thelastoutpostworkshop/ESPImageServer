@@ -16,6 +16,7 @@ const inventoryCode = functions('async function fetchDisplaySdCardReport()', 'as
 const manualRefreshCode = functions('async function refreshCreationLibrarySdCardStatus()', 'async function toggleMetadataPanePin()')
 const imageSaveCode = functions('async function saveImageToDisplaySdCard(', 'async function saveContextMenuImageToDisplaySdCard()')
 const rotationCode = functions('async function loadDisplaySettings()', 'async function setVideoRotation(')
+const generateCode = functions('async function generate()', 'async function cancelGeneration()')
 const commandGuardCode = functions('function requireDisplayCommandAvailable()', 'let galleryBulkSaveTimer = null')
 
 function deferred() {
@@ -46,7 +47,7 @@ function setup() {
     sdCardInventoryRefreshing: { value: false },
     savingToDisplaySdCard: { value: false }, savingVideoToDisplaySdCard: { value: false },
     activeSDCardSave: { value: null },
-    displayRotation: { value: 0 }, videoRotation: { value: 0 },
+    displayRotation: { value: 0 }, savingDisplayRotation: { value: false }, videoRotation: { value: 0 },
     error: { value: '' }, status: { value: '' }, metadataError: { value: '' },
     requireSdCardCommandAvailable, sdSaveCommandEndpoint, sdSaveProgressMessage,
     showSDCardSaveStatus: () => {}, showSDCardSnackbar: () => {},
@@ -256,11 +257,65 @@ test('rotation saves reload gallery identities only after the server confirms th
   }
   const changed = ui.setDisplayRotation(90)
   assert.equal(ui.displayRotation.value, 90)
+  assert.equal(ui.savingDisplayRotation.value, true)
   assert.deepEqual(requests.map(request => request.method), ['PUT'])
   put.resolve(response({ rotation: 90 }))
   await changed
   assert.deepEqual(requests.map(request => request.method), ['PUT', 'GET'])
   assert.equal(ui.savedImages.value[0].sd_card_content_keys[0], 'rotated-key')
+  assert.equal(ui.savingDisplayRotation.value, false)
+})
+
+test('rotation can change during generation, but the next image waits until the save finishes', async () => {
+  const ui = setup(), put = deferred(), requests = []
+  Object.assign(ui, {
+    health: { value: { device: 'cuda' } }, generating: { value: true },
+    generationStage: { value: 'Generating current image' }, generationProgress: { value: 40 },
+    models: { value: [{ id: 'image-model' }] }, activeModelId: { value: 'image-model' },
+    prompt: { value: 'Next image' }, negativePrompt: { value: '' }, steps: { value: 25 },
+    seed: { value: 7 }, randomizeImageSeed: { value: false },
+    hasDisplayTargets: { value: true }, selectedTargetDisplayIds: { value: ['one'] },
+    activeJobId: { value: 'running-image' }, activeImageJobRunning: { value: true },
+    cancelling: { value: false }, showQueueAddedFeedback: () => {}, loadGenerationQueue: async () => {},
+  })
+  vm.runInContext(rotationCode + generateCode, ui)
+  ui.fetch = async (url, options = {}) => {
+    requests.push({ url, method: options.method || 'GET', body: options.body })
+    if (options.method === 'PUT') return put.promise
+    // A terminal fixture stops polling without starting real generation.
+    if (url === '/generation-jobs') return response({ id: 'next-image', status: 'cancelled' })
+    return response([])
+  }
+  const changed = ui.setDisplayRotation(90)
+  await ui.generate()
+  await ui.setDisplayRotation(180)
+  assert.equal(ui.displayRotation.value, 90)
+  assert.deepEqual(requests.map(request => request.method), ['PUT'])
+  put.resolve(response({ rotation: 90 }))
+  await changed
+  await ui.generate()
+  const queued = requests.filter(request => request.url === '/generation-jobs')
+  assert.equal(queued.length, 1)
+  assert.deepEqual(JSON.parse(queued[0].body).display_ids, ['one'])
+  assert.equal(ui.displays.value[0].rotation, 90)
+  assert.equal(ui.generating.value, true)
+  assert.equal(ui.activeJobId.value, 'running-image')
+  assert.equal(ui.generationProgress.value, 40)
+  assert.equal(ui.generationStage.value, 'Generating current image')
+})
+
+test('a failed rotation save restores the choice and unlocks the next attempt', async () => {
+  const ui = setup()
+  vm.runInContext(rotationCode, ui)
+  ui.fetch = async () => { throw new Error('Save failed') }
+  await ui.setDisplayRotation(90)
+  assert.equal(ui.displayRotation.value, 0)
+  assert.equal(ui.savingDisplayRotation.value, false)
+  assert.match(ui.error.value, /Save failed/)
+  ui.fetch = async (_url, options = {}) => response(options.method === 'PUT' ? { rotation: 180 } : [])
+  await ui.setDisplayRotation(180)
+  assert.equal(ui.displayRotation.value, 180)
+  assert.equal(ui.savingDisplayRotation.value, false)
 })
 
 for (const outcome of ['success', 'failure']) {
@@ -293,6 +348,7 @@ for (const outcome of ['success', 'failure']) {
     else old.reject(new Error('Old PUT failed'))
     await changed
     assert.equal(ui.displayRotation.value, 180)
+    assert.equal(ui.savingDisplayRotation.value, false)
     assert.equal(ui.error.value, 'New display error')
     assert.deepEqual(requests, ['/displays/one/display-settings'])
   })
