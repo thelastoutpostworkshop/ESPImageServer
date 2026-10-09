@@ -4060,7 +4060,17 @@ onUnmounted(() => {
               <v-list-item-subtitle class="generation-job-detail font-weight-medium">{{ queueJobModelLabel(job) }}</v-list-item-subtitle>
               <v-list-item-subtitle class="generation-job-detail">{{ generationJobDetail(job) }}</v-list-item-subtitle>
               <v-list-item-subtitle>{{ queueJobDisplayLabel(job) }}</v-list-item-subtitle>
-              <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || job.status === 'cancelling' || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" :title="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
+              <template #append>
+                <v-btn
+                  :prepend-icon="job.status === 'queued' ? 'mdi-close-circle-outline' : 'mdi-stop-circle-outline'"
+                  variant="tonal" color="warning" size="small"
+                  :loading="cancellingQueueJobId === job.id"
+                  :disabled="!job.cancellable || job.status === 'cancelling' || Boolean(cancellingQueueJobId)"
+                  :aria-label="job.status === 'queued' ? `Cancel queued ${job.kind}` : `Stop ${job.kind} generation`"
+                  :title="job.status === 'queued' ? `Cancel queued ${job.kind}` : `Stop ${job.kind} generation`"
+                  @click="cancelQueuedGeneration(job)"
+                >{{ job.status === 'cancelling' ? 'Stopping…' : job.status === 'queued' ? 'Cancel' : 'Stop' }}</v-btn>
+              </template>
               <v-progress-linear v-if="job.status !== 'queued'" class="mt-2" :model-value="job.progress" :indeterminate="!generationHasMeasuredProgress(job)" color="primary" height="6" rounded />
             </v-list-item>
           </v-list>
@@ -5021,7 +5031,17 @@ onUnmounted(() => {
                 <v-list-item-title>{{ job.kind === 'video' ? 'Video' : 'Image' }} · {{ job.metadata?.label || 'Generation request' }}</v-list-item-title>
                 <v-list-item-subtitle class="generation-job-detail font-weight-medium">{{ queueJobModelLabel(job) }}</v-list-item-subtitle>
                 <v-list-item-subtitle class="generation-job-detail">{{ generationJobDetail(job) }}</v-list-item-subtitle>
-                <template #append><v-btn icon="mdi-cancel" variant="text" color="warning" size="small" :loading="cancellingQueueJobId === job.id" :disabled="!job.cancellable || job.status === 'cancelling' || Boolean(cancellingQueueJobId)" :aria-label="`Cancel ${job.kind} job`" @click="cancelQueuedGeneration(job)" /></template>
+                <template #append>
+                  <v-btn
+                    :prepend-icon="job.status === 'queued' ? 'mdi-close-circle-outline' : 'mdi-stop-circle-outline'"
+                    variant="tonal" color="warning" size="small"
+                    :loading="cancellingQueueJobId === job.id"
+                    :disabled="!job.cancellable || job.status === 'cancelling' || Boolean(cancellingQueueJobId)"
+                    :aria-label="job.status === 'queued' ? `Cancel queued ${job.kind}` : `Stop ${job.kind} generation`"
+                    :title="job.status === 'queued' ? `Cancel queued ${job.kind}` : `Stop ${job.kind} generation`"
+                    @click="cancelQueuedGeneration(job)"
+                  >{{ job.status === 'cancelling' ? 'Stopping…' : job.status === 'queued' ? 'Cancel' : 'Stop' }}</v-btn>
+                </template>
               </v-list-item>
             </v-list>
             <div v-else class="pa-4 text-medium-emphasis">No image or video jobs are waiting.</div>
