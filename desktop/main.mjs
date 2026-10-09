@@ -9,6 +9,7 @@ import { WifiSetup } from './wifi.mjs'
 import { FirmwareLibrary } from './firmware-library.mjs'
 import { FirmwareReleases } from './firmware-releases.mjs'
 import { GenerationSetup } from './generation-setup.mjs'
+import { createGenerationCloseGuard, generationCloseDialog } from './generation-close.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
 const runtime = runtimePaths({ desktopDirectory, resourcesPath: process.resourcesPath, packaged: app.isPackaged })
@@ -21,6 +22,8 @@ const firmwareReleases = new FirmwareReleases(path.join(app.getPath('userData'),
 let mainWindow
 let saveWindowStateTimer
 let isQuitting = false
+let workspaceReady = false
+let closeAttempt = null
 const serverLogLines = []
 
 const defaultWindowState = { width: 1440, height: 940, isMaximized: false }
@@ -106,6 +109,76 @@ const serverRuntime = new ServerRuntime(runtime, {
   }
 })
 const generationSetup = new GenerationSetup({ onStatus: updateSplash, onLog: appendServerLog })
+const stopsGenerationOnClose = attempt => Boolean(serverRuntime.child) &&
+  (attempt.quit || process.platform !== 'darwin')
+const generationCloseGuard = createGenerationCloseGuard({
+  readJobs: async () => {
+    if (!workspaceReady) return []
+    const response = await fetch('http://127.0.0.1:8000/generation-queue', { signal: AbortSignal.timeout(2000) })
+    if (!response.ok) throw new Error(`Could not check the generation queue (${response.status}).`)
+    return response.json()
+  },
+  confirm: async ({ unknown }) => {
+    const attempt = closeAttempt
+    attempt.confirmedStopsGeneration = stopsGenerationOnClose(attempt)
+    const options = generationCloseDialog({ unknown, stopsGeneration: attempt.confirmedStopsGeneration,
+      closesApplication: attempt.quit || process.platform !== 'darwin' })
+    const parent = attempt.window && !attempt.window.isDestroyed() ? attempt.window
+      : mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+    const result = await (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options))
+    return result.response === 1
+  },
+  onError: error => console.warn('Could not confirm application close:', error.message)
+})
+
+function showFirmwareCloseWarning(window) {
+  dialog.showMessageBoxSync(window, { type: 'info', message: 'Firmware installation is in progress.', detail: 'Wait for the result before closing ESPImageServer.' })
+}
+
+function requestGenerationClose({ window, quit = false } = {}) {
+  if (closeAttempt) {
+    closeAttempt.quit ||= quit
+    closeAttempt.window ||= window
+    return
+  }
+  const attempt = { window, quit, confirmedStopsGeneration: null }
+  closeAttempt = attempt
+  void (async () => {
+    for (;;) {
+      if (!await generationCloseGuard.request()) return
+      // A macOS window-only confirmation does not approve stopping its server
+      // if a Quit request arrives while that confirmation is open.
+      if (attempt.confirmedStopsGeneration === false && stopsGenerationOnClose(attempt)) {
+        attempt.confirmedStopsGeneration = null
+        generationCloseGuard.reset()
+        continue
+      }
+      if (attempt.quit && wifiSetup.running) {
+        wifiSetup.cancel()
+        await wifiSetup.completion
+        if (attempt.confirmedStopsGeneration === false && stopsGenerationOnClose(attempt)) {
+          attempt.confirmedStopsGeneration = null
+          generationCloseGuard.reset()
+          continue
+        }
+      }
+      // USB work may have started while the generation dialog was open.
+      if (firmwareInstaller.state.busy) {
+        generationCloseGuard.reset()
+        if (!attempt.quit && attempt.window && !attempt.window.isDestroyed()) showFirmwareCloseWarning(attempt.window)
+        return
+      }
+      closeAttempt = null
+      if (attempt.quit) app.quit()
+      else if (attempt.window && !attempt.window.isDestroyed()) attempt.window.close()
+      else generationCloseGuard.reset()
+      return
+    }
+  })().catch(error => {
+    generationCloseGuard.reset()
+    console.warn('Could not close ESPImageServer:', error.message)
+  }).finally(() => { if (closeAttempt === attempt) closeAttempt = null })
+}
 
 let setupChoice
 function chooseSetup(title, detail, actions) {
@@ -179,7 +252,10 @@ async function createWindow() {
     } catch { /* Invalid URLs must not open a desktop window. */ }
     return { action: 'deny' }
   })
-  window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = undefined
+    if (process.platform === 'darwin' && !isQuitting) generationCloseGuard.reset()
+  })
   if (savedPositionIsVisible(windowState)) mainWindow.setPosition(windowState.x, windowState.y)
   mainWindow.on('resize', scheduleWindowStateSave)
   mainWindow.on('move', scheduleWindowStateSave)
@@ -188,7 +264,13 @@ async function createWindow() {
   mainWindow.on('close', event => {
     if (firmwareInstaller.state.busy) {
       event.preventDefault()
-      dialog.showMessageBoxSync(mainWindow, { type: 'info', message: 'Firmware installation is in progress.', detail: 'Wait for the result before closing ESPImageServer.' })
+      generationCloseGuard.reset()
+      showFirmwareCloseWarning(window)
+      return
+    }
+    if (!generationCloseGuard.approved) {
+      event.preventDefault()
+      requestGenerationClose({ window })
       return
     }
     saveWindowState()
@@ -214,6 +296,7 @@ async function createWindow() {
       if (isQuitting || window.isDestroyed()) return
       updateSplash('Ready', 'Opening the workspace...')
       await window.loadURL('http://127.0.0.1:8000/#generate')
+      if (!isQuitting && !window.isDestroyed()) workspaceReady = true
     } else if (!isQuitting && !window.isDestroyed()) {
       throw new Error('The local image server did not become ready within three minutes. Check the startup log.')
     }
@@ -301,11 +384,16 @@ else {
     if (shutdownComplete) return
     if (isQuitting) { event.preventDefault(); return }
     if (wifiSetup.running) {
-      event.preventDefault(); wifiSetup.cancel()
-      void wifiSetup.completion.finally(() => app.quit())
+      event.preventDefault()
+      requestGenerationClose({ quit: true })
       return
     }
-    if (firmwareInstaller.state.busy) { event.preventDefault(); return }
+    if (firmwareInstaller.state.busy) { event.preventDefault(); generationCloseGuard.reset(); return }
+    if (!generationCloseGuard.approved) {
+      event.preventDefault()
+      requestGenerationClose({ quit: true })
+      return
+    }
     isQuitting = true
     setupChoice?.('quit'); setupChoice = null
     clearTimeout(saveWindowStateTimer)
