@@ -13,6 +13,17 @@ export const supportLinks = [
 
 export const makerTools = [
   {
+    id: 'espconnect',
+    title: 'ESPConnect',
+    description: 'Connect to ESP devices from a Chromium browser to inspect hardware, manage files, back up flash, and install firmware.',
+    icon: 'mdi-usb',
+    thumbnail: '/ui/maker-tools/espconnect.jpg',
+    href: 'https://thelastoutpostworkshop.github.io/ESPConnect/',
+    action: 'Open tool',
+    sourceHref: 'https://github.com/thelastoutpostworkshop/ESPConnect',
+    tutorialHref: 'https://www.youtube.com/watch?v=-nhDKzBxHiI',
+  },
+  {
     id: 'esp-pinout-explorer',
     title: 'ESP Pinout Explorer',
     description: 'Explore ESP board pinouts, pin functions, header labels, and wiring constraints before connecting your hardware.',
