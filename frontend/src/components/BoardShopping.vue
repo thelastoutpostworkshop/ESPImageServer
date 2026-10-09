@@ -31,7 +31,7 @@ const boards = [
     </template>
     <v-btn color="primary" variant="tonal" prepend-icon="mdi-cart-outline" @click="open = true">Buy a supported board</v-btn>
   </div>
-  <v-dialog v-model="open" max-width="850" scrollable aria-label="Buy a supported board">
+  <v-dialog v-model="open" max-width="1320" scrollable aria-label="Buy a supported board">
     <v-card>
       <v-card-title class="d-flex align-center ga-2">
         <span class="board-shopping-heading">Buy a supported board</span>
@@ -43,7 +43,9 @@ const boards = [
         <p class="text-caption text-medium-emphasis mb-4">Some purchase links are affiliate links.</p>
         <div class="board-shopping-grid">
           <v-card v-for="board in boards" :key="board.target" variant="outlined" class="board-shopping-card">
-            <img :src="`/ui/board-catalog/${board.target}.png`" :alt="board.name" class="board-shopping-photo" />
+            <div class="board-shopping-preview" :class="`board-shopping-preview--${board.target}`">
+              <img :src="`/ui/board-catalog/${board.target}.png`" :alt="board.name" class="board-shopping-photo" />
+            </div>
             <v-card-text class="flex-grow-1">
               <h3 class="text-subtitle-1 font-weight-bold">{{ board.name }}</h3>
               <p>{{ board.resolution }} pixels</p>
@@ -64,7 +66,23 @@ const boards = [
 <style scoped>
 .board-shopping-intro { padding: 16px; border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); border-radius: 8px; }
 .board-shopping-heading { white-space: normal; }
-.board-shopping-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
-.board-shopping-card { display: flex; flex-direction: column; min-width: 0; }
-.board-shopping-photo { width: 100%; height: 180px; object-fit: contain; background: white; padding: 12px; }
+.board-shopping-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.board-shopping-card { display: flex; flex-direction: column; min-width: 0; border-radius: 12px; }
+.board-shopping-preview {
+  --board-accent: 56, 189, 248;
+  height: 180px;
+  flex-shrink: 0;
+  padding: 12px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(var(--board-accent), .2);
+  background:
+    radial-gradient(ellipse at 50% 80%, rgba(var(--board-accent), .24), transparent 70%),
+    linear-gradient(135deg, rgba(var(--board-accent), .16), rgba(var(--board-accent), .03)),
+    rgb(var(--v-theme-surface));
+}
+.board-shopping-preview--ST7701_320X820 { --board-accent: 45, 212, 191; }
+.board-shopping-preview--ESP32_C6_LCD_147 { --board-accent: 167, 139, 250; }
+.board-shopping-preview--CHEAP_YELLOW_DISPLAY { --board-accent: 251, 191, 36; }
+.board-shopping-preview--ESP32_S3_AMOLED_143 { --board-accent: 244, 114, 182; }
+.board-shopping-photo { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .24)); }
 </style>
