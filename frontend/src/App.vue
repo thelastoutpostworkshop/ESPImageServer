@@ -13,6 +13,7 @@ import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.j
 import { requireSdCardCommandAvailable, waitForSdCardDeletion } from './sdDeletion.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
 import { saveThemePreference } from './themePreference.js'
+import { createAppSettingsSaver } from './appSettings.js'
 import { supportLinks } from './makerResources.js'
 import { gallerySelectionKey, selectAllGalleryItems, selectedGalleryItems, filterGallerySelection, reconcileGallerySelection, isGalleryBulkSaveActive, galleryBulkSaveProgressMessage } from './galleryBulkSave.js'
 
@@ -275,6 +276,40 @@ const openingImageLibrary = ref(false)
 const choosingImageLibrary = ref(false)
 const settingsStatus = ref('')
 const settingsError = ref('')
+const appSettingRefs = {
+  jpeg_quality: jpegQuality,
+  video_jpeg_quality: videoJpegQuality,
+  auto_save_images: autoSaveImages,
+  auto_save_videos: autoSaveVideos,
+  confirm_deletion: confirmDeletion,
+  auto_check_firmware_updates: autoCheckFirmwareUpdates,
+  auto_check_app_updates: autoCheckAppUpdates
+}
+const appSettingRevisions = new Map()
+const failedAppSettings = new Set()
+const appSettingSavedValues = new Map(Object.entries(appSettingRefs).map(([key, setting]) => [key, setting.value]))
+const appSettingConfirmedVersions = new Map()
+let imageLibraryEditRevision = 0
+let imageLibraryConfirmedRevision = 0
+const appSettingsSaver = createAppSettingsSaver({
+  request: async patch => {
+    const response = await fetch('/app-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch)
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    return response.json()
+  },
+  onState: ({ saving, error: saveError, saved }) => {
+    settingsSaving.value = saving
+    settingsError.value = saveError ? `Could not save settings: ${saveError.message}` : ''
+    settingsStatus.value = saved ? 'Settings saved automatically.' : ''
+  }
+})
 const mobileAccessDialog = ref(false)
 const mobileAccessQrCode = ref('')
 const mobileAccessQrCodeLoading = ref(false)
@@ -2509,91 +2544,65 @@ async function showSDCardFileOnDisplay(filename) {
 }
 
 async function loadAppSettings() {
+  const confirmedVersions = new Map(appSettingConfirmedVersions)
+  const libraryConfirmedRevision = imageLibraryConfirmedRevision
   try {
     const response = await fetch('/app-settings')
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
     const settings = await response.json()
-    savedImageLibraryLocation.value = settings.image_library_location
-    imageLibraryLocation.value = settings.image_library_location
+    if (imageLibraryConfirmedRevision === libraryConfirmedRevision) savedImageLibraryLocation.value = settings.image_library_location
+    if (imageLibraryEditRevision === 0) imageLibraryLocation.value = settings.image_library_location
     folderActions.value = settings.folder_actions || { choose: false, reveal: false }
-    jpegQuality.value = settings.jpeg_quality
-    videoJpegQuality.value = settings.video_jpeg_quality
-    autoSaveImages.value = settings.auto_save_images !== false
-    autoSaveVideos.value = settings.auto_save_videos !== false
-    confirmDeletion.value = settings.confirm_deletion !== false
-    autoCheckFirmwareUpdates.value = settings.auto_check_firmware_updates !== false
-    firmwareChecksEnabled.value = autoCheckFirmwareUpdates.value
-    autoCheckAppUpdates.value = settings.auto_check_app_updates !== false
-    appChecksEnabled.value = autoCheckAppUpdates.value
+    for (const [key, setting] of Object.entries(appSettingRefs)) {
+      const value = typeof appSettingSavedValues.get(key) === 'boolean' ? settings[key] !== false : settings[key]
+      if (appSettingConfirmedVersions.get(key) === confirmedVersions.get(key)) appSettingSavedValues.set(key, value)
+      if (!appSettingRevisions.has(key) || failedAppSettings.has(key)) setting.value = appSettingSavedValues.get(key)
+    }
+    firmwareChecksEnabled.value = appSettingSavedValues.get('auto_check_firmware_updates')
+    appChecksEnabled.value = appSettingSavedValues.get('auto_check_app_updates')
   } catch {
     // The rest of the app remains usable while settings are unavailable.
   }
 }
 
-async function saveAppSettings() {
-  settingsSaving.value = true
-  settingsError.value = ''
-  settingsStatus.value = ''
+async function updateAppSetting(key, value) {
+  const setting = appSettingRefs[key]
+  const revision = (appSettingRevisions.get(key) || 0) + 1
+  appSettingRevisions.set(key, revision)
+  failedAppSettings.delete(key)
+  setting.value = value
   try {
-    const response = await fetch('/app-settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_library_location: imageLibraryLocation.value,
-        jpeg_quality: Number(jpegQuality.value),
-        video_jpeg_quality: Number(videoJpegQuality.value),
-        auto_save_images: autoSaveImages.value,
-        auto_save_videos: autoSaveVideos.value,
-        confirm_deletion: confirmDeletion.value,
-        auto_check_firmware_updates: autoCheckFirmwareUpdates.value,
-        auto_check_app_updates: autoCheckAppUpdates.value
-      })
-    })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.detail || `Request failed (${response.status})`)
-    }
-    const settings = await response.json()
-    savedImageLibraryLocation.value = settings.image_library_location
-    imageLibraryLocation.value = settings.image_library_location
-    folderActions.value = settings.folder_actions || { choose: false, reveal: false }
-    jpegQuality.value = settings.jpeg_quality
-    videoJpegQuality.value = settings.video_jpeg_quality
-    autoSaveImages.value = settings.auto_save_images !== false
-    autoSaveVideos.value = settings.auto_save_videos !== false
-    confirmDeletion.value = settings.confirm_deletion !== false
-    autoCheckFirmwareUpdates.value = settings.auto_check_firmware_updates !== false
-    firmwareChecksEnabled.value = autoCheckFirmwareUpdates.value
-    autoCheckAppUpdates.value = settings.auto_check_app_updates !== false
-    appChecksEnabled.value = autoCheckAppUpdates.value
-    await loadSavedImages()
-    settingsStatus.value = 'Settings saved. Image and video quality settings apply to future exports.'
+    const settings = await appSettingsSaver.save({ [key]: value })
+    const confirmedValue = settings[key]
+    appSettingSavedValues.set(key, confirmedValue)
+    appSettingConfirmedVersions.set(key, (appSettingConfirmedVersions.get(key) || 0) + 1)
+    if (key === 'auto_check_firmware_updates') firmwareChecksEnabled.value = confirmedValue
+    if (key === 'auto_check_app_updates') appChecksEnabled.value = confirmedValue
+    return settings
   } catch (requestError) {
-    settingsError.value = `Could not save settings: ${requestError.message}`
-  } finally {
-    settingsSaving.value = false
+    if (appSettingRevisions.get(key) === revision) {
+      failedAppSettings.add(key)
+      setting.value = appSettingSavedValues.get(key)
+    }
+    throw requestError
+  }
+}
+
+async function saveAppSetting(key, value) {
+  try {
+    await updateAppSetting(key, value)
+    if (key === 'jpeg_quality') await loadSavedImages()
+  } catch {
+    // The shared saver reports errors beside the settings controls.
   }
 }
 
 async function setAutoSaveImages(value) {
-  const previousValue = autoSaveImages.value
-  autoSaveImages.value = value
   autoSaveSaving.value = true
   error.value = ''
   try {
-    const response = await fetch('/app-settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auto_save_images: value })
-    })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.detail || `Request failed (${response.status})`)
-    }
-    const settings = await response.json()
-    autoSaveImages.value = settings.auto_save_images !== false
+    await updateAppSetting('auto_save_images', value)
   } catch (requestError) {
-    autoSaveImages.value = previousValue
     error.value = `Could not update automatic saving: ${requestError.message}`
   } finally {
     autoSaveSaving.value = false
@@ -2601,24 +2610,11 @@ async function setAutoSaveImages(value) {
 }
 
 async function setAutoSaveVideos(value) {
-  const previousValue = autoSaveVideos.value
-  autoSaveVideos.value = value
   autoSaveVideoSaving.value = true
   videoError.value = ''
   try {
-    const response = await fetch('/app-settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auto_save_videos: value })
-    })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.detail || `Request failed (${response.status})`)
-    }
-    const settings = await response.json()
-    autoSaveVideos.value = settings.auto_save_videos !== false
+    await updateAppSetting('auto_save_videos', value)
   } catch (requestError) {
-    autoSaveVideos.value = previousValue
     videoError.value = `Could not update automatic video saving: ${requestError.message}`
   } finally {
     autoSaveVideoSaving.value = false
@@ -2626,17 +2622,32 @@ async function setAutoSaveVideos(value) {
 }
 
 async function setDeleteConfirmation(value) {
-  const response = await fetch('/app-settings', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ confirm_deletion: value })
-  })
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new Error(body.detail || `Request failed (${response.status})`)
+  await updateAppSetting('confirm_deletion', value)
+}
+
+let pendingImageLibraryLocation = null
+function setImageLibraryLocation(value) {
+  imageLibraryEditRevision += 1
+  imageLibraryLocation.value = value
+}
+
+async function saveImageLibraryLocation() {
+  const location = imageLibraryLocation.value
+  const editRevision = imageLibraryEditRevision
+  if (location === pendingImageLibraryLocation || (pendingImageLibraryLocation === null && location === savedImageLibraryLocation.value)) return
+  pendingImageLibraryLocation = location
+  try {
+    const settings = await appSettingsSaver.save({ image_library_location: location })
+    imageLibraryConfirmedRevision += 1
+    savedImageLibraryLocation.value = settings.image_library_location
+    if (imageLibraryEditRevision === editRevision) imageLibraryLocation.value = settings.image_library_location
+    folderActions.value = settings.folder_actions || { choose: false, reveal: false }
+    await Promise.all([loadSavedImages(), loadSavedVideos()])
+  } catch {
+    // Keep the entered path available for correction when a move fails.
+  } finally {
+    if (pendingImageLibraryLocation === location) pendingImageLibraryLocation = null
   }
-  const settings = await response.json()
-  confirmDeletion.value = settings.confirm_deletion !== false
 }
 
 async function revealImageLibrary() {
@@ -2666,7 +2677,10 @@ async function chooseImageLibrary() {
   try {
     if (window.espImageServerDesktop?.chooseImageLibrary) {
       const selectedPath = await window.espImageServerDesktop.chooseImageLibrary()
-      if (selectedPath) imageLibraryLocation.value = selectedPath
+      if (selectedPath) {
+        setImageLibraryLocation(selectedPath)
+        await saveImageLibraryLocation()
+      }
     } else {
       const response = await fetch('/app-settings/image-library/choose', { method: 'POST' })
       if (!response.ok) {
@@ -2674,7 +2688,10 @@ async function chooseImageLibrary() {
         throw new Error(body.detail || `Request failed (${response.status})`)
       }
       const selection = await response.json()
-      if (selection.selected) imageLibraryLocation.value = selection.image_library_location
+      if (selection.selected) {
+        setImageLibraryLocation(selection.image_library_location)
+        await saveImageLibraryLocation()
+      }
     }
   } catch (requestError) {
     settingsError.value = `Could not open the folder chooser: ${requestError.message}`
@@ -4938,18 +4955,21 @@ onUnmounted(() => {
               class="mb-6"
             />
             <v-divider class="mb-6" />
-            <v-form @submit.prevent="saveAppSettings">
+            <p class="text-body-2 text-medium-emphasis mb-4">Changes are saved automatically.</p>
               <div>
                 <v-text-field
-                  v-model="imageLibraryLocation"
+                  :model-value="imageLibraryLocation"
                   label="Image library location"
                   variant="outlined"
-                  hint="Enter an absolute folder path on the computer running ESPImageServer. Saving moves the library; use an empty destination folder."
+                  hint="Enter an absolute path to an empty folder on the server computer. The library moves when you press Enter or leave this field."
                   persistent-hint
                   prepend-inner-icon="mdi-folder-image"
                   class="mb-7"
+                  @update:model-value="setImageLibraryLocation"
+                  @change="saveImageLibraryLocation"
+                  @keydown.enter.prevent="saveImageLibraryLocation"
                 />
-                <p v-if="!canChooseLibrary" class="mb-4">A folder chooser is unavailable here. Enter the library path above, then save settings, or use the desktop app.</p>
+                <p v-if="!canChooseLibrary" class="mb-4">A folder chooser is unavailable here. Enter the library path above, then press Enter or leave the field to save it.</p>
                 <p v-if="!canRevealLibrary" class="mb-4">Opening folders is unavailable here. Use the library path in the server computer's file manager.</p>
                 <p v-if="!windowDesktop" class="mb-4">Folder actions open on the computer running ESPImageServer, not on this browser's device.</p>
                 <div class="d-flex flex-wrap ga-2 mb-6">
@@ -4962,7 +4982,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <v-slider
-                v-model="jpegQuality"
+                :model-value="jpegQuality"
                 label="JPEG quality"
                 min="40"
                 max="100"
@@ -4970,12 +4990,13 @@ onUnmounted(() => {
                 thumb-label
                 color="primary"
                 class="mt-2"
+                @update:model-value="value => saveAppSetting('jpeg_quality', Number(value))"
               />
               <div class="text-body-2 text-medium-emphasis mb-5">
                 Higher quality produces larger files and can take a little longer for the ESP32 to download. This applies to newly generated images only.
               </div>
               <v-slider
-                v-model="videoJpegQuality"
+                :model-value="videoJpegQuality"
                 label="Video JPEG quality"
                 min="2"
                 max="20"
@@ -4983,38 +5004,40 @@ onUnmounted(() => {
                 thumb-label
                 color="primary"
                 class="mt-2"
+                @update:model-value="value => saveAppSetting('video_jpeg_quality', Number(value))"
               />
               <div class="text-body-2 text-medium-emphasis mb-5">
                 Used when saving videos to the display SD card. Lower values retain more detail but create larger files; 10 is recommended.
               </div>
               <v-switch
-                v-model="autoCheckAppUpdates"
+                :model-value="autoCheckAppUpdates"
                 label="Automatically check for app updates"
                 hint="Notify me when a newer public ESPImageServer release is available. Checks GitHub at most once every 24 hours; download and install updates when ready."
                 persistent-hint
                 color="primary"
                 class="mb-4"
+                @update:model-value="value => saveAppSetting('auto_check_app_updates', value)"
               />
               <v-switch
-                v-model="autoCheckFirmwareUpdates"
+                :model-value="autoCheckFirmwareUpdates"
                 label="Automatically check for firmware updates"
                 hint="Notify me when newer firmware is available for a connected board. Checks GitHub once an hour; updates are installed manually by USB."
                 persistent-hint
                 color="primary"
                 class="mb-4"
+                @update:model-value="value => saveAppSetting('auto_check_firmware_updates', value)"
               />
               <v-switch
-                v-model="confirmDeletion"
+                :model-value="confirmDeletion"
                 label="Ask before deleting saved images, videos, and SD card files"
                 color="primary"
                 hint="Turn this off to delete saved creations and display SD card files immediately."
                 persistent-hint
                 class="mb-5"
+                @update:model-value="value => saveAppSetting('confirm_deletion', value)"
               />
-              <v-btn type="submit" color="primary" :loading="settingsSaving" prepend-icon="mdi-content-save">Save settings</v-btn>
-              <v-alert v-if="settingsStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ settingsStatus }}</v-alert>
+              <p v-if="settingsSaving || settingsStatus" class="text-body-2 text-medium-emphasis mt-4" role="status" aria-live="polite">{{ settingsSaving ? 'Saving settings…' : settingsStatus }}</p>
               <v-alert v-if="settingsError" type="error" variant="tonal" density="compact" class="mt-4">{{ settingsError }}</v-alert>
-            </v-form>
           </v-card-text>
         </v-card>
       </v-container>
