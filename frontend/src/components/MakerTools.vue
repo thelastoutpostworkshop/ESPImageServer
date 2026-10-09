@@ -65,7 +65,7 @@ h1 { font-size: clamp(2rem, 4cqi, 3rem); line-height: 1.2; letter-spacing: -.03e
 .maker-tools-support-actions { display: flex; flex-wrap: wrap; gap: 12px; grid-column: 2; min-width: 0; }
 .maker-tools-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .maker-tool-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid rgba(var(--v-theme-on-background), .12); border-radius: 16px; background: rgb(var(--v-theme-surface)); }
-.maker-tool-thumbnail { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; background: rgba(var(--v-theme-primary), .06); }
+.maker-tool-thumbnail { position: relative; display: block; width: 50%; margin-inline: auto; aspect-ratio: 16 / 9; overflow: hidden; background: rgba(var(--v-theme-primary), .06); }
 .maker-tool-thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .maker-tool-thumbnail:focus-visible { outline: 3px solid rgb(var(--v-theme-primary)); outline-offset: -3px; }
 .maker-tool-icon { position: absolute; bottom: 14px; left: 14px; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid rgba(var(--v-theme-primary), .25); border-radius: 10px; color: rgb(var(--v-theme-primary)); background: rgb(var(--v-theme-surface)); }
