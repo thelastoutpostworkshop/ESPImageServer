@@ -3545,7 +3545,7 @@ onUnmounted(() => {
         <v-divider class="my-2" />
         <v-list-subheader>Resources</v-list-subheader>
         <v-list-item prepend-icon="mdi-tools" title="Maker Tools" :active="page === 'maker-tools'" @click="navigate('maker-tools')" />
-        <v-list-item prepend-icon="mdi-lifebuoy" title="Get help" href="https://github.com/thelastoutpostworkshop/ESPImageServer" target="_blank" rel="noopener noreferrer">
+        <v-list-item prepend-icon="mdi-lifebuoy" title="Get help" href="https://github.com/thelastoutpostworkshop/ESPImageServer#troubleshooting" target="_blank" rel="noopener noreferrer">
           <template #append><v-icon icon="mdi-open-in-new" size="16" /></template>
         </v-list-item>
         <v-list-item v-for="link in supportLinks" :key="link.href" :prepend-icon="link.icon" :title="link.title" :href="link.href" target="_blank" rel="noopener noreferrer">
