@@ -345,13 +345,23 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 
 <style scoped>
 .setup-workspace { container-type: inline-size; }
-.setup-stepper-header { box-shadow: none; border-bottom: 1px solid rgba(var(--v-theme-on-surface), .12); }
-.setup-stepper-header :deep(.v-stepper-item) { padding: 20px 12px; min-width: 0; }
-.setup-stepper-header :deep(.v-stepper-item__title), .setup-stepper-header :deep(.v-stepper-item__subtitle) { white-space: normal; }
-@container (max-width: 800px) {
-  .setup-stepper-header { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.setup-stepper-header { display: grid; grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr) 32px minmax(0, 1fr) 32px minmax(0, 1fr); box-shadow: none; border-bottom: 1px solid rgba(var(--v-theme-on-surface), .12); }
+.setup-stepper-header > .v-divider { margin: 0; }
+.setup-stepper-header :deep(.v-stepper-item) { padding: 24px 12px; min-width: 0; min-height: 104px; border-radius: 8px; }
+.setup-stepper-header :deep(.v-stepper-item--selected) { background: rgba(var(--v-theme-primary), .07); }
+.setup-stepper-header :deep(.v-stepper-item__content) { min-width: 0; }
+/* Vuetify sets the step avatar's dimensions inline. */
+.setup-stepper-header :deep(.v-stepper-item__avatar.v-avatar) { width: 44px !important; height: 44px !important; flex-shrink: 0; margin-inline-end: 12px; font-size: 1.25rem; font-weight: 600; }
+.setup-stepper-header :deep(.v-stepper-item__avatar .v-icon) { font-size: 1.375rem; }
+.setup-stepper-header :deep(.v-stepper-item__title) { font-size: 1.125rem; font-weight: 600; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+.setup-stepper-header :deep(.v-stepper-item__subtitle) { margin-top: 4px; font-size: .9375rem; line-height: 1.4; white-space: normal; }
+@container (max-width: 1000px) {
+  .setup-stepper-header { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .setup-stepper-header > .v-divider { display: none; }
-  .setup-stepper-header :deep(.v-stepper-item__subtitle) { display: none; }
+}
+@container (max-width: 480px) {
+  .setup-stepper-header { grid-template-columns: minmax(0, 1fr); }
+  .setup-stepper-header :deep(.v-stepper-item) { min-height: 88px; padding: 16px 12px; }
 }
 .setup-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
 .setup-main, .setup-support { min-width: 0; }
