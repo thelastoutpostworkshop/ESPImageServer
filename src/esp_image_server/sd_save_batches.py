@@ -107,6 +107,25 @@ class SDSaveBatchStore:
         with self._lock:
             return bool(self._active)
 
+    def active_saves(self) -> list[dict[str, object]]:
+        """Snapshot all SD saves, including a batch's gaps between commands."""
+        with self._lock:
+            # Keep the existing batch -> command lock order. Holding the batch
+            # lock across both reads prevents dispatch/completion transitions
+            # from leaving a bulk save absent from the shutdown snapshot.
+            commands = self._commands.active_sd_card_saves()
+            active_ids = set(self._active.values())
+            saves = [command for command in commands if command.get("bulk_save_id") not in active_ids]
+            for batch_id in self._active.values():
+                batch = self._batches[batch_id]
+                saves.append({
+                    "id": batch["id"], "display_id": batch["display_id"],
+                    "type": "sd_card_save_batch", "status": batch["status"],
+                    "display_name": batch["display_name"], "total": batch["total"],
+                    "completed": batch["completed"], "current_index": batch["current_index"],
+                })
+            return saves
+
     def close(self) -> None:
         with self._lock:
             for batch_id in self._active.values():

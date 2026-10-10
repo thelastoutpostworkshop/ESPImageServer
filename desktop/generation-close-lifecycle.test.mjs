@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { createGenerationCloseGuard, generationCloseDialog } from './generation-close.mjs'
+import { createSdSaveCloseGuard, sdSaveCloseDialog } from './sd-save-close.mjs'
 
 const source = await readFile(new URL('./main.mjs', import.meta.url), 'utf8')
 
@@ -29,8 +30,8 @@ function event() {
 // replaced by fixtures. No Electron windows, server, or USB device are opened.
 function setup(options = {}) {
   const app = new EventEmitter(), window = new EventEmitter()
-  const dialogs = [], firmwareWarnings = [], lifecycle = [], warnings = []
-  let destroyed = false, closingByApp = false, checks = 0, windowCloseCalls = 0, quitCalls = 0
+  const dialogs = [], sdWarnings = [], firmwareWarnings = [], lifecycle = [], warnings = []
+  let destroyed = false, closingByApp = false, checks = 0, sdChecks = 0, windowCloseCalls = 0, quitCalls = 0
   const serverRuntime = {
     child: options.owned === false ? null : { pid: 123 },
     stop: async () => { lifecycle.push('server-stop'); serverRuntime.child = null },
@@ -63,16 +64,27 @@ function setup(options = {}) {
   }
   const ui = vm.createContext({
     app, window, serverRuntime, firmwareInstaller, wifiSetup,
-    createGenerationCloseGuard, generationCloseDialog, AbortSignal,
+    createGenerationCloseGuard, generationCloseDialog, createSdSaveCloseGuard, sdSaveCloseDialog, AbortSignal,
     process: { platform: options.platform || 'win32' },
     dialog: {
       showMessageBox: async (...args) => {
-        dialogs.push(args.at(-1))
+        const settings = args.at(-1)
+        if (settings.buttons?.length === 1) {
+          sdWarnings.push(settings)
+          return options.notify ? options.notify(sdWarnings.length) : { response: 0 }
+        }
+        dialogs.push(settings)
         return options.confirm ? options.confirm(dialogs.length) : { response: 1 }
       },
       showMessageBoxSync: (_window, settings) => firmwareWarnings.push(settings),
     },
     fetch: async url => {
+      if (url === 'http://127.0.0.1:8000/shutdown-status') {
+        sdChecks += 1
+        const saves = options.readSaves ? await options.readSaves(sdChecks) : options.saves || []
+        return { ok: options.sdResponseOk !== false,
+          json: async () => options.shutdownStatus || { sd_card_saves: saves } }
+      }
       assert.equal(url, 'http://127.0.0.1:8000/generation-queue')
       checks += 1
       const jobs = options.readJobs ? await options.readJobs(checks)
@@ -98,8 +110,9 @@ function setup(options = {}) {
   ].join('\n'), ui)
   return {
     app, window, ui, serverRuntime, firmwareInstaller, wifiSetup,
-    dialogs, firmwareWarnings, lifecycle, warnings,
-    checks: () => checks, closeCalls: () => windowCloseCalls, quitCalls: () => quitCalls,
+    dialogs, sdWarnings, firmwareWarnings, lifecycle, warnings,
+    checks: () => checks, sdChecks: () => sdChecks,
+    closeCalls: () => windowCloseCalls, quitCalls: () => quitCalls,
   }
 }
 
@@ -283,3 +296,176 @@ test('macOS Quit proceeds when generation finishes during a window-only confirma
   assert.equal(run.window.isDestroyed(), true)
   assert.equal(run.lifecycle.filter(item => item === 'server-stop').length, 1)
 })
+
+for (const action of ['close', 'quit']) {
+  for (const status of ['running', 'cancelling']) {
+    test(`${action} cannot interrupt an SD-card save that is ${status}`, async () => {
+      const run = setup({ saves: [{ display_id: 'other-board', status }] })
+      const initial = action === 'close' ? run.window.close() : run.app.quit()
+      assert.equal(initial.prevented, true)
+      assert.equal(run.ui.state().isQuitting, false)
+      await settle()
+      assert.equal(run.sdWarnings.length, 1)
+      assert.deepEqual(Array.from(run.sdWarnings[0].buttons), ['Keep open'])
+      assert.equal(run.checks(), 0)
+      assert.equal(run.dialogs.length, 0)
+      assert.equal(run.window.isDestroyed(), false)
+      assert.equal(run.ui.state().approved, false)
+      assert.deepEqual(run.lifecycle, [])
+    })
+  }
+}
+
+test('SD-card saves block a macOS window close even when generation would continue on an external server', async () => {
+  const run = setup({ platform: 'darwin', owned: false,
+    saves: [{ display_id: 'offline-board', status: 'cancelling' }, { display_id: 'active-board', status: 'running' }] })
+  run.window.close()
+  await settle()
+  assert.equal(run.sdWarnings.length, 1)
+  assert.equal(run.window.isDestroyed(), false)
+  assert.equal(run.checks(), 0)
+  assert.deepEqual(run.lifecycle, [])
+})
+
+test('repeated close and quit requests share one SD-card warning and a later retry checks completion', async () => {
+  const notification = deferred()
+  let saves = [{ display_id: 'one', status: 'cancelling' }]
+  const run = setup({ jobs: [], readSaves: () => saves, notify: () => notification.promise })
+  run.window.close()
+  await settle()
+  run.window.close()
+  run.app.quit()
+  await settle()
+  assert.equal(run.sdWarnings.length, 1)
+  assert.equal(run.sdChecks(), 1)
+  assert.equal(run.checks(), 0)
+  assert.equal(run.window.isDestroyed(), false)
+  notification.resolve({ response: 0 })
+  await settle()
+  assert.equal(run.ui.state().closeAttempt, null)
+  assert.deepEqual(run.lifecycle, [])
+  saves = [] // The backend releases the cancelled save only after the board acknowledges it.
+  run.app.quit()
+  await settle()
+  assert.equal(run.sdWarnings.length, 1)
+  assert.equal(run.window.isDestroyed(), true)
+  assert.equal(run.lifecycle.filter(item => item === 'server-stop').length, 1)
+})
+
+for (const action of ['close', 'quit']) {
+  for (const failure of ['http', 'malformed', 'network']) {
+    test(`${action} stays open when the shutdown status has a ${failure} failure`, async () => {
+      const run = setup({
+        sdResponseOk: failure !== 'http',
+        shutdownStatus: failure === 'malformed' ? { sd_card_saves: null } : undefined,
+        readSaves: failure === 'network' ? async () => { throw new Error('Server unavailable') } : undefined,
+      })
+      const initial = action === 'close' ? run.window.close() : run.app.quit()
+      assert.equal(initial.prevented, true)
+      await settle()
+      assert.equal(run.sdWarnings.length, 1)
+      assert.equal(run.window.isDestroyed(), false)
+      assert.equal(run.ui.state().isQuitting, false)
+      assert.equal(run.checks(), 0)
+      assert.deepEqual(run.lifecycle, [])
+    })
+  }
+}
+
+for (const action of ['close', 'quit']) {
+  test(`${action} rechecks SD-card saves after a generation confirmation`, async () => {
+    const decision = deferred()
+    let saves = []
+    const run = setup({ readSaves: () => saves, confirm: () => decision.promise })
+    action === 'close' ? run.window.close() : run.app.quit()
+    await settle()
+    assert.equal(run.dialogs.length, 1)
+    assert.equal(run.sdChecks(), 1)
+    saves = [{ display_id: 'new-board', status: 'running' }]
+    decision.resolve({ response: 1 })
+    await settle()
+    assert.equal(run.sdChecks(), 2)
+    assert.equal(run.sdWarnings.length, 1)
+    assert.equal(run.window.isDestroyed(), false)
+    assert.equal(run.ui.state().isQuitting, false)
+    assert.equal(run.ui.state().approved, false)
+    assert.deepEqual(run.lifecycle, [])
+  })
+}
+
+test('a new SD-card save while Quit waits for Wi-Fi cancellation prevents server shutdown', async () => {
+  const completion = deferred()
+  let saves = []
+  const run = setup({ jobs: [], readSaves: () => saves })
+  run.wifiSetup.running = true
+  run.wifiSetup.completion = completion.promise
+  run.firmwareInstaller.state.busy = true
+  run.app.quit()
+  await settle()
+  assert.deepEqual(run.lifecycle, ['wifi-cancel'])
+  assert.equal(run.sdChecks(), 1)
+  saves = [{ display_id: 'one', status: 'queued' }]
+  run.wifiSetup.running = false
+  run.firmwareInstaller.state.busy = false
+  completion.resolve()
+  await settle()
+  assert.equal(run.sdChecks(), 2)
+  assert.equal(run.sdWarnings.length, 1)
+  assert.equal(run.window.isDestroyed(), false)
+  assert.equal(run.ui.state().approved, false)
+  assert.deepEqual(run.lifecycle, ['wifi-cancel'])
+})
+
+test('startup can close before the workspace is ready without querying shutdown status', async () => {
+  const run = setup({ ready: false,
+    readSaves: () => assert.fail('No workspace exists yet'), readJobs: () => assert.fail('No workspace exists yet') })
+  run.window.close()
+  await settle()
+  assert.equal(run.window.isDestroyed(), true)
+  assert.equal(run.sdChecks(), 0)
+  assert.equal(run.checks(), 0)
+  assert.equal(run.sdWarnings.length, 0)
+  assert.equal(run.dialogs.length, 0)
+})
+
+for (const repeatedAction of ['close', 'quit']) {
+  test(`${repeatedAction} cannot bypass the final pending SD-card safety check`, async () => {
+    const finalSnapshot = deferred()
+    const run = setup({ jobs: [], readSaves: count => count === 1 ? [] : finalSnapshot.promise })
+    run.window.close()
+    await settle()
+    assert.equal(run.sdChecks(), 2)
+    assert.equal(run.ui.state().approved, true)
+    assert.ok(run.ui.state().closeAttempt)
+    const repeated = repeatedAction === 'close' ? run.window.close() : run.app.quit()
+    assert.equal(repeated.prevented, true)
+    assert.equal(run.window.isDestroyed(), false)
+    assert.equal(run.ui.state().isQuitting, false)
+    assert.deepEqual(run.lifecycle, [])
+    finalSnapshot.resolve([{ display_id: 'new-save', status: 'running' }])
+    await settle()
+    assert.equal(run.sdWarnings.length, 1)
+    assert.equal(run.sdChecks(), 2)
+    assert.equal(run.window.isDestroyed(), false)
+    assert.equal(run.ui.state().approved, false)
+    assert.deepEqual(run.lifecycle, [])
+  })
+}
+
+for (const action of ['close', 'quit']) {
+  test(`${action} still protects USB work that starts during the final SD-card check`, async () => {
+    const finalSnapshot = deferred()
+    const run = setup({ jobs: [], readSaves: count => count === 1 ? [] : finalSnapshot.promise })
+    action === 'close' ? run.window.close() : run.app.quit()
+    await settle()
+    assert.equal(run.sdChecks(), 2)
+    run.firmwareInstaller.state.busy = true
+    finalSnapshot.resolve([])
+    await settle()
+    assert.equal(run.window.isDestroyed(), false)
+    assert.equal(run.ui.state().isQuitting, false)
+    assert.equal(run.ui.state().approved, false)
+    assert.equal(run.firmwareWarnings.length, action === 'close' ? 1 : 0)
+    assert.deepEqual(run.lifecycle, [])
+  })
+}

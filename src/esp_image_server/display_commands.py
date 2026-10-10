@@ -12,6 +12,8 @@ from .retention import DISPLAY_COMMAND_RETENTION, RetentionPolicy
 
 
 LEGACY_DISPLAY_ID = "__legacy__"
+_SD_SAVE_TYPES = {"save_latest", "save_saved_image", "save_saved_video"}
+_SD_SAVE_FIELDS = ("id", "display_id", "type", "status", "filename", "bulk_save_id", "cancelled_command_id")
 
 
 class DisplayCommandBusyError(RuntimeError):
@@ -22,6 +24,7 @@ class DisplayCommandStore:
     def __init__(self, retention: RetentionPolicy = DISPLAY_COMMAND_RETENTION) -> None:
         self._lock = Lock()
         self._pending: dict[str, dict[str, object]] = {}
+        self._superseded_sd_saves: dict[str, dict[str, object]] = {}
         self._completed: dict[str, dict[str, object]] = {}
         self._finished_at: dict[str, float] = {}
         self._retention = retention
@@ -72,6 +75,17 @@ class DisplayCommandStore:
             self._check_owner_locked(display_id, owner_id)
             pending = self._pending.get(display_id)
             if pending is not None:
+                interrupted = pending
+                if pending.get("type") == "cancel_operation":
+                    interrupted = self._completed.get(str(pending.get("cancelled_command_id", "")), {})
+                if interrupted.get("type") in _SD_SAVE_TYPES:
+                    # Replacing the queue entry does not stop a firmware
+                    # transfer. The replacement's ACK confirms the board
+                    # processed it, cancelling any earlier active save first.
+                    self._superseded_sd_saves[display_id] = {
+                        key: interrupted[key] for key in _SD_SAVE_FIELDS if key in interrupted
+                    }
+                    self._superseded_sd_saves[display_id]["status"] = "cancelling"
                 previous_id = str(pending["id"])
                 previous = self._completed.get(previous_id)
                 if previous is not None and previous.get("status") == "pending":
@@ -150,6 +164,33 @@ class DisplayCommandStore:
             command = self._pending.get(display_id)
             return dict(command) if command is not None else None
 
+    def active_sd_card_saves(self) -> list[dict[str, object]]:
+        """Snapshot saves and their unacknowledged cancellations on every display."""
+        with self._lock:
+            saves = []
+            reported_displays = set()
+            for command in self._pending.values():
+                if command.get("status") not in {"pending", "cancelling"}:
+                    continue
+                if command.get("type") not in _SD_SAVE_TYPES:
+                    if command.get("type") != "cancel_operation":
+                        continue
+                    original = self._completed.get(str(command.get("cancelled_command_id", "")))
+                    if original is None or original.get("type") not in _SD_SAVE_TYPES:
+                        continue
+                    # A successful original ACK may race ahead of the cancel
+                    # ACK. Keep protecting the pending cancellation either way.
+                saves.append({key: command[key] for key in _SD_SAVE_FIELDS if key in command})
+                reported_displays.add(command["display_id"])
+            for display_id, interrupted in self._superseded_sd_saves.items():
+                if display_id not in reported_displays:
+                    snapshot = dict(interrupted)
+                    replacement = self._pending.get(display_id)
+                    if replacement is not None:
+                        snapshot["replacement_command_id"] = replacement["id"]
+                    saves.append(snapshot)
+            return saves
+
     def acknowledge(
         self,
         command_id: str,
@@ -185,6 +226,7 @@ class DisplayCommandStore:
             pending = self._pending.get(display_id)
             if pending is not None and pending.get("id") == command_id:
                 del self._pending[display_id]
+                self._superseded_sd_saves.pop(display_id, None)
             self._finished_at[command_id] = time()
             self._prune_completed_locked()
             return dict(command)

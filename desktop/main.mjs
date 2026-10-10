@@ -10,6 +10,7 @@ import { FirmwareLibrary } from './firmware-library.mjs'
 import { FirmwareReleases } from './firmware-releases.mjs'
 import { GenerationSetup } from './generation-setup.mjs'
 import { createGenerationCloseGuard, generationCloseDialog } from './generation-close.mjs'
+import { createSdSaveCloseGuard, sdSaveCloseDialog } from './sd-save-close.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
 const runtime = runtimePaths({ desktopDirectory, resourcesPath: process.resourcesPath, packaged: app.isPackaged })
@@ -111,6 +112,24 @@ const serverRuntime = new ServerRuntime(runtime, {
 const generationSetup = new GenerationSetup({ onStatus: updateSplash, onLog: appendServerLog })
 const stopsGenerationOnClose = attempt => Boolean(serverRuntime.child) &&
   (attempt.quit || process.platform !== 'darwin')
+const sdSaveCloseGuard = createSdSaveCloseGuard({
+  readSaves: async () => {
+    if (!workspaceReady) return []
+    const response = await fetch('http://127.0.0.1:8000/shutdown-status', {
+      cache: 'no-store', signal: AbortSignal.timeout(2000)
+    })
+    if (!response.ok) throw new Error(`Could not check SD-card saves (${response.status}).`)
+    return (await response.json())?.sd_card_saves
+  },
+  notify: async state => {
+    const attempt = closeAttempt
+    const parent = attempt?.window && !attempt.window.isDestroyed() ? attempt.window
+      : mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+    const options = sdSaveCloseDialog(state)
+    await (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options))
+  },
+  onError: error => console.warn('Could not check application close safety:', error.message)
+})
 const generationCloseGuard = createGenerationCloseGuard({
   readJobs: async () => {
     if (!workspaceReady) return []
@@ -144,6 +163,10 @@ function requestGenerationClose({ window, quit = false } = {}) {
   const attempt = { window, quit, confirmedStopsGeneration: null }
   closeAttempt = attempt
   void (async () => {
+    if (!await sdSaveCloseGuard.request()) {
+      generationCloseGuard.reset()
+      return
+    }
     for (;;) {
       if (!await generationCloseGuard.request()) return
       // A macOS window-only confirmation does not approve stopping its server
@@ -166,6 +189,10 @@ function requestGenerationClose({ window, quit = false } = {}) {
       if (firmwareInstaller.state.busy) {
         generationCloseGuard.reset()
         if (!attempt.quit && attempt.window && !attempt.window.isDestroyed()) showFirmwareCloseWarning(attempt.window)
+        return
+      }
+      if (!await sdSaveCloseGuard.request()) {
+        generationCloseGuard.reset()
         return
       }
       closeAttempt = null
@@ -268,7 +295,7 @@ async function createWindow() {
       showFirmwareCloseWarning(window)
       return
     }
-    if (!generationCloseGuard.approved) {
+    if (closeAttempt || !generationCloseGuard.approved) {
       event.preventDefault()
       requestGenerationClose({ window })
       return
@@ -394,7 +421,7 @@ else {
       return
     }
     if (firmwareInstaller.state.busy) { event.preventDefault(); generationCloseGuard.reset(); return }
-    if (!generationCloseGuard.approved) {
+    if (closeAttempt || !generationCloseGuard.approved) {
       event.preventDefault()
       requestGenerationClose({ quit: true })
       return

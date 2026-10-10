@@ -962,6 +962,13 @@ def create_app(
     sd_save_batches = SDSaveBatchStore(display_command_store, queue_batch_item, batch_display_connected)
     app.state.sd_save_batches = sd_save_batches
 
+    @app.get("/shutdown-status")
+    def shutdown_status() -> JSONResponse:
+        return JSONResponse(
+            {"sd_card_saves": sd_save_batches.active_saves()},
+            headers={"Cache-Control": "no-store"},
+        )
+
     def start_sd_save_batch(display_id: str, request: SDSaveBatchRequest) -> dict[str, object]:
         display = active_display_store.get() if display_id == LEGACY_DISPLAY_ID else get_registered_display(display_id)
         if display is None or not batch_display_connected(display_id):
