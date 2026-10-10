@@ -6,6 +6,7 @@ import { generationJobDetail, generationHasMeasuredProgress } from './generation
 import FirmwareInstaller from './components/FirmwareInstaller.vue'
 import AboutPage from './components/AboutPage.vue'
 import MakerTools from './components/MakerTools.vue'
+import GenerationNavIndicator from './components/GenerationNavIndicator.vue'
 import BoardShopping from './components/BoardShopping.vue'
 import BoardThumbnail from './components/BoardThumbnail.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
@@ -3577,8 +3578,18 @@ onUnmounted(() => {
           <v-divider class="my-2" />
         </template>
         <v-list-subheader>Create</v-list-subheader>
-        <v-list-item prepend-icon="mdi-image-plus" title="Generate image" :active="page === 'generate'" @click="openGeneratePage" />
-        <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="navigate('video')" />
+        <v-list-item prepend-icon="mdi-image-plus" title="Generate image" :active="page === 'generate'" @click="openGeneratePage">
+          <template #append>
+            <GenerationNavIndicator v-if="runningGenerationQueueJob?.kind === 'image'" kind="image"
+              :label="runningGenerationQueueJob.status === 'cancelling' ? 'Stopping image generation…' : 'Generating image…'" />
+          </template>
+        </v-list-item>
+        <v-list-item prepend-icon="mdi-movie-open-outline" title="Generate video" :active="page === 'video'" @click="navigate('video')">
+          <template #append>
+            <GenerationNavIndicator v-if="runningGenerationQueueJob?.kind === 'video'" kind="video"
+              :label="runningGenerationQueueJob.status === 'cancelling' ? 'Stopping video generation…' : 'Generating video…'" />
+          </template>
+        </v-list-item>
         <v-list-item prepend-icon="mdi-image-text" title="Creation Library" :active="metadataPane" @click="openMetadataPane" />
         <v-divider class="my-2" />
         <v-list-subheader>ESP32 Displays</v-list-subheader>
