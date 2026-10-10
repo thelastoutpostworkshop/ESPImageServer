@@ -2188,6 +2188,13 @@ function openGeneratePage() {
   navigate('generate')
 }
 
+function openSetupGeneration({ displayId, kind }) {
+  if (!displayId || !['image', 'video'].includes(kind)) return
+  selectActiveDisplay(displayId)
+  if (kind === 'image') openGeneratePage()
+  else navigate('video')
+}
+
 function openActiveGeneration() {
   if (appBarStatus.value.page) navigate(appBarStatus.value.page)
 }
@@ -4203,7 +4210,7 @@ onUnmounted(() => {
             </v-list>
           </template>
         </v-card>
-        <FirmwareInstaller v-if="page === 'firmware'" @open-display="selectActiveDisplay($event); navigate('displays')" />
+        <FirmwareInstaller v-if="page === 'firmware'" @generate="openSetupGeneration" />
         <v-card v-if="page === 'diagnostics'">
           <v-card-title class="page-card-title d-flex align-center text-h6">
             <div class="page-card-title__heading d-flex align-center">

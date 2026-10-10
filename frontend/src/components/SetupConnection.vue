@@ -3,10 +3,14 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { matchSetupDisplay } from '../setupConnection.js'
 
 const props = defineProps({ identity: Object, selectedPort: String, locked: Boolean })
-const emit = defineEmits(['ready', 'open-display'])
+const emit = defineEmits(['ready', 'generate'])
 const found = ref(null), serverError = ref(false), elapsed = ref(0)
 const eligible = computed(() => props.identity?.port === props.selectedPort && props.identity?.wifi_connected && !props.locked)
 let timer, abort, generation = 0, since = 0
+function generate(kind) {
+  if (!eligible.value || !found.value?.id || !['image', 'video'].includes(kind)) return
+  emit('generate', { displayId: found.value.id, kind })
+}
 function stop() {
   generation++; clearTimeout(timer); abort?.abort(); found.value = null; emit('ready', false)
 }
@@ -53,7 +57,10 @@ onUnmounted(stop)
       <v-alert v-if="found" type="success" variant="tonal" role="status">
         <strong>{{ found.name }}</strong><br>
         Wi-Fi connected · Server connected
-        <div class="mt-4"><v-btn color="primary" @click="emit('open-display', found.id)">Open display</v-btn></div>
+        <div class="d-flex flex-wrap ga-3 mt-4">
+          <v-btn color="primary" prepend-icon="mdi-image-plus" @click="generate('image')">Generate an image</v-btn>
+          <v-btn color="primary" prepend-icon="mdi-movie-open-outline" @click="generate('video')">Generate a video</v-btn>
+        </div>
       </v-alert>
       <template v-else>
         <div role="status">Wi-Fi connected and saved. {{ serverError ? 'The local server is not responding.' : 'Waiting for this display to contact ESPImageServer…' }}</div>

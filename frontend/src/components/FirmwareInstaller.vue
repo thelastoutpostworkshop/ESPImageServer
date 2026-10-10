@@ -5,7 +5,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UsbWifiSetup from './UsbWifiSetup.vue'
 import SetupConnection from './SetupConnection.vue'
 import { firmwareStatus } from '../firmwareStatus.js'
-const emit = defineEmits(['open-display'])
+const emit = defineEmits(['generate'])
 const desktop = window.espImageServerDesktop
 const available = Boolean(desktop?.firmwareReleases && desktop?.refreshFirmwareIdentity)
 const state = ref({ busy: false, stage: 'idle', package: null, error: '', log: '' })
@@ -288,7 +288,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <p v-if="identity.wifi_configured && !identity.wifi_connected && !wifiEditing && !manageWifi" class="mt-3 text-body-2">{{ autoAttempts < 3 ? 'We’ll check the connection automatically after the board restarts.' : 'The board has not reported a connection yet. Check it again or change the saved network.' }}</p>
           <div class="setup-actions mt-4"><v-btn v-if="identity.wifi_connected" color="primary" :disabled="locked" @click="manageWifi = false">Continue</v-btn><v-btn v-else-if="identity.wifi_configured" variant="tonal" :disabled="locked || wifiEditing" @click="refreshConnection">Check connection</v-btn><v-btn variant="text" :disabled="locked" @click="reviewed = false">Back to firmware</v-btn></div>
         </section>
-        <SetupConnection v-if="identity && compatible && reviewed" v-show="panel === 'connection'" :identity="identity" :selected-port="port" :locked="locked || panel !== 'connection'" @ready="serverReady = $event" @open-display="emit('open-display', $event)" />
+        <SetupConnection v-if="identity && compatible && reviewed" v-show="panel === 'connection'" :identity="identity" :selected-port="port" :locked="locked || panel !== 'connection'" @ready="serverReady = $event" @generate="emit('generate', $event)" />
         <div v-if="panel === 'connection'" class="mt-4"><p class="mb-3">Firmware {{ identity.firmware_version }} <span v-if="update.kind === 'update'">· Update {{ update.latest.version }} available</span></p><div class="setup-actions"><v-btn variant="text" :disabled="locked" @click="manageWifi = true">Manage Wi-Fi</v-btn><v-btn variant="text" :disabled="locked" @click="reviewed = false; loadLibrary()">Firmware updates</v-btn></div></div>
         <v-alert v-if="libraryError || library.error" type="warning" variant="tonal" class="mt-4">
           {{ libraryError || library.error }}

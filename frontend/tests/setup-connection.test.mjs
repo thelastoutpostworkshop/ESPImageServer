@@ -34,10 +34,13 @@ function mount(t, fetcher, changes = {}) {
   globalThis.fetch = fetcher
   const props = reactive({ identity: { ...identity }, selectedPort: 'COM8', locked: false, ...changes })
   const events = []
-  const app = renderer.createApp({ render: () => h(component, { ...props, onReady: ready => events.push(ready) }) })
+  const generations = []
+  const app = renderer.createApp({ render: () => h(component, {
+    ...props, onReady: ready => events.push(ready), onGenerate: request => generations.push(request)
+  }) })
   app.mount({})
   t.after(() => { app.unmount(); globalThis.fetch = originalFetch })
-  return { props, state: app._instance.subTree.component.setupState, events }
+  return { props, input: app._instance.subTree.component.props, state: app._instance.subTree.component.setupState, events, generations }
 }
 
 test('an already-online display is Ready immediately and stays Ready between announcements', async t => {
@@ -89,4 +92,88 @@ test('port changes or USB work immediately withdraw Ready', async t => {
   view.props.locked = true; await flush(); assert.equal(view.state.found, null)
   view.props.selectedPort = 'COM9'; view.props.locked = false; await flush()
   assert.equal(view.state.eligible, false); assert.equal(view.state.found, null)
+})
+
+test('Ready image and video actions identify the matched display and selected generation kind', async t => {
+  const view = mount(t, async () => ({ ok: true, json: async () => [display] }))
+  await flush()
+  assert.equal(view.state.found.id, display.id)
+  view.state.generate('image')
+  view.state.generate('video')
+  assert.deepEqual(view.generations, [
+    { displayId: display.id, kind: 'image' },
+    { displayId: display.id, kind: 'video' }
+  ])
+})
+
+test('generation actions do not open a destination before the exact display is matched', async t => {
+  const view = mount(t, async () => ({ ok: true, json: async () => [{ ...display, hardware_id: '112233445566' }] }))
+  await flush()
+  assert.equal(view.state.eligible, true)
+  assert.equal(view.state.found, null)
+  view.state.generate('image')
+  view.state.generate('video')
+  assert.deepEqual(view.generations, [])
+})
+
+test('generation actions stop immediately when USB setup is locked or identity becomes ineligible', async t => {
+  for (const [name, change] of [
+    ['USB work starts', props => { props.locked = true }],
+    ['another port is selected', props => { props.selectedPort = 'COM9' }],
+    ['Wi-Fi disconnects', props => { props.identity = { ...identity, wifi_connected: false } }],
+    ['USB identity is lost', props => { props.identity = null }]
+  ]) {
+    await t.test(name, async t => {
+      const view = mount(t, async () => ({ ok: true, json: async () => [display] }))
+      await flush()
+      assert.ok(view.state.found)
+      change(view.input)
+      // Exercise a click before the queued watcher removes the old match.
+      // Eligibility must protect against a stale Ready screen in that interval.
+      view.state.generate('image')
+      view.state.generate('video')
+      assert.deepEqual(view.generations, [])
+      assert.equal(view.state.eligible, false)
+    })
+  }
+})
+
+test('Ready ignores unsupported generation destinations', async t => {
+  const view = mount(t, async () => ({ ok: true, json: async () => [display] }))
+  await flush()
+  assert.ok(view.state.found)
+  for (const kind of ['display', '', 'Image', 'video ', null, undefined]) view.state.generate(kind)
+  assert.deepEqual(view.generations, [])
+})
+
+const appSource = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+const setupGenerationHandler = appSource.match(/^function openSetupGeneration\([\s\S]+?^\}/m)?.[0]
+function generationDestination() {
+  assert.ok(setupGenerationHandler, 'App handles the Ready generation action')
+  const calls = []
+  const handle = new Function('selectActiveDisplay', 'openGeneratePage', 'navigate',
+    `${setupGenerationHandler}\nreturn openSetupGeneration`)(
+    id => calls.push(['selectDisplay', id]),
+    () => calls.push(['openImageGeneration']),
+    page => calls.push(['navigate', page])
+  )
+  return { handle, calls }
+}
+
+test('the Ready image handoff selects its confirmed board before opening image generation', () => {
+  const {handle,calls} = generationDestination()
+  handle({displayId:display.id,kind:'image'})
+  assert.deepEqual(calls, [['selectDisplay',display.id],['openImageGeneration']])
+})
+
+test('the Ready video handoff selects its confirmed board before opening video generation', () => {
+  const {handle,calls} = generationDestination()
+  handle({displayId:display.id,kind:'video'})
+  assert.deepEqual(calls, [['selectDisplay',display.id],['navigate','video']])
+})
+
+test('the Ready handoff rejects missing boards and unsupported destinations', () => {
+  const {handle,calls} = generationDestination()
+  for (const request of [{displayId:'',kind:'image'}, {kind:'video'}, {displayId:display.id,kind:'display'}]) handle(request)
+  assert.deepEqual(calls, [])
 })
