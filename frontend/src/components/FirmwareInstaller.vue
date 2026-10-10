@@ -10,6 +10,8 @@ const desktop = window.espImageServerDesktop
 const available = Boolean(desktop?.firmwareReleases && desktop?.refreshFirmwareIdentity)
 const state = ref({ busy: false, stage: 'idle', package: null, error: '', log: '' })
 const ports = ref([]), port = ref(''), board = ref(''), baud = ref(460800)
+const confirmedBoard = ref(null)
+const supportPanels = ref([])
 const pending = ref(false), error = ref('')
 const library = ref({ packages: [], issues: [], directory: '', checkedAt: null })
 const onlineAvailable = Boolean(desktop?.firmwareReleases)
@@ -34,7 +36,8 @@ const boardItems = [
   { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147', image: '/ui/board-catalog/ESP32_C6_LCD_147.png' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY', image: '/ui/board-catalog/CHEAP_YELLOW_DISPLAY.png' },
   { title: 'Waveshare ESP32-S3 AMOLED 1.43 (466 × 466)', value: 'ESP32_S3_AMOLED_143', image: '/ui/board-catalog/ESP32_S3_AMOLED_143.png' }
 ]
-const detectedBoard = computed(() => boardItems.find(item => item.value === identity.value?.board_target))
+const detectedBoard = computed(() => confirmedBoard.value?.port === port.value
+  ? boardItems.find(item => item.value === confirmedBoard.value.boardTarget) : null)
 const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Ready to install',
   connecting: 'Connecting to your display', checking_identity: 'Checking the connected display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
   identifying: 'Checking firmware startup', boot_verified: 'Firmware installed and startup verified',
@@ -88,6 +91,7 @@ async function loadLibrary(method) {
   finally { libraryBusy.value = false }
 }
 function resetFlow() {
+  confirmedBoard.value = null; supportPanels.value = []
   checkingDisplay.value = false; reviewed.value = false; showInstall.value = false; manageWifi.value = false; wifiEditing.value = false
   serverReady.value = false; autoAttempts = 0; lastIdentity = Date.now()
   installationStarted.value = false
@@ -130,6 +134,7 @@ async function install() {
   if (!canInstall.value) return
   const pkg = { ...update.value.latest }
   const selectedPort = port.value, selectedBoard = board.value, selectedBaud = baud.value, token = epoch
+  confirmedBoard.value = { port: selectedPort, boardTarget: selectedBoard }
   showInstall.value = true
   await perform(async () => {
     state.value = await call('selectReleaseFirmware', { id: pkg.id, board: selectedBoard, port: selectedPort })
@@ -167,6 +172,18 @@ watch(() => identity.value?.hardware_id, (next, previous) => {
   if (next && previous && next !== previous) resetFlow()
   if (!next) { serverReady.value = false; reviewed.value = false; manageWifi.value = false; wifiEditing.value = false }
 })
+// Remember only the board picture. USB actions still require the live identity.
+watch(identity, current => {
+  if (current && boardItems.some(item => item.value === current.board_target)) {
+    confirmedBoard.value = { port: current.port, boardTarget: current.board_target }
+  }
+})
+watch([() => state.value.stage, () => state.value.identityError], ([stage, identityError]) => {
+  if (!identity.value && /disconnected|changed/i.test(identityError || '')) confirmedBoard.value = null
+  if (stage === 'failed' || identityError) {
+    supportPanels.value = [...new Set([...supportPanels.value, 'recovery', ...(state.value.log ? ['log'] : [])])]
+  }
+})
 watch(step, (next, previous) => {
   if (next === 2 && previous !== 2 && available) void loadLibrary()
 })
@@ -177,6 +194,10 @@ onMounted(async () => {
     state.value = await call('firmwareState'); port.value = state.value.selectedPort || state.value.identity?.port || ''
     if (state.value.busy && ['validating', 'connecting', 'checking_identity', 'writing_and_verifying', 'restarting', 'identifying'].includes(state.value.stage)) {
       showInstall.value = true; installationStarted.value = true
+      if (state.value.port === port.value && boardItems.some(item => item.value === state.value.package?.board)) {
+        board.value = state.value.package.board
+        confirmedBoard.value = { port: port.value, boardTarget: board.value }
+      }
     }
     if (state.value.identity) board.value = state.value.identity.board_target
     if (onlineAvailable) download.value = await call('firmwareDownloadState')
@@ -243,7 +264,6 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <p v-if="!identity && board && !update.latest && !libraryBusy && !libraryError && !library.error" class="mb-4">No matching firmware release is available for this board.</p>
           <template v-if="update.latest && !libraryBusy">
             <p class="text-subtitle-1 mb-3">{{ update.kind === 'update' && identity ? 'Update available' : 'Available firmware' }}: <strong>{{ update.latest.version }}</strong></p>
-            <FirmwareReleaseNotes :release="update.latest" />
             <v-alert v-if="board === 'CHEAP_YELLOW_DISPLAY'" type="info" variant="tonal" class="mb-4">For an update, keep the current firmware running until the app shows “Connecting to your display”. If needed, use BOOT and RESET at that step; the app will show the instructions.</v-alert>
             <v-alert type="warning" variant="tonal" class="mb-4">Installing firmware replaces the display's firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert>
             <v-select v-model="baud" label="USB transfer speed" :items="[{title:'Standard (460800)', value:460800}, {title:'Slower ? retry failed transfers (115200)',value:115200}]" :disabled="locked" hint="Use Standard normally. Try Slower if firmware transfers fail." persistent-hint class="mb-4" />
@@ -274,21 +294,49 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           {{ libraryError || library.error }}
           <v-btn variant="text" :disabled="locked || libraryBusy" :loading="libraryBusy" @click="loadLibrary()">Retry</v-btn>
         </v-alert>
-        <details v-if="panel === 'firmware' && library.issues?.length" class="mt-3"><summary>{{ library.issues.length }} package(s) could not be used</summary><p v-for="issue in library.issues" :key="issue.folder" class="mt-2">{{ issue.folder }}: {{ issue.message }}</p></details>
-        <details v-if="state.log" class="mt-4"><summary>Installation log</summary><pre class="firmware-log mt-3">{{ state.log }}</pre></details>
       </template>
       </div>
       <aside class="setup-support" aria-label="Display information and help">
-        <h2 class="text-h6 mb-4">{{ identity ? 'Your display' : 'Display setup help' }}</h2>
+        <h2 class="text-h6 mb-4">{{ detectedBoard ? 'Your display' : 'Display setup help' }}</h2>
         <figure v-if="detectedBoard" class="detected-board mb-5">
           <img :src="detectedBoard.image" :alt="detectedBoard.title" class="board-photo" />
           <figcaption class="text-body-2 mt-2">{{ detectedBoard.title }}</figcaption>
         </figure>
 
         <p v-if="identity" class="text-body-2 mb-4">{{ identity.wifi_connected ? 'Connected to Wi-Fi' : 'Wi-Fi connection pending' }}</p>
-        <BoardShopping v-if="!identity && !locked" />
-        <details v-if="identity" class="mt-5"><summary>Device details</summary><p class="mt-3">{{ identity.port }} · Hardware ID {{ identity.hardware_id }} · {{ identity.width }} × {{ identity.height }} · Firmware {{ identity.firmware_version }}</p><v-btn variant="text" :disabled="locked" @click="refreshConnection">Refresh device information</v-btn></details>
-        <details v-if="panel !== 'connection' || !serverReady" class="mt-5" :open="state.stage === 'failed' || Boolean(state.identityError)"><summary>Connection help and recovery</summary><p class="mt-3">Use the board’s data USB connector and a data cable. Close other apps using the USB serial port.</p><p class="mt-3">If flashing cannot connect: hold BOOT, press and release RESET/EN, then release BOOT. Without RESET, reconnect USB while holding BOOT. Refresh ports and check the display again if its port name changes.</p><p class="mt-3">After an interrupted write, enter bootloader mode and reinstall the complete package. Try the slower USB speed if transfers fail. No full-chip erase is performed.</p></details>
+        <BoardShopping v-if="!detectedBoard && !identity && !locked" />
+        <v-expansion-panels v-model="supportPanels" multiple variant="accordion" class="setup-support-panels mt-5">
+          <v-expansion-panel v-if="update.latest" value="release">
+            <v-expansion-panel-title>Release information · {{ update.latest.version }}</v-expansion-panel-title>
+            <v-expansion-panel-text>
+              <FirmwareReleaseNotes v-if="update.latest.notes?.trim()" :release="update.latest" embedded />
+              <p v-else class="text-body-2">Release notes are not available for this version.</p>
+            </v-expansion-panel-text>
+          </v-expansion-panel>
+          <v-expansion-panel v-if="state.log" value="log">
+            <v-expansion-panel-title>Installation log</v-expansion-panel-title>
+            <v-expansion-panel-text><pre class="firmware-log">{{ state.log }}</pre></v-expansion-panel-text>
+          </v-expansion-panel>
+          <v-expansion-panel v-if="identity" value="device">
+            <v-expansion-panel-title>Device details</v-expansion-panel-title>
+            <v-expansion-panel-text>
+              <p class="text-body-2">{{ identity.port }} · Hardware ID {{ identity.hardware_id }} · {{ identity.width }} × {{ identity.height }} · Firmware {{ identity.firmware_version }}</p>
+              <v-btn class="mt-3" variant="text" :disabled="locked" @click="refreshConnection">Refresh device information</v-btn>
+            </v-expansion-panel-text>
+          </v-expansion-panel>
+          <v-expansion-panel v-if="library.issues?.length" value="issues">
+            <v-expansion-panel-title>{{ library.issues.length }} package(s) could not be used</v-expansion-panel-title>
+            <v-expansion-panel-text><p v-for="issue in library.issues" :key="issue.folder" class="text-body-2 mb-2">{{ issue.folder }}: {{ issue.message }}</p></v-expansion-panel-text>
+          </v-expansion-panel>
+          <v-expansion-panel v-if="panel !== 'connection' || !serverReady || state.stage === 'failed' || state.identityError" value="recovery">
+            <v-expansion-panel-title>Connection help and recovery</v-expansion-panel-title>
+            <v-expansion-panel-text>
+              <p class="text-body-2 mb-3">Use the board’s data USB connector and a data cable. Close other apps using the USB serial port.</p>
+              <p class="text-body-2 mb-3">If flashing cannot connect: hold BOOT, press and release RESET/EN, then release BOOT. Without RESET, reconnect USB while holding BOOT. Refresh ports and check the display again if its port name changes.</p>
+              <p class="text-body-2">After an interrupted write, enter bootloader mode and reinstall the complete package. Try the slower USB speed if transfers fail. No full-chip erase is performed.</p>
+            </v-expansion-panel-text>
+          </v-expansion-panel>
+        </v-expansion-panels>
       </aside>
       </div>
     </v-card-text>
@@ -321,12 +369,13 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 .board-photo { display: block; width: 100%; height: 160px; object-fit: contain; background: white; border-radius: 4px; }
 .board-option-label { display: flex; align-items: baseline; gap: 8px; padding-top: 10px; font-size: .875rem; }
 .board-option-label input { accent-color: rgb(var(--v-theme-primary)); flex-shrink: 0; }
-.detected-board { max-width: 420px; }
+.detected-board { margin: 0; width: 100%; max-width: 420px; }
 .detected-board .board-photo { height: 200px; }
+.setup-support-panels :deep(.v-expansion-panel-title) { line-height: 1.4; }
+.setup-support-panels :deep(.v-expansion-panel-text__wrapper) { min-width: 0; }
 @media (max-width: 480px) { .board-grid { grid-template-columns: 1fr; } }
 .setup-summary, .setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .setup-summary { justify-content: space-between; font-size: .875rem; border-bottom: 1px solid rgb(var(--v-theme-on-surface), .12); padding-bottom: 12px; }
 .setup-path { overflow-wrap: anywhere; white-space: pre-wrap; }
-summary { cursor: pointer; font-size: .875rem; }
 .firmware-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12px; }
 </style>

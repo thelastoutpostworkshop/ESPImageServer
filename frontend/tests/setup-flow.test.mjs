@@ -12,9 +12,9 @@ const {default:component}=await import(`data:text/javascript;base64,${Buffer.fro
 component.render=()=>null
 const renderer=createRenderer({createComment:()=>({}),insert(){},remove(){},parentNode:()=>null,nextSibling:()=>null,createElement:()=>({}),createText:()=>({}),setText(){},setElementText(){},patchProp(){}})
 const flush=async()=>{await nextTick();await new Promise(r=>setImmediate(r))}
-async function mount(t, extraApi = {}) {
+async function mount(t, extraApi = {}, initialState = {}) {
   const identity={port:'COM8',board_target:'JC4827W543',hardware_id:'aabbccddeeff',firmware_version:'1.1.3',wifi_configured:true,wifi_connected:true,capabilities:['wifi_scan','wifi_connect','wifi_status','wifi_cancel']}
-  const state={selectedPort:'COM8',identity,busy:false,stage:'idle'}
+  const state={selectedPort:'COM8',identity,busy:false,stage:'idle',...initialState}
   let installs=0, refreshes=0
   const api={firmwareDownloadState:async()=>({ok:true,value:{busy:false}}),firmwareReleases:async()=>({ok:true,value:{directory:'library',checkedAt:'today',packages:[{board:'JC4827W543',version:'1.1.4',id:'release-package',source:'github'}]}}),
     firmwareState:async()=>({ok:true,value:structuredClone(state)}),firmwarePorts:async()=>({ok:true,value:[{port:'COM8'}]}),
@@ -183,4 +183,190 @@ test('installation progress distinguishes download, upload, verification, and st
   assert.equal(form.installationProgress.label, 'Checking firmware startup')
   form.state.stage = 'failed'; form.state.busy = false
   assert.equal(form.installationActive, false)
+})
+
+test('the confirmed board portrait remains available on every permitted setup step', async t => {
+  const {form} = await mount(t)
+  const image = '/ui/board-catalog/JC4827W543.png'
+  assert.equal(form.detectedBoard.image, image)
+  for (const step of [1, 2, 3, 4, 2]) {
+    form.goToStep(step)
+    await flush()
+    assert.equal(form.step, step)
+    assert.equal(form.detectedBoard.image, image)
+  }
+})
+
+test('an uploading board keeps its portrait without treating cached identification as live USB identity', async t => {
+  const {form,state} = await mount(t)
+  form.showInstall = true
+  state.identity = null
+  state.busy = true
+  state.stage = 'writing_and_verifying'
+  await form.poll(); await flush()
+
+  assert.equal(form.detectedBoard.value, 'JC4827W543')
+  assert.equal(form.identity, null)
+  assert.equal(form.compatible, false)
+  assert.equal(form.canInstall, false)
+  assert.equal(form.step, 2)
+  form.goToStep(3)
+  form.goToStep(4)
+  assert.equal(form.step, 2)
+
+  for (const stage of ['written', 'failed']) {
+    state.busy = false
+    state.stage = stage
+    await form.poll(); await flush()
+    assert.equal(form.detectedBoard.value, 'JC4827W543')
+    assert.equal(form.identity, null)
+    assert.equal(form.compatible, false)
+    form.goToStep(3)
+    form.goToStep(4)
+    assert.equal(form.step, 2)
+  }
+})
+
+test('selecting another USB port clears the previous board portrait', async t => {
+  const {form} = await mount(t)
+  assert.equal(form.detectedBoard.value, 'JC4827W543')
+  form.port = 'COM9'
+  await form.selectPort(); await flush()
+  assert.equal(form.detectedBoard, null)
+  assert.equal(form.confirmedBoard, null)
+  assert.equal(form.identity, null)
+})
+
+test('a disconnected USB port clears the board portrait and setup progress', async t => {
+  const {form} = await mount(t)
+  form.continueSetup()
+  window.espImageServerDesktop.firmwarePorts = async()=>({ok:true,value:[]})
+  await form.checkPorts(); await flush()
+  assert.equal(form.port, '')
+  assert.equal(form.detectedBoard, null)
+  assert.equal(form.confirmedBoard, null)
+  assert.equal(form.reviewed, false)
+})
+
+test('replacement hardware resets setup and replaces the portrait with the new board model', async t => {
+  const {form,state,identity} = await mount(t)
+  form.continueSetup()
+  state.identity = {...identity,hardware_id:'112233445566',board_target:'ESP32_C6_LCD_147'}
+  await form.poll(); await flush()
+  assert.equal(form.reviewed, false)
+  assert.equal(form.panel, 'firmware')
+  assert.equal(form.detectedBoard.value, 'ESP32_C6_LCD_147')
+  assert.equal(form.detectedBoard.image, '/ui/board-catalog/ESP32_C6_LCD_147.png')
+})
+
+test('verified startup on a new COM port retains the correctly identified portrait', async t => {
+  const {form,state,identity} = await mount(t)
+  form.showInstall = true
+  form.installationStarted = true
+  state.stage = 'boot_verified'
+  state.selectedPort = 'COM9'
+  state.identity = {...identity,port:'COM9',firmware_version:'1.1.4'}
+  window.espImageServerDesktop.firmwarePorts = async()=>({ok:true,value:[{port:'COM9'}]})
+  await form.poll(); await flush()
+  assert.equal(form.port, 'COM9')
+  assert.equal(form.confirmedBoard.port, 'COM9')
+  assert.equal(form.detectedBoard.value, 'JC4827W543')
+  assert.equal(form.panel, 'connection')
+})
+
+test('reopening setup during an active upload restores only the package portrait for that USB port', async t => {
+  const {form} = await mount(t, {}, {
+    port:'COM8',identity:null,busy:true,stage:'writing_and_verifying',
+    package:{board:'CHEAP_YELLOW_DISPLAY',version:'1.1.41',source:'github'}
+  })
+  assert.equal(form.detectedBoard.value, 'CHEAP_YELLOW_DISPLAY')
+  assert.equal(form.detectedBoard.image, '/ui/board-catalog/CHEAP_YELLOW_DISPLAY.png')
+  assert.equal(form.identity, null)
+  assert.equal(form.compatible, false)
+  assert.equal(form.panel, 'install')
+})
+
+test('a package belonging to another USB port cannot restore a stale board portrait', async t => {
+  const {form} = await mount(t, {}, {
+    selectedPort:'COM8',port:'COM7',identity:null,busy:true,stage:'writing_and_verifying',
+    package:{board:'CHEAP_YELLOW_DISPLAY',version:'1.1.41',source:'github'}
+  })
+  assert.equal(form.detectedBoard, null)
+  assert.equal(form.confirmedBoard, null)
+  assert.equal(form.identity, null)
+})
+
+test('installing a manually selected model keeps its portrait without granting unidentified firmware Wi-Fi access', async t => {
+  const {form,state,installs} = await mount(t, {
+    firmwareReleases:async()=>({ok:true,value:{checkedAt:'today',packages:[{id:'cyd',source:'github',board:'CHEAP_YELLOW_DISPLAY',version:'1.1.41'}]}}),
+    selectReleaseFirmware:async()=>({ok:true,value:{...state,package:{source:'github',board:'CHEAP_YELLOW_DISPLAY',version:'1.1.41'}}})
+  }, {identity:null})
+  form.goToStep(2)
+  form.board = 'CHEAP_YELLOW_DISPLAY'
+  await flush()
+  assert.equal(form.canInstall, true)
+  await form.install(); await flush()
+  assert.equal(installs(), 1)
+  assert.equal(form.detectedBoard.value, 'CHEAP_YELLOW_DISPLAY')
+  assert.equal(form.identity, null)
+  assert.equal(form.compatible, false)
+  form.goToStep(3)
+  assert.equal(form.step, 2)
+})
+
+test('reported replacement or disconnected hardware removes a cached portrait when no USB identity is available', async t => {
+  const {form,state,identity} = await mount(t)
+  state.identity = null
+  state.identityError = 'The USB display disconnected'
+  await form.poll(); await flush()
+  assert.equal(form.detectedBoard, null)
+  assert.equal(form.confirmedBoard, null)
+
+  state.identity = {...identity,board_target:'ESP32_C6_LCD_147'}
+  state.identityError = ''
+  await form.poll(); await flush()
+  assert.equal(form.detectedBoard.value, 'ESP32_C6_LCD_147')
+  state.identity = null
+  state.identityError = 'The display hardware changed'
+  await form.poll(); await flush()
+  assert.equal(form.detectedBoard, null)
+  assert.equal(form.confirmedBoard, null)
+})
+
+test('a new installation failure opens recovery and log panels without overriding a later manual collapse', async t => {
+  const {form,state} = await mount(t)
+  form.supportPanels = ['device']
+  state.stage = 'failed'
+  state.error = 'Write failed'
+  state.log = 'Could not write firmware'
+  await form.poll(); await flush()
+  assert.ok(form.supportPanels.includes('device'))
+  assert.ok(form.supportPanels.includes('recovery'))
+  assert.ok(form.supportPanels.includes('log'))
+
+  form.supportPanels = []
+  await form.poll(); await flush()
+  assert.deepEqual(form.supportPanels, [])
+
+  state.stage = 'connecting'
+  await form.poll(); await flush()
+  state.stage = 'failed'
+  await form.poll(); await flush()
+  assert.ok(form.supportPanels.includes('recovery'))
+  assert.ok(form.supportPanels.includes('log'))
+})
+
+test('identity errors open recovery once per new error and respect a manually closed panel while polling', async t => {
+  const {form,state} = await mount(t)
+  state.identityError = 'No USB identity received'
+  await form.poll(); await flush()
+  assert.ok(form.supportPanels.includes('recovery'))
+
+  form.supportPanels = []
+  await form.poll(); await flush()
+  assert.deepEqual(form.supportPanels, [])
+
+  state.identityError = 'USB identity did not match this display'
+  await form.poll(); await flush()
+  assert.ok(form.supportPanels.includes('recovery'))
 })
