@@ -1189,58 +1189,85 @@ function displayHardwareAddress(target) {
   return hardwareId || 'unavailable'
 }
 
-async function loadDisplayCardSdStates() {
+let displayCardSdRequest = null
+let displayCardSdStatesLoaded = false
+
+function loadDisplayCardSdStates() {
+  if (displayCardSdRequest) return displayCardSdRequest
   if (!displays.value.length) {
     displayCardSdStates.value = {}
-    return
+    return Promise.resolve()
   }
-  displayCardsLoading.value = true
-  try {
-    const reports = await Promise.all(displays.value.map(async target => {
-      try {
-        const response = await fetch(`/displays/${encodeURIComponent(target.id)}/display-sd-card`, { cache: 'no-store' })
-        return [target.id, response.ok ? await response.json() : null]
-      } catch {
-        return [target.id, null]
+  displayCardsLoading.value = !displayCardSdStatesLoaded
+  const targets = [...displays.value]
+  displayCardSdRequest = (async () => {
+    try {
+      const reports = await Promise.all(targets.map(async target => {
+        try {
+          const response = await fetch(`/displays/${encodeURIComponent(target.id)}/display-sd-card`, { cache: 'no-store', signal: AbortSignal.timeout(15000) })
+          return [target.id, response.ok ? await response.json() : null]
+        } catch {
+          return [target.id, null]
+        }
+      }))
+      const currentIds = new Set(displays.value.map(target => target.id))
+      const nextStates = Object.fromEntries(Object.entries(displayCardSdStates.value).filter(([id]) => currentIds.has(id)))
+      for (const [id, report] of reports) {
+        if (report && currentIds.has(id)) nextStates[id] = report
       }
-    }))
-    displayCardSdStates.value = Object.fromEntries(reports.filter(([, report]) => report))
-  } finally {
-    displayCardsLoading.value = false
-  }
+      displayCardSdStates.value = nextStates
+    } finally {
+      displayCardSdStatesLoaded = true
+      displayCardsLoading.value = false
+      displayCardSdRequest = null
+    }
+  })()
+  return displayCardSdRequest
 }
 
-async function loadDisplay() {
-  try {
-    const previousKey = display.value?.connected && display.value.online !== false
-      ? `${display.value.id || 'legacy'}:${display.value.name}:${display.value.width}x${display.value.height}:${display.value.firmware_version}`
-      : ''
-    const [registeredResponse, legacyResponse] = await Promise.all([
-      fetch('/displays', { cache: 'no-store' }),
-      fetch('/display', { cache: 'no-store' })
-    ])
-    const registered = registeredResponse.ok ? await registeredResponse.json() : []
-    const nextDisplays = Array.isArray(registered) ? registered : []
-    displays.value = nextDisplays
-    legacyDisplay.value = !nextDisplays.length && legacyResponse.ok ? await legacyResponse.json() : null
-    activeDisplayId.value = sessionDisplayId(nextDisplays, activeDisplayId.value, !displaySelectionInitialized)
-    displaySelectionInitialized = true
-    const nextDisplay = display.value
-    const nextKey = nextDisplay?.connected && nextDisplay.online !== false
-      ? `${nextDisplay.id || 'legacy'}:${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}:${nextDisplay.firmware_version}`
-      : ''
-    if (nextKey && nextKey !== previousKey) {
-      const firmwareVersion = nextDisplay.firmware_version
-      displayConnectedMessage.value = `${nextDisplay.name} connected (${nextDisplay.width} × ${nextDisplay.height}, firmware ${firmwareVersion}).`
-      displayConnectedSnackbar.value = true
+let displayRequest = null
+
+function loadDisplay() {
+  if (displayRequest) return displayRequest
+  displayRequest = (async () => {
+    try {
+      const previousKey = display.value?.connected && display.value.online !== false
+        ? `${display.value.id || 'legacy'}:${display.value.name}:${display.value.width}x${display.value.height}:${display.value.firmware_version}`
+        : ''
+      const [registeredResponse, legacyResponse] = await Promise.all([
+        fetch('/displays', { cache: 'no-store', signal: AbortSignal.timeout(15000) }),
+        fetch('/display', { cache: 'no-store', signal: AbortSignal.timeout(15000) }).catch(() => null)
+      ])
+      if (!registeredResponse.ok) throw new Error('Could not refresh displays')
+      const nextDisplays = await registeredResponse.json()
+      if (!Array.isArray(nextDisplays)) throw new Error('Invalid display list')
+      let nextLegacyDisplay = null
+      if (!nextDisplays.length) {
+        nextLegacyDisplay = legacyResponse?.ok
+          ? await legacyResponse.json().catch(() => legacyDisplay.value)
+          : legacyDisplay.value
+      }
+      displays.value = nextDisplays
+      legacyDisplay.value = nextLegacyDisplay
+      activeDisplayId.value = sessionDisplayId(nextDisplays, activeDisplayId.value, !displaySelectionInitialized)
+      displaySelectionInitialized = true
+      const nextDisplay = display.value
+      const nextKey = nextDisplay?.connected && nextDisplay.online !== false
+        ? `${nextDisplay.id || 'legacy'}:${nextDisplay.name}:${nextDisplay.width}x${nextDisplay.height}:${nextDisplay.firmware_version}`
+        : ''
+      if (nextKey && nextKey !== previousKey) {
+        const firmwareVersion = nextDisplay.firmware_version
+        displayConnectedMessage.value = `${nextDisplay.name} connected (${nextDisplay.width} × ${nextDisplay.height}, firmware ${firmwareVersion}).`
+        displayConnectedSnackbar.value = true
+      }
+      if (page.value === 'displays') void loadDisplayCardSdStates()
+    } catch {
+      // Keep the last accepted profiles and selection during a temporary server failure.
+    } finally {
+      displayRequest = null
     }
-    if (page.value === 'displays') void loadDisplayCardSdStates()
-  } catch {
-    displays.value = []
-    legacyDisplay.value = null
-    displaySelectionInitialized = false
-    activeDisplayId.value = ''
-  }
+  })()
+  return displayRequest
 }
 
 async function loadDisplaySettings() {
