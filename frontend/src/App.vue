@@ -975,6 +975,8 @@ watch(diagnosticsTab, tab => {
 })
 
 watch(page, (nextPage, previousPage) => {
+  if (nextPage === 'firmware') metadataPane.value = false
+  else if (metadataPanePinned.value && !compact.value) metadataPane.value = true
   if (previousPage === 'display-experience' && nextPage !== 'display-experience') void stopDisplayExperiencePreview()
   updateConsoleRefresh()
 })
@@ -2183,7 +2185,6 @@ function openDisplaysPage() {
 
 function navigate(nextPage) {
   page.value = nextPage
-  if (nextPage === 'firmware') metadataPane.value = false
   if (compact.value) drawer.value = false
 }
 
@@ -3374,7 +3375,7 @@ onMounted(async () => {
   await loadGalleryBulkSave(true)
   galleryBulkSaveTimer = window.setInterval(loadGalleryBulkSave, 1000)
   await clearDiagnostics()
-  if (metadataPanePinned.value && !compact.value) metadataPane.value = true
+  if (metadataPanePinned.value && !compact.value && page.value !== 'firmware') metadataPane.value = true
   statusTimer = window.setInterval(() => {
     loadServerStatus()
     loadDisplay()
