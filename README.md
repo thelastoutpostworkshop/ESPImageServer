@@ -8,9 +8,6 @@ ESPImageServer is a free app that creates images and videos using AI models runn
 
 Turn a supported ESP32 board into a small digital art display: show images, play videos, and save your favorites to its SD card over Wi-Fi. Configure a **Display Experience** to keep playing saved images and videos when the server is unavailable.
 
-To save several creations, switch the Creation Library to **list view**, check the images and videos you want (or **Select all filtered**), then choose **Save selected to SD card**. The batch stays on the selected display, saves one item at a time, and skips verified copies. **Cancel bulk save** stops the current transfer and remaining items while keeping completed files. Cancellation waits for the display's confirmation; reconnect an offline display to finish stopping it. The batch continues through gallery navigation and page reloads while the server stays running. Updated firmware also shows the item count and finishes each item's optional thumbnail before moving on.
-
-Use **Export all prompts (.txt)** above the Creation Library filters to download every saved image and video's prompt, negative prompt, model, orientation, rotation, steps, and seed. The export includes the full library regardless of the current view, filters, or selection; missing saved settings are marked **Not recorded**.
 
 ## Download and install
 
@@ -25,7 +22,7 @@ Choose the installer for your computer from the release's **Assets** list. Insta
 
 Both platforms require a supported NVIDIA GPU with CUDA for image and video generation. macOS installers are not included in the current release.
 
-The app checks for newer public GitHub releases at most once every 24 hours, including across restarts and failed attempts. An update notice links to the matching installer and release notes; close the app when you are ready to install the update. Use **About > Check for updates** for a manual check, which uses the cached result within the same 24-hour period, or turn off **Automatically check for app updates** in **Settings** and save. Drafts and prereleases are ignored. While the repository is private or GitHub is unavailable, automatic checks stay quiet; the same feature starts notifying once a newer release with its installer and checksum is published publicly. Checks use public release metadata without a GitHub token.
+The app checks for newer public GitHub releases at most once every 24 hours, including across restarts and failed attempts. An update notice links to the matching installer and release notes; close the app when you are ready to install the update. Use **About > Check for updates** for a manual check, which uses the cached result within the same 24-hour period, or turn off **Automatically check for app updates** in **Settings**; changes save automatically. Drafts and prereleases are ignored. While the repository is private or GitHub is unavailable, automatic checks stay quiet; the same feature starts notifying once a newer release with its installer and checksum is published publicly. Checks use public release metadata without a GitHub token.
 
 ## Supported boards
 
@@ -79,23 +76,101 @@ Image and video generation share the GPU and run one job at a time. Generated me
 
 ## Troubleshooting
 
+Start with the symptom below. **Queue** shows generation progress, **Diagnostics** shows recent errors and console output, and **About** shows your app version and generation hardware.
+
+### Generation is unavailable or CUDA is not detected
+
+Image and video generation require a supported NVIDIA graphics card, a compatible NVIDIA driver, and the app's CUDA generation dependencies. CPU generation is disabled; display setup, saved creations, and SD-card tools remain available.
+
+- **Windows:** Make sure the NVIDIA driver is installed. If the app's generation dependencies are missing or unusable, re-run the ESPImageServer installer with internet access, then restart the app.
+- **Ubuntu:** Let first-launch generation setup finish. After resolving an internet or setup error, use **Retry setup**. After resolving a GPU or driver problem, use **Retry GPU check**. **Open display tools** lets you continue without generation when that option is offered.
+
 ### Generation is slow
 
-CPU generation is not supported. Generation requires a working NVIDIA GPU with CUDA; computers without one can still manage displays, saved creations, and SD cards.
+Check **Queue** first: images and videos share the GPU and run one job at a time. A queued job waits for the current one to finish. Switching between image and video generation also loads a different model.
+
+For a quicker image, start with **DreamShaper 8** and fewer generation steps. For video, try **LTX-Video 2B distilled**, a shorter duration, and its recommended steps. Close other applications using the GPU. A small display still requires a larger working image or video before resizing, so a tiny screen does not make every model fast.
+
+### Generation fails with an out-of-memory error
+
+CUDA being available does not guarantee that every model fits in your graphics card's memory. Try DreamShaper 8 for images, or fewer frames and a shorter clip for video. Close other GPU applications before retrying. Reducing generation steps mainly reduces processing time; it is not a reliable fix for insufficient GPU memory.
 
 ### A model appears to be stuck loading
 
-The first download can take time, depending on the model size and internet connection. Keep the app open until it finishes. If a previously downloaded model is loading, it may take a moment to move the model into memory.
+The first use downloads model files and can take several minutes. Check **Queue** and **Diagnostics > Console** for the current stage or a download error. Keep the app open, check internet access, and make sure the computer has free disk space. A cached model still takes time to load into memory.
+
+If an error reports incomplete or corrupted model files, wait for generation to stop, open **Models**, remove the affected model, and select it again to download it on its next use. Model removal preserves saved creations. Read any removal note: the two LTX models share some downloaded files.
+
+### A job stays queued or cancellation is taking time
+
+Open **Queue** to see the active job and cancel unwanted jobs. Cancellation may wait for a model-loading or processing operation to finish. Keep the app open until completion or cancellation is confirmed. Quitting the desktop app stops the local server it started and interrupts unfinished generation.
+
+### USB setup cannot find the board
+
+Use **Set up display** in the desktop app; browser and phone access cannot perform USB installation. Try a USB data cable, a different USB port, and **Refresh ports**. Close serial monitors and other programs using the same port, then identify the board again.
+
+Select the firmware package for your exact board model. If flashing succeeds but firmware startup is not confirmed, release **BOOT**, press **RESET/EN** or reconnect the board, then choose **Check display after restart**. A board left in download mode cannot run its normal firmware until it restarts.
+
+For failed transfers, open **Connection help and recovery** in the setup window and try the slower **USB transfer speed**.
+
+### Wi-Fi setup fails or my network is missing
+
+Choose a **2.4 GHz** network and check **Network name**, **Network security**, and **Wi-Fi password**. You can enter a hidden network manually. Use **Connect and save** or **Retry connection**, and wait for confirmation.
+
+Wi-Fi being connected and saved does not yet confirm that the board can reach ESPImageServer. Continue to the server-connection step and use **Check server again** after resolving a network problem.
+
+### The display is offline or cannot reach the app
+
+Keep ESPImageServer running and the server computer awake. Check the board's power and Wi-Fi connection, and use **Set up display** to configure or change Wi-Fi when needed. The board and server computer must be on the same local network.
+
+Guest-network isolation, a VPN, or a firewall can prevent devices from reaching the server. Allow the app's server connection on your trusted local network; the default port is **TCP 8000**. The default address is `http://espimageserver.local:8000`, which requires local hostname discovery to work. If a custom server address uses a numeric IP, check that it still matches the server computer's network address.
+
+With several boards, check the active-display chooser at the top of the app or use **Displays > Make active**. New display commands and SD-card actions use that selected board. An offline board's SD list and experience settings are its last reported state.
+
+### SD-card files are missing or saving is unavailable
+
+Check that the selected display is online and reports its card as ready. Open **SD Card** and use **Refresh** after the board reconnects. If the card is not detected, power off the board before checking that the card is seated correctly.
+
+Saving a creation to the computer and saving it to the board's SD card are separate actions. Use **Save to SD card** from the creation's controls, or select items in the Creation Library's list view and choose **Save selected to SD card**. Let an active bulk save finish or cancel it before starting another display operation. If cancellation is waiting for an offline board, reconnect that board so it can confirm the cancellation.
+
+### A video will not play from the SD card
+
+Save videos through the app so it prepares the board's MJPEG video at the correct screen dimensions. Copying an MP4 directly onto the card does not convert it to the board's playback format. Media prepared for another board's dimensions may not play correctly.
+
+If the display reports **MJPEG frame is too large**, increase the **Video JPEG quality** value in Settings to produce smaller frames. Keep the original video in **Creation Library**, delete its existing copy from **SD Card**, and wait for deletion confirmation before saving it to the SD card again. Repeated saves normally reuse an existing SD copy, so removing that copy is needed to apply the new quality. If playback still fails, include the firmware version and any serial error in your issue report.
+
+### The offline slideshow or video loop does not start
+
+In **Display Experience**, choose the experience and click **Save** while the board is online. Wait for confirmation that it is saved on the display. **Preview** only tests playback; it does not save these settings.
+
+The board needs configured Wi-Fi and a working SD card containing matching images or videos. It starts the saved experience after losing contact with ESPImageServer and returns to server control when contact is restored. An empty card or an unsaved experience cannot provide offline playback.
 
 ### The display orientation is wrong
 
-Change **Image rotation** in the Generate page, then create a new image. Rotation applies to newly generated images.
+Choose the intended display, change **Image rotation** on **Generate image** or **Video rotation** on **Generate video**, then add a new job. Each job keeps the orientation selected when it entered the queue. Changing rotation does not alter jobs already queued, existing creations, or files already saved to the SD card.
 
-### I cannot find my images
+### I cannot find my saved images or videos
 
-Open **Settings** and select **Open image library folder**. You can also use **Choose image library** to move future images to an empty folder.
+Open **Creation Library**, check its **Model**, **Display**, and **On SD card** filters, and check whether automatic saving is enabled on the relevant generation page. If automatic saving is off, use the result's save control to keep the creation in the library.
 
-If these troubleshooting steps do not help, [open an issue on GitHub](https://github.com/thelastoutpostworkshop/ESPImageServer/issues/new). Include your app version, what you tried, and any error message.
+In **Settings**, **Open image library folder** opens the library on the server computer. Videos are in its `videos` subfolder. **Choose image library folder** moves the existing library, including saved creations, to an empty destination. From a phone or another browser, use the displayed path on the server computer if folder actions are unavailable.
+
+### A settings change does not seem to apply
+
+Changes on **Settings** save automatically. After typing a library path, press Enter or leave the field to commit it, and check for a save confirmation or error. **JPEG quality** applies to newly generated images. **Video JPEG quality** applies when preparing a video for the display SD card; lower values retain more detail and produce larger files.
+
+**Display Experience** has its own **Save** button because those settings must be sent to the board.
+
+### Still need help?
+
+[Open an issue on GitHub](https://github.com/thelastoutpostworkshop/ESPImageServer/issues/new) if these steps do not help. Include:
+
+- App version from **About**, operating system, and the steps that reproduce the problem.
+- What you expected, what happened, and the exact error message or a screenshot.
+- For generation: GPU, selected model, and image or video settings.
+- For display or SD problems: board model, firmware version, and whether the board is online.
+
+Use **Diagnostics > Summary > Copy diagnostics** and **Diagnostics > Console > Copy console** for relevant logs. Clear the console search before copying if you need the full recent output, and capture the details before clearing logs or restarting. For a startup failure, include the error from **Startup details**; for an installation failure, include the **Installation log** in Set up display. Remove passwords and other private information before posting.
 
 ## Privacy and network use
 
