@@ -33,9 +33,9 @@ const features = [
       <div class="about-support-icon"><v-icon icon="mdi-lifebuoy" size="28" color="primary" aria-hidden="true" /></div>
       <div>
         <h2 id="about-support-title">Need help?</h2>
-        <p>Open an issue on GitHub to ask a question or report a problem.</p>
+        <p>Try the troubleshooting guide on GitHub. If it doesn't help, <a href="https://github.com/thelastoutpostworkshop/ESPImageServer/issues/new" target="_blank" rel="noopener noreferrer">open an issue</a>.</p>
       </div>
-      <v-btn href="https://github.com/thelastoutpostworkshop/ESPImageServer/issues/new" target="_blank" rel="noopener noreferrer" color="primary" variant="flat" prepend-icon="mdi-github" append-icon="mdi-open-in-new">Open an issue</v-btn>
+      <v-btn href="https://github.com/thelastoutpostworkshop/ESPImageServer#troubleshooting" target="_blank" rel="noopener noreferrer" color="primary" variant="flat" prepend-icon="mdi-github" append-icon="mdi-open-in-new">Troubleshooting</v-btn>
     </section>
 
     <section class="about-features" aria-label="What you can create">
@@ -84,6 +84,7 @@ h2 { font-size: 1.2rem; line-height: 1.4; }
 .about-support { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 16px; margin-bottom: 32px; padding: 20px 24px; border: 1px solid rgba(var(--v-theme-primary), .45); border-radius: 16px; background: linear-gradient(110deg, rgba(var(--v-theme-primary), .18), rgba(var(--v-theme-primary), .04)); }
 .about-support-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; background: rgba(var(--v-theme-primary), .12); }
 .about-support p { margin-top: 4px; line-height: 1.6; color: rgba(var(--v-theme-on-background), .8); }
+.about-support a { color: rgb(var(--v-theme-primary)); text-underline-offset: .15em; }
 .about-support .v-btn { grid-column: 1 / -1; justify-self: start; max-width: 100%; height: auto; min-height: 44px; }
 .about-support :deep(.v-btn__content) { white-space: normal; }
 .about-features { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }

@@ -95,6 +95,8 @@ Change **Image rotation** in the Generate page, then create a new image. Rotatio
 
 Open **Settings** and select **Open image library folder**. You can also use **Choose image library** to move future images to an empty folder.
 
+If these troubleshooting steps do not help, [open an issue on GitHub](https://github.com/thelastoutpostworkshop/ESPImageServer/issues/new). Include your app version, what you tried, and any error message.
+
 ## Privacy and network use
 
 Image generation runs locally. Model downloads require internet access the first time a model is installed. After that, normal image generation and ESP32 image delivery use your computer and local network.
