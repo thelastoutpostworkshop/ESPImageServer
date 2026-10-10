@@ -817,13 +817,23 @@ const creationModelOptions = computed(() => [...new Set(
 )].sort().map(name => ({ title: name, value: name })))
 const creationDisplayOptions = computed(() => {
   const creations = [...savedImages.value, ...savedVideos.value]
-  const names = [...new Set(creations.map(creationDisplayName).filter(Boolean))].sort()
+  const registeredDisplays = [...displays.value]
+  if (display.value?.name && !registeredDisplays.some(target => target.name === display.value.name)) {
+    registeredDisplays.push(display.value)
+  }
+  const names = [...new Set([
+    ...registeredDisplays.map(target => target.name),
+    ...creations.map(creationDisplayName)
+  ].filter(Boolean))].sort()
   const options = names.map(name => {
-    const boardTargets = new Set(creations.filter(creation => creationDisplayName(creation) === name).map(creation => {
-      const metadata = creation.metadata
-      const displayId = metadata?.display_id || metadata?.display_ids?.[0]
-      return metadata?.display?.board_target || displays.value.find(target => target.id === displayId)?.board_target || ''
-    }))
+    const boardTargets = new Set([
+      ...registeredDisplays.filter(target => target.name === name).map(target => target.board_target || ''),
+      ...creations.filter(creation => creationDisplayName(creation) === name).map(creation => {
+        const metadata = creation.metadata
+        const displayId = metadata?.display_id || metadata?.display_ids?.[0]
+        return metadata?.display?.board_target || displays.value.find(target => target.id === displayId)?.board_target || ''
+      })
+    ])
     return { title: name, value: name, boardTarget: boardTargets.size === 1 ? [...boardTargets][0] : '' }
   })
   if (creations.some(creation => !creationDisplayName(creation))) {
@@ -831,6 +841,10 @@ const creationDisplayOptions = computed(() => {
   }
   return options
 })
+// Follow actual active-display changes, without resetting a user's filter on status polls.
+watch([() => display.value?.id || '', () => display.value?.name || ''], ([, name]) => {
+  creationDisplayFilter.value = name || null
+}, { immediate: true })
 const filteredSavedImages = computed(() => savedImages.value.filter(image => matchesCreationFilters(image, 'image')))
 const filteredSavedVideos = computed(() => savedVideos.value.filter(video => matchesCreationFilters(video, 'video')))
 const filteredCreationsCount = computed(() => filteredSavedImages.value.length + filteredSavedVideos.value.length)
