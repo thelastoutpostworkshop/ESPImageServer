@@ -19,6 +19,9 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 .app-bar__display-chip .v-chip__content { display: flex; min-width: 0; overflow: hidden; }
 .app-bar__display-label { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-bar__display-chevron { flex: 0 0 auto; }
+.display-card-heading { display: flex; align-items: center; gap: 16px; padding-block: 16px; }
+.display-card-heading__content { min-width: 0; }
+.display-card-heading__name { white-space: normal; overflow-wrap: anywhere; }
 .firmware-activity-icon--pulse .v-icon { animation: firmware-activity-pulse 1.2s ease-in-out infinite; }
 @keyframes firmware-activity-pulse { 0%, 100% { opacity: 0.5; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.14); } }
 .result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -129,6 +132,7 @@ body { margin: 0; background: rgb(var(--v-theme-background)); }
 }
 .creation-library-filters .v-input { min-width: 0; }
 .creation-library-filters .v-select__selection { max-width: 100%; }
+.creation-library-display-selection { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .creation-library-filter-value, .creation-library-context {
   white-space: normal;
   overflow-wrap: anywhere;

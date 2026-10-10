@@ -7,6 +7,7 @@ import FirmwareInstaller from './components/FirmwareInstaller.vue'
 import AboutPage from './components/AboutPage.vue'
 import MakerTools from './components/MakerTools.vue'
 import BoardShopping from './components/BoardShopping.vue'
+import BoardThumbnail from './components/BoardThumbnail.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import AppUpdateNotice from './components/AppUpdateNotice.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
@@ -817,7 +818,14 @@ const creationModelOptions = computed(() => [...new Set(
 const creationDisplayOptions = computed(() => {
   const creations = [...savedImages.value, ...savedVideos.value]
   const names = [...new Set(creations.map(creationDisplayName).filter(Boolean))].sort()
-  const options = names.map(name => ({ title: name, value: name }))
+  const options = names.map(name => {
+    const boardTargets = new Set(creations.filter(creation => creationDisplayName(creation) === name).map(creation => {
+      const metadata = creation.metadata
+      const displayId = metadata?.display_id || metadata?.display_ids?.[0]
+      return metadata?.display?.board_target || displays.value.find(target => target.id === displayId)?.board_target || ''
+    }))
+    return { title: name, value: name, boardTarget: boardTargets.size === 1 ? [...boardTargets][0] : '' }
+  })
   if (creations.some(creation => !creationDisplayName(creation))) {
     options.push({ title: 'No display recorded', value: '__no_display__' })
   }
@@ -3458,9 +3466,9 @@ onUnmounted(() => {
               @click="selectActiveDisplay(target.id)"
             >
               <template #prepend>
-                <v-avatar :color="target.online ? 'success' : 'warning'" size="32" variant="tonal">
-                  <span style="color: rgb(var(--v-theme-on-surface)); font-size: 18px; font-weight: 700; line-height: 1">{{ target.online ? '✓' : '!' }}</span>
-                </v-avatar>
+                <v-badge :color="target.online ? 'success' : 'warning'" :icon="target.online ? 'mdi-check' : 'mdi-exclamation'" location="bottom end" bordered class="mr-3">
+                  <BoardThumbnail :board-target="target.board_target" />
+                </v-badge>
               </template>
               <v-list-item-title>{{ target.name }}</v-list-item-title>
               <v-list-item-subtitle>{{ target.width }} × {{ target.height }} · v{{ target.firmware_version }} · {{ displayConnectionLabel(target) }}</v-list-item-subtitle>
@@ -3656,7 +3664,17 @@ onUnmounted(() => {
               density="compact"
               variant="outlined"
             >
-              <template #selection="{ item }"><span class="creation-library-filter-value">{{ item.title }}</span></template>
+              <template #selection="{ item }">
+                <span class="creation-library-display-selection">
+                  <BoardThumbnail :board-target="item.boardTarget" :size="28" />
+                  <span class="creation-library-filter-value">{{ item.title }}</span>
+                </span>
+              </template>
+              <template #item="{ item, props }">
+                <v-list-item v-bind="props">
+                  <template #prepend><BoardThumbnail :board-target="item.boardTarget" class="mr-3" /></template>
+                </v-list-item>
+              </template>
             </v-select>
             <v-select
               v-model="creationSdCardFilter"
@@ -4668,12 +4686,15 @@ onUnmounted(() => {
             <v-row v-if="displays.length">
               <v-col v-for="target in displays" :key="target.id" cols="12" md="6">
                 <v-card variant="outlined" :class="{ 'border-primary': target.id === activeDisplayId }">
-                  <v-card-title class="d-flex align-center ga-2 text-h6">
-                    <v-icon :color="target.online ? 'success' : 'warning'">{{ target.online ? 'mdi-monitor' : 'mdi-monitor-off' }}</v-icon>
-                    <span class="text-truncate">{{ target.name }}</span>
-                    <v-spacer />
-                    <v-chip v-if="target.id === activeDisplayId" color="primary" size="small" variant="tonal">Active</v-chip>
-                    <v-chip :color="target.online ? 'success' : 'warning'" size="small" variant="tonal">{{ displayConnectionLabel(target) }}</v-chip>
+                  <v-card-title class="display-card-heading">
+                    <BoardThumbnail :board-target="target.board_target" :size="80" />
+                    <div class="display-card-heading__content">
+                      <div class="display-card-heading__name text-h6">{{ target.name }}</div>
+                      <div class="d-flex flex-wrap ga-2 mt-2">
+                        <v-chip v-if="target.id === activeDisplayId" color="primary" size="small" variant="tonal">Active</v-chip>
+                        <v-chip :color="target.online ? 'success' : 'warning'" size="small" variant="tonal">{{ displayConnectionLabel(target) }}</v-chip>
+                      </div>
+                    </div>
                   </v-card-title>
                   <v-card-text class="pt-0">
                     <div class="text-body-2"><strong>Native size:</strong> {{ target.width }} × {{ target.height }}</div>
