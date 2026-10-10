@@ -276,7 +276,12 @@ async function createWindow() {
     saveWindowState()
   })
   await window.loadFile(path.join(desktopDirectory, 'splash.html'), {
-    query: { version: app.getVersion() }
+    query: {
+      version: app.getVersion(),
+      banner: pathToFileURL(app.isPackaged
+        ? path.join(desktopDirectory, 'assets', 'about', 'espimageserver-banner.png')
+        : path.join(desktopDirectory, '..', 'frontend', 'public', 'about', 'espimageserver-banner.png')).href
+    }
   })
   sendToWindow('server-log', serverLogLines)
   if (isQuitting || window.isDestroyed()) return

@@ -41,7 +41,14 @@
       "identification.mjs",
       "wifi.mjs",
       "generation-setup.mjs",
-      "generation-close.mjs"
+      "generation-close.mjs",
+      {
+        "from": "../frontend/public/about",
+        "to": "assets/about",
+        "filter": [
+          "espimageserver-banner.png"
+        ]
+      }
     ],
     "win": {
       "target": "dir",

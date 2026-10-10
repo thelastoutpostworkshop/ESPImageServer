@@ -1,8 +1,14 @@
 <script setup>
+import { onMounted, ref } from 'vue'
 import AppUpdateStatus from './AppUpdateStatus.vue'
 
 defineProps({ serverInfo: Object, health: Object, displayMessage: String })
 defineEmits(['navigate'])
+const bannerImage = ref(null)
+const bannerReady = ref(false)
+onMounted(() => {
+  if (bannerImage.value?.complete) bannerReady.value = true
+})
 const features = [
   { icon: 'mdi-image-multiple-outline', title: 'Imagine it. Create it.', text: 'Turn a prompt into artwork or a short video. Animate a saved image and explore different local AI models.', page: 'generate', action: 'Create something' },
   { icon: 'mdi-monitor-small', title: 'Give your ideas a screen.', text: 'Send your creations over Wi-Fi to a supported ESP32 display. The app handles the sizing for your board.', page: 'firmware', action: 'Set up a display' },
@@ -12,8 +18,8 @@ const features = [
 
 <template>
   <article class="about-page" aria-labelledby="about-title">
-    <div class="about-banner">
-      <img :src="'/ui/about/espimageserver-banner.png'" alt="ESPImageServer — Free local AI image and video generation for your ESP32" width="2172" height="724" />
+    <div class="about-banner" :class="{ 'about-banner-ready': bannerReady }">
+      <img ref="bannerImage" :src="'/ui/about/espimageserver-banner.png'" alt="ESPImageServer — Free local AI image and video generation for your ESP32" width="2172" height="724" @load="bannerReady = true" @error="bannerReady = true" />
     </div>
     <section class="about-intro">
       <div>
@@ -69,8 +75,16 @@ const features = [
 
 <style scoped>
 .about-page { max-width: 1600px; margin-inline: auto; container-type: inline-size; }
-.about-banner { overflow: hidden; border-radius: 20px; border: 1px solid rgba(var(--v-theme-primary), .25); background: rgb(var(--v-theme-surface)); }
+.about-banner { overflow: hidden; border-radius: 20px; border: 1px solid rgba(var(--v-theme-primary), .25); background: rgb(var(--v-theme-surface)); opacity: 0; }
+.about-banner-ready { opacity: 1; animation: banner-intro 900ms cubic-bezier(.22, 1, .36, 1) both; }
 .about-banner img { display: block; width: 100%; height: auto; }
+@keyframes banner-intro {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .about-banner { opacity: 1; animation: none; }
+}
 .about-intro { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; padding: clamp(24px, 4cqi, 64px) 0; align-items: center; }
 .about-eyebrow { font-size: .72rem; letter-spacing: .16em; font-weight: 700; color: rgb(var(--v-theme-primary)); margin-bottom: 14px; }
 h1 { font-size: clamp(2.3rem, 5cqi, 4.5rem); line-height: 1.05; letter-spacing: -.04em; font-weight: 750; }
