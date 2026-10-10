@@ -57,7 +57,9 @@ const installationProgress = computed(() => {
   }
   return { label: stageLabel.value, percent: null, detail: ({
     validating: 'Checking the firmware files before making changes.',
-    connecting: 'Connecting over USB and checking the display’s chip and storage.',
+    connecting: state.value.package?.board === 'CHEAP_YELLOW_DISPLAY'
+      ? 'If the display does not connect, hold BOOT, press and release RESET/EN, then release BOOT. The app keeps the board in download mode through the firmware transfer.'
+      : 'Connecting over USB and checking the display’s chip and storage.',
     checking_identity: 'Confirming that the connected display still matches your selection before writing firmware.',
     restarting: 'All firmware files are verified. Restarting your display.',
     identifying: 'Firmware upload complete. Waiting for the display to restart and confirm its new version.'
@@ -242,6 +244,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <template v-if="update.latest && !libraryBusy">
             <p class="text-subtitle-1 mb-3">{{ update.kind === 'update' && identity ? 'Update available' : 'Available firmware' }}: <strong>{{ update.latest.version }}</strong></p>
             <FirmwareReleaseNotes :release="update.latest" />
+            <v-alert v-if="board === 'CHEAP_YELLOW_DISPLAY'" type="info" variant="tonal" class="mb-4">For an update, keep the current firmware running until the app shows “Connecting to your display”. If needed, use BOOT and RESET at that step; the app will show the instructions.</v-alert>
             <v-alert type="warning" variant="tonal" class="mb-4">Installing firmware replaces the display's firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert>
             <v-select v-model="baud" label="USB transfer speed" :items="[{title:'Standard (460800)', value:460800}, {title:'Slower ? retry failed transfers (115200)',value:115200}]" :disabled="locked" hint="Use Standard normally. Try Slower if firmware transfers fail." persistent-hint class="mb-4" />
           </template>

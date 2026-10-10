@@ -95,8 +95,16 @@ export function parseProbe(output, expectedChip, requiredBytes) {
   return { chip, flashBytes: Number(size[1]) * 1048576 }
 }
 
-export function writeArguments(m, port, segments, baud = 460800) {
-  return ['--chip', m.chip, '--port', port, '--baud', String(baud), '--before', 'default-reset', '--after', 'hard-reset',
+export function parseProbeHardwareId(output) {
+  const lines = output.match(/^[ \t]*MAC:.*$/gim) || []
+  const mac = lines.length === 1 && lines[0].trim().match(/^MAC:\s*((?:[a-f0-9]{2}:){5}[a-f0-9]{2})$/i)?.[1]
+  requireValue(mac, 'Could not verify the display hardware ID in download mode. Nothing was written. Check the display again.')
+  // USBIdentification formats ESP.getEfuseMac() as a little-endian integer.
+  return mac.toLowerCase().split(':').reverse().join('')
+}
+
+export function writeArguments(m, port, segments, baud = 460800, { resumeBootloader = false } = {}) {
+  return ['--chip', m.chip, '--port', port, '--baud', String(baud), '--before', resumeBootloader ? 'no-reset' : 'default-reset', '--after', 'hard-reset',
     'write-flash', '--flash-mode', m.flash.mode, '--flash-freq', m.flash.frequency,
     '--flash-size', `${m.flash.size_bytes / 1048576}MB`, ...segments.flatMap(s => [`0x${s.offset.toString(16)}`, s.file])]
 }
@@ -242,13 +250,13 @@ export class FirmwareInstaller {
     }).finally(() => { this.state.busy = false; this.child = null })
     return this.snapshot()
   }
+  async revalidateUsbPort(target) {
+    const current = requireDetectedPort(target.port, await this.ports())
+    requireValue(sameUSBDevice(target.usb, current), 'The USB device changed. Nothing was written. Select its port and check the display again.')
+    return current
+  }
   async revalidateInstallTarget(target, board) {
-    const checkPort = async () => {
-      const current = requireDetectedPort(target.port, await this.ports())
-      requireValue(sameUSBDevice(target.usb, current), 'The USB device changed. Nothing was written. Select its port and check the display again.')
-      return current
-    }
-    await checkPort()
+    await this.revalidateUsbPort(target)
     let identity
     if (this.identify) {
       try {
@@ -268,7 +276,7 @@ export class FirmwareInstaller {
     } else requireValue(target.mode === 'manual', 'The USB display did not identify itself. Nothing was written. Check the display again.')
     // identifyPort releases its serial connection before returning. Check the
     // original USB descriptors again before handing the port to esptool.
-    return checkPort()
+    return this.revalidateUsbPort(target)
   }
   async install(port, baud, target) {
     let staged
@@ -285,17 +293,37 @@ export class FirmwareInstaller {
       const options = { cwd: staged, onChild: child => { this.child = child }, onOutput: text => {
         this.state.log = (this.state.log + text).slice(-32000)
       } }
+      const resumeBootloader = pkg.manifest.board_target === 'CHEAP_YELLOW_DISPLAY'
+      let originalPort
+      if (resumeBootloader) {
+        // A manual BOOT/RESET board must not be restarted between the probe
+        // and write. Check its firmware identity while it is still running.
+        this.state.stage = 'checking_identity'
+        originalPort = await this.revalidateInstallTarget(target, pkg.manifest.board_target)
+      }
       this.state.stage = 'connecting'
-      const probe = await this.run(this.toolPath, ['--chip', pkg.manifest.chip, '--port', port, '--baud', '115200', '--before', 'default-reset', '--after', 'hard-reset', 'flash-id'], options)
+      const probe = await this.run(this.toolPath, ['--chip', pkg.manifest.chip, '--port', port, '--baud', '115200', '--before', 'default-reset',
+        '--after', resumeBootloader ? 'no-reset-stub' : 'hard-reset',
+        ...(resumeBootloader ? ['--connect-attempts', '30'] : []), 'flash-id'], options)
       parseProbe(probe, pkg.manifest.chip, pkg.manifest.flash.size_bytes)
-      this.state.stage = 'checking_identity'
-      const originalPort = await this.revalidateInstallTarget(target, pkg.manifest.board_target)
+      if (resumeBootloader) {
+        // The ROM MAC binds this bootloader connection to the fresh firmware
+        // identity, even when a replacement board has identical USB descriptors.
+        const hardwareId = parseProbeHardwareId(probe)
+        requireValue(!this.expectedHardwareId || hardwareId === this.expectedHardwareId,
+          'The USB display hardware ID changed. Nothing was written. Check the display again.')
+        this.expectedHardwareId = hardwareId
+        originalPort = await this.revalidateUsbPort(target)
+      } else {
+        this.state.stage = 'checking_identity'
+        originalPort = await this.revalidateInstallTarget(target, pkg.manifest.board_target)
+      }
       this.state.stage = 'writing_and_verifying'
       const progress = firmwareProgress(pkg.segments, value => {
         this.state.progress = value
         if (value.verified === pkg.segments.length) this.state.stage = 'restarting'
       })
-      const output = await this.run(this.toolPath, writeArguments(pkg.manifest, port, pkg.segments, baud), {
+      const output = await this.run(this.toolPath, writeArguments(pkg.manifest, port, pkg.segments, baud, { resumeBootloader }), {
         ...options, timeout: 900000, onOutput: text => { options.onOutput(text); progress.push(text) }
       })
       progress.finish()

@@ -111,6 +111,8 @@ Use **Set up display** in the desktop app; browser and phone access cannot perfo
 
 Select the firmware package for your exact board model. If flashing succeeds but firmware startup is not confirmed, release **BOOT**, press **RESET/EN** or reconnect the board, then choose **Check display after restart**. A board left in download mode cannot run its normal firmware until it restarts.
 
+For a **Cheap Yellow Display** update, keep its current firmware running while the app checks the board. Once the app shows **Connecting to your display**, if it does not connect automatically, hold **BOOT**, press and release **RESET/EN**, then release **BOOT**. The app keeps the board in download mode between the flash-memory check and the firmware write, so this sequence is needed only once per installation. It restarts the board after verifying the write.
+
 For failed transfers, open **Connection help and recovery** in the setup window and try the slower **USB transfer speed**.
 
 ### Wi-Fi setup fails or my network is missing

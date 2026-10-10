@@ -147,7 +147,7 @@ test('same-port physical replacement during download is rejected before firmware
   assert.equal(s.installer.state.stage, 'failed')
   assert.match(s.installer.state.error, /changed|match|original/i)
   assert.ok(identities.length >= 2, 'installation must request a fresh identity')
-  assert.ok(commands.some(args => args.includes('flash-id')), 'the replacement shares the same chip family')
+  assert.equal(commands.length, 0, 'a replacement is rejected while firmware is running, before entering download mode')
   assert.equal(commands.filter(args => args.includes('write-flash')).length, 0)
 })
 test('downloaded selection retains its identified target after cached identity is cleared', async t => {
@@ -197,7 +197,7 @@ test('manual downloaded selection uses the fresh matching identity for its start
     identify: async () => { identities++; return { ...physical } },
     run: async (_, args) => {
       commands.push(args)
-      return args.includes('flash-id') ? 'Chip type: ESP32-D0WD-V3\nDetected flash size: 4MB\n' : 'Hash of data verified.\n'.repeat(4)
+      return args.includes('flash-id') ? 'Chip type: ESP32-D0WD-V3\nMAC: 66:55:44:33:22:11\nDetected flash size: 4MB\n' : 'Hash of data verified.\n'.repeat(4)
     },
     reconnect: async (_, expected) => {
       assert.equal(expected.hardwareId, physical.hardware_id)
