@@ -69,11 +69,11 @@ h1 { font-size: clamp(2rem, 4cqi, 3rem); line-height: 1.2; letter-spacing: -.03e
 .maker-tool-thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .maker-tool-thumbnail:focus-visible { outline: 3px solid rgb(var(--v-theme-primary)); outline-offset: -3px; }
 .maker-tool-icon { position: absolute; bottom: 14px; left: 14px; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid rgba(var(--v-theme-primary), .25); border-radius: 10px; color: rgb(var(--v-theme-primary)); background: rgb(var(--v-theme-surface)); }
-.maker-tool-copy { flex: 1; min-width: 0; padding: 24px; }
-.maker-tool-copy h2 { font-size: 1.2rem; line-height: 1.4; overflow-wrap: anywhere; }
-.maker-tool-copy p { margin: 12px 0 16px; line-height: 1.7; color: rgba(var(--v-theme-on-surface), .75); overflow-wrap: anywhere; }
-.maker-tool-source { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: rgb(var(--v-theme-primary)); text-underline-offset: 3px; }
-.maker-tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 16px 24px; border-top: 1px solid rgba(var(--v-theme-on-surface), .1); }
+.maker-tool-copy { flex: 1; min-width: 0; padding: 12px 16px; }
+.maker-tool-copy h2 { margin: 0; font-size: 1.1rem; line-height: 1.35; overflow-wrap: anywhere; }
+.maker-tool-copy p { margin: 6px 0 8px; line-height: 1.5; color: rgba(var(--v-theme-on-surface), .75); overflow-wrap: anywhere; }
+.maker-tool-source { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; color: rgb(var(--v-theme-primary)); text-underline-offset: 3px; }
+.maker-tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-top: 1px solid rgba(var(--v-theme-on-surface), .1); }
 .maker-tool-primary-action { margin-inline-start: auto; }
 .maker-tools :deep(.v-btn) { min-height: 44px; height: auto; max-width: 100%; }
 .maker-tools :deep(.v-btn__content) { white-space: normal; line-height: 1.4; text-align: left; }
@@ -84,8 +84,7 @@ h1 { font-size: clamp(2rem, 4cqi, 3rem); line-height: 1.2; letter-spacing: -.03e
   .maker-tools-support { grid-template-columns: minmax(0, 1fr); padding: 20px; }
   .maker-tools-support-actions { grid-column: 1; }
   .maker-tools-support-actions :deep(.v-btn) { width: 100%; }
-  .maker-tool-copy { padding: 20px; }
-  .maker-tool-actions { padding: 16px 20px; }
+  .maker-tool-actions { padding-inline: 12px; }
   .maker-tool-actions :deep(.v-btn) { width: 100%; }
   .maker-tool-primary-action { margin-inline-start: 0; }
 }
