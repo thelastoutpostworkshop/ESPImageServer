@@ -26,12 +26,9 @@ let timer, disposed = false, epoch = 0, lastPorts = 0, lastIdentity = 0, autoAtt
 const locked = computed(() => pending.value || state.value.busy || download.value.busy)
 const identity = computed(() => state.value.identity?.port === port.value ? state.value.identity : null)
 const compatible = computed(() => ['wifi_scan', 'wifi_connect', 'wifi_cancel', 'wifi_status'].every(c => identity.value?.capabilities?.includes(c)))
-const update = computed(() => firmwareStatus(identity.value || (board.value ? { board_target: board.value, firmware_version: '0.0.0' } : null),
-  library.value))
 const panel = computed(() => checkingDisplay.value ? 'connect' : showInstall.value ? 'install' : !identity.value ? 'connect' : !reviewed.value ? 'firmware' :
   manageWifi.value || !identity.value.wifi_connected ? 'wifi' : 'connection')
 const step = computed(() => ({ connect: 1, install: 2, firmware: 2, wifi: 3, connection: 4 }[panel.value]))
-const canInstall = computed(() => available && !locked.value && !libraryBusy.value && !libraryError.value && !library.value.error && port.value && update.value.latest?.source === 'github' && board.value === update.value.latest.board)
 const boardItems = [
   { title: 'JC4827W543 (480 × 272)', value: 'JC4827W543', image: '/ui/board-catalog/JC4827W543.png' }, { title: 'Waveshare ST7701 (320 × 820)', value: 'ST7701_320X820', image: '/ui/board-catalog/ST7701_320X820.png' },
   { title: 'ESP32-C6 LCD 1.47 (172 × 320)', value: 'ESP32_C6_LCD_147', image: '/ui/board-catalog/ESP32_C6_LCD_147.png' }, { title: 'Cheap Yellow Display (240 × 320)', value: 'CHEAP_YELLOW_DISPLAY', image: '/ui/board-catalog/CHEAP_YELLOW_DISPLAY.png' },
@@ -39,6 +36,12 @@ const boardItems = [
 ]
 const detectedBoard = computed(() => confirmedBoard.value?.port === port.value
   ? boardItems.find(item => item.value === confirmedBoard.value.boardTarget) : null)
+const identifiedBoard = computed(() => confirmedBoard.value?.identified ? detectedBoard.value : null)
+const needsBoardChoice = computed(() => !identity.value && !identifiedBoard.value)
+const installBoard = computed(() => identity.value?.board_target || identifiedBoard.value?.value || board.value)
+const update = computed(() => firmwareStatus(identity.value || (installBoard.value ? { board_target: installBoard.value, firmware_version: '0.0.0' } : null),
+  library.value))
+const canInstall = computed(() => available && !locked.value && !libraryBusy.value && !libraryError.value && !library.value.error && port.value && update.value.latest?.source === 'github' && installBoard.value === update.value.latest.board)
 const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Ready to install',
   connecting: 'Connecting to your display', checking_identity: 'Checking the connected display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
   identifying: 'Checking firmware startup', boot_verified: 'Firmware installed and startup verified',
@@ -118,7 +121,7 @@ async function copyInstallationLog() {
   }
 }
 function resetFlow() {
-  confirmedBoard.value = null; supportPanels.value = []
+  confirmedBoard.value = null; board.value = ''; supportPanels.value = []
   checkingDisplay.value = false; reviewed.value = false; showInstall.value = false; manageWifi.value = false; wifiEditing.value = false
   serverReady.value = false; autoAttempts = 0; lastIdentity = Date.now()
   installationStarted.value = false
@@ -160,12 +163,12 @@ async function refreshConnection() {
 async function install() {
   if (!canInstall.value) return
   const pkg = { ...update.value.latest }
-  const selectedPort = port.value, selectedBoard = board.value, selectedBaud = baud.value, token = epoch
-  confirmedBoard.value = { port: selectedPort, boardTarget: selectedBoard }
+  const selectedPort = port.value, selectedBoard = installBoard.value, selectedBaud = baud.value, token = epoch
+  confirmedBoard.value = { port: selectedPort, boardTarget: selectedBoard, identified: Boolean(identifiedBoard.value) }
   showInstall.value = true
   await perform(async () => {
     state.value = await call('selectReleaseFirmware', { id: pkg.id, board: selectedBoard, port: selectedPort })
-    if (disposed || token !== epoch || port.value !== selectedPort || board.value !== selectedBoard) return
+    if (disposed || token !== epoch || port.value !== selectedPort || installBoard.value !== selectedBoard) return
     if (state.value.package?.source !== 'github' || state.value.package?.board !== selectedBoard || state.value.package?.version !== pkg.version) {
       throw new Error('Downloaded firmware does not match the selected board and version. Nothing was installed.')
     }
@@ -199,14 +202,14 @@ watch(() => identity.value?.hardware_id, (next, previous) => {
   if (next && previous && next !== previous) resetFlow()
   if (!next) { serverReady.value = false; reviewed.value = false; manageWifi.value = false; wifiEditing.value = false }
 })
-// Remember only the board picture. USB actions still require the live identity.
+// Retain the identified model for installation retries; Wi-Fi still requires the live USB identity.
 watch(identity, current => {
   if (current && boardItems.some(item => item.value === current.board_target)) {
-    confirmedBoard.value = { port: current.port, boardTarget: current.board_target }
+    confirmedBoard.value = { port: current.port, boardTarget: current.board_target, identified: true }
   }
 })
 watch([() => state.value.stage, () => state.value.identityError], ([stage, identityError]) => {
-  if (!identity.value && /disconnected|changed/i.test(identityError || '')) confirmedBoard.value = null
+  if (!identity.value && /disconnected|changed/i.test(identityError || '')) { confirmedBoard.value = null; board.value = '' }
   if (stage === 'failed' || identityError) {
     supportPanels.value = [...new Set([...supportPanels.value, 'recovery', ...(state.value.log ? ['log'] : [])])]
   }
@@ -276,7 +279,8 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
         <section v-if="['firmware', 'install'].includes(panel) && !installationActive">
           <h2 class="text-h6 mb-2">{{ state.busy ? stageLabel : compatible ? 'Firmware' : 'Install firmware' }}</h2>
           <p v-if="identity" class="mb-4">{{ identity.board_name }} ? Installed version {{ identity.firmware_version }}</p>
-          <fieldset v-if="!identity" class="board-picker mb-4" :disabled="locked">
+          <p v-else-if="identifiedBoard" class="mb-4">Detected display: <strong>{{ identifiedBoard.title }}</strong></p>
+          <fieldset v-if="needsBoardChoice" class="board-picker mb-4" :disabled="locked">
             <legend class="text-subtitle-1 mb-2">Choose your physical display model</legend>
             <p class="text-body-2 text-medium-emphasis mb-3">Match the photo and model name to your board.</p>
             <div class="board-grid">
@@ -286,13 +290,13 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
               </label>
             </div>
           </fieldset>
-          <p v-if="!identity" class="mb-4">Choose the board connected to {{ port || 'your USB port' }}.</p>
+          <p v-if="needsBoardChoice" class="mb-4">Choose the board connected to {{ port || 'your USB port' }}.</p>
           <v-progress-linear v-if="libraryBusy" indeterminate class="mb-4" aria-label="Checking for firmware" />
           <v-alert v-if="identity && !libraryBusy" :type="update.kind === 'current' ? 'success' : 'info'" variant="tonal" class="mb-4">{{ updateText }}</v-alert>
-          <p v-if="!identity && board && !update.latest && !libraryBusy && !libraryError && !library.error" class="mb-4">No matching firmware release is available for this board.</p>
+          <p v-if="!identity && installBoard && !update.latest && !libraryBusy && !libraryError && !library.error" class="mb-4">No matching firmware release is available for this board.</p>
           <template v-if="update.latest && !libraryBusy">
             <p class="text-subtitle-1 mb-3">{{ update.kind === 'update' && identity ? 'Update available' : 'Available firmware' }}: <strong>{{ update.latest.version }}</strong></p>
-            <v-alert v-if="board === 'CHEAP_YELLOW_DISPLAY'" type="info" variant="tonal" class="mb-4">For an update, keep the current firmware running until the app shows “Connecting to your display”. If needed, use BOOT and RESET at that step; the app will show the instructions.</v-alert>
+            <v-alert v-if="installBoard === 'CHEAP_YELLOW_DISPLAY'" type="info" variant="tonal" class="mb-4">For an update, keep the current firmware running until the app shows “Connecting to your display”. If needed, use BOOT and RESET at that step; the app will show the instructions.</v-alert>
             <v-alert type="warning" variant="tonal" class="mb-4">Installing firmware replaces the display's firmware. Settings may be lost if its old partition layout differs. SD-card files are preserved. Keep USB connected until installation finishes.</v-alert>
             <v-select v-model="baud" label="USB transfer speed" :items="[{title:'Standard (460800)', value:460800}, {title:'Slower ? retry failed transfers (115200)',value:115200}]" :disabled="locked" hint="Use Standard normally. Try Slower if firmware transfers fail." persistent-hint class="mb-4" />
           </template>

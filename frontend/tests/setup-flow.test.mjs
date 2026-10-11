@@ -245,6 +245,9 @@ test('a disconnected USB port clears the board portrait and setup progress', asy
   assert.equal(form.port, '')
   assert.equal(form.detectedBoard, null)
   assert.equal(form.confirmedBoard, null)
+  assert.equal(form.identifiedBoard, null)
+  assert.equal(form.needsBoardChoice, true)
+  assert.equal(form.installBoard, '')
   assert.equal(form.reviewed, false)
 })
 
@@ -257,6 +260,13 @@ test('replacement hardware resets setup and replaces the portrait with the new b
   assert.equal(form.panel, 'firmware')
   assert.equal(form.detectedBoard.value, 'ESP32_C6_LCD_147')
   assert.equal(form.detectedBoard.image, '/ui/board-catalog/ESP32_C6_LCD_147.png')
+  assert.equal(form.identifiedBoard.value, 'ESP32_C6_LCD_147')
+  assert.equal(form.installBoard, 'ESP32_C6_LCD_147')
+  assert.equal(form.needsBoardChoice, false)
+  state.identity = null
+  await form.poll(); await flush()
+  assert.equal(form.installBoard, 'ESP32_C6_LCD_147')
+  assert.equal(form.needsBoardChoice, false)
 })
 
 test('verified startup on a new COM port retains the correctly identified portrait', async t => {
@@ -321,6 +331,10 @@ test('reported replacement or disconnected hardware removes a cached portrait wh
   await form.poll(); await flush()
   assert.equal(form.detectedBoard, null)
   assert.equal(form.confirmedBoard, null)
+  assert.equal(form.identifiedBoard, null)
+  assert.equal(form.needsBoardChoice, true)
+  assert.equal(form.installBoard, '')
+  assert.equal(form.canInstall, false)
 
   state.identity = {...identity,board_target:'ESP32_C6_LCD_147'}
   state.identityError = ''
@@ -331,6 +345,10 @@ test('reported replacement or disconnected hardware removes a cached portrait wh
   await form.poll(); await flush()
   assert.equal(form.detectedBoard, null)
   assert.equal(form.confirmedBoard, null)
+  assert.equal(form.identifiedBoard, null)
+  assert.equal(form.needsBoardChoice, true)
+  assert.equal(form.installBoard, '')
+  assert.equal(form.canInstall, false)
 })
 
 test('a new installation failure opens recovery and log panels without overriding a later manual collapse', async t => {
@@ -418,4 +436,137 @@ test('BOOT and RESET connection hints disappear during transfer, verification, r
       assert.equal(form.step, 2)
     }
   }
+})
+
+test('the physical-model picker is rendered only when a model choice is still needed', () => {
+  const picker = descriptor.template.content.match(/<fieldset\b[^>]*\bclass="[^"]*\bboard-picker\b[^"]*"[^>]*>/)?.[0]
+  assert.ok(picker, 'the firmware step contains a physical-model picker')
+  assert.equal(picker.match(/\bv-if="([^"]+)"/)?.[1], 'needsBoardChoice')
+})
+
+test('an identified display keeps the model picker hidden through a wrong-boot failure and retries that exact target', async t => {
+  const known = {
+    port:'COM8',board_target:'CHEAP_YELLOW_DISPLAY',hardware_id:'08a6f7238e98',firmware_version:'1.1.41',
+    wifi_configured:true,wifi_connected:true,capabilities:['wifi_scan','wifi_connect','wifi_status','wifi_cancel']
+  }
+  const packages = [
+    {id:'cyd',source:'github',board:'CHEAP_YELLOW_DISPLAY',version:'1.1.42'},
+    {id:'jc',source:'github',board:'JC4827W543',version:'1.1.42'}
+  ]
+  const requests = []
+  const {form,state} = await mount(t, {
+    firmwareReleases:async()=>({ok:true,value:{checkedAt:'today',packages}}),
+    selectReleaseFirmware:async request=>{
+      requests.push(['package',request])
+      state.identity = null
+      state.package = packages.find(pkg => pkg.id === request.id)
+      return {ok:true,value:structuredClone(state)}
+    },
+    installFirmware:async request=>{
+      requests.push(['install',request])
+      state.busy = true
+      state.stage = 'connecting'
+      return {ok:true,value:structuredClone(state)}
+    }
+  }, {identity:known})
+  assert.equal(form.needsBoardChoice, false)
+  assert.equal(form.identifiedBoard.value, 'CHEAP_YELLOW_DISPLAY')
+  await form.install(); await flush()
+  assert.equal(form.identity, null)
+  assert.equal(form.needsBoardChoice, false)
+  assert.equal(form.confirmedBoard.identified, true)
+  assert.equal(form.canInstall, false)
+
+  state.busy = false
+  state.stage = 'failed'
+  state.error = 'Wrong boot mode detected (0x13)! The chip needs to be in download mode.'
+  await form.poll(); await flush()
+  assert.equal(form.panel, 'install')
+  assert.equal(form.needsBoardChoice, false)
+  assert.equal(form.identifiedBoard.value, 'CHEAP_YELLOW_DISPLAY')
+  assert.equal(form.compatible, false)
+  form.goToStep(3)
+  form.goToStep(4)
+  assert.equal(form.step, 2)
+
+  // A stale manual selection must not override the model identified over USB.
+  form.board = 'JC4827W543'
+  assert.equal(form.installBoard, 'CHEAP_YELLOW_DISPLAY')
+  assert.equal(form.update.latest.board, 'CHEAP_YELLOW_DISPLAY')
+  assert.equal(form.canInstall, true)
+  await form.install(); await flush()
+  assert.equal(form.confirmedBoard.identified, true)
+  assert.equal(form.needsBoardChoice, false)
+  assert.deepEqual(requests, [
+    ['package',{id:'cyd',board:'CHEAP_YELLOW_DISPLAY',port:'COM8'}],
+    ['install',{port:'COM8',board:'CHEAP_YELLOW_DISPLAY',baud:460800}],
+    ['package',{id:'cyd',board:'CHEAP_YELLOW_DISPLAY',port:'COM8'}],
+    ['install',{port:'COM8',board:'CHEAP_YELLOW_DISPLAY',baud:460800}]
+  ])
+})
+
+test('a failed manual installation keeps the model picker available and allows a different model selection', async t => {
+  const packages = [
+    {id:'cyd',source:'github',board:'CHEAP_YELLOW_DISPLAY',version:'1.1.42'},
+    {id:'c6',source:'github',board:'ESP32_C6_LCD_147',version:'1.1.42'}
+  ]
+  const requests = []
+  const {form,state} = await mount(t, {
+    firmwareReleases:async()=>({ok:true,value:{checkedAt:'today',packages}}),
+    selectReleaseFirmware:async request=>{
+      state.package = packages.find(pkg => pkg.id === request.id)
+      return {ok:true,value:structuredClone(state)}
+    },
+    installFirmware:async request=>{
+      requests.push(request)
+      state.busy = false
+      state.stage = 'failed'
+      state.error = 'The board needs to be in download mode.'
+      return {ok:true,value:structuredClone(state)}
+    }
+  }, {identity:null})
+  form.goToStep(2)
+  form.board = 'CHEAP_YELLOW_DISPLAY'
+  await flush()
+  assert.equal(form.needsBoardChoice, true)
+  await form.install(); await flush()
+  assert.equal(form.detectedBoard.value, 'CHEAP_YELLOW_DISPLAY')
+  assert.equal(form.identifiedBoard, null)
+  assert.equal(form.confirmedBoard.identified, false)
+  assert.equal(form.needsBoardChoice, true)
+  assert.equal(form.compatible, false)
+
+  form.board = 'ESP32_C6_LCD_147'
+  assert.equal(form.installBoard, 'ESP32_C6_LCD_147')
+  assert.equal(form.update.latest.board, 'ESP32_C6_LCD_147')
+  assert.equal(form.canInstall, true)
+  await form.install(); await flush()
+  assert.equal(form.needsBoardChoice, true)
+  assert.equal(form.confirmedBoard.identified, false)
+  assert.deepEqual(requests, [
+    {port:'COM8',board:'CHEAP_YELLOW_DISPLAY',baud:460800},
+    {port:'COM8',board:'ESP32_C6_LCD_147',baud:460800}
+  ])
+})
+
+test('changing ports discards the retained identified model before retrying installation', async t => {
+  const {form,state,installs} = await mount(t)
+  form.showInstall = true
+  state.identity = null
+  state.stage = 'failed'
+  await form.poll(); await flush()
+  assert.equal(form.identifiedBoard.value, 'JC4827W543')
+  assert.equal(form.needsBoardChoice, false)
+
+  form.port = 'COM9'
+  await form.selectPort(); await flush()
+  assert.equal(form.identifiedBoard, null)
+  assert.equal(form.confirmedBoard, null)
+  assert.equal(form.needsBoardChoice, true)
+  assert.equal(form.board, '')
+  assert.equal(form.installBoard, '')
+  assert.equal(form.canInstall, false)
+  form.goToStep(2)
+  await form.install()
+  assert.equal(installs(), 0)
 })
