@@ -267,6 +267,21 @@ for (const output of [
   assert.equal(error.message, 'esptool failed (2). Check the log, USB cable, and whether another app holds the port.')
 })
 
+test('only esptool connection failures qualify for a longer read-only connection check', () => {
+  for (const chip of ['ESP32', 'ESP32-S3', 'ESP32-C6']) {
+    const error = esptoolFailure(`A fatal error occurred: Failed to connect to ${chip}: No serial data received.`, 2)
+    assert.equal(error.connectionFailed, true)
+    assert.equal(error.bootMode, undefined, 'silence must not be diagnosed as wrong boot mode')
+  }
+  for (const output of [
+    'A fatal error occurred: Could not open COM13, the port is busy or does not exist.',
+    'A fatal error occurred: Failed to write to target RAM: Operation timed out.',
+    'A fatal error occurred: Stub flasher failed to start.',
+    'A fatal error occurred: This chip is ESP32-S3, not ESP32. Wrong chip argument?',
+    'The board is not responding.',
+  ]) assert.equal(esptoolFailure(output, 2).connectionFailed, undefined)
+})
+
 test('process runner translates a nonzero wrong-boot failure from normalized chunked ANSI and CRLF output', async () => {
   const chunks = []
   const first = '\x1b[31mesptool v5.1.0\r\nConnecting...\r\nA fatal error occurred: Failed to connect to ESP32: Wrong bo'
@@ -303,9 +318,11 @@ test('USB port disappearance or replacement invalidates identity and Wi-Fi state
 test('selecting another USB port clears setup state and cannot interrupt a flash', () => {
   const installer = new FirmwareInstaller('fake')
   installer.state.identity = { port: 'COM8' }; installer.state.wifi = { stage: 'connected' }
+  installer.state.bootMode = '0x13'
   installer.knownPorts = [{ port: 'COM8' }, { port: 'COM9' }]
   installer.selectPort('COM9')
   assert.equal(installer.state.identity, null); assert.equal(installer.state.wifi, null)
+  assert.equal(installer.state.bootMode, null)
   installer.state.busy = true
   assert.throws(() => installer.selectPort('COM8'), /Wait for USB/)
 })

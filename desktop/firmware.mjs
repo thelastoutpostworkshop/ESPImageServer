@@ -116,7 +116,9 @@ export function esptoolFailure(output, exitCode) {
       code: 'ESPTOOL_WRONG_BOOT_MODE', bootMode
     })
   }
-  return new Error(`esptool failed (${exitCode ?? 'interrupted'}). Check the log, USB cable, and whether another app holds the port.`)
+  const error = new Error(`esptool failed (${exitCode ?? 'interrupted'}). Check the log, USB cable, and whether another app holds the port.`)
+  if (/Failed to connect to (?:ESP32[A-Z0-9-]*|Espressif device):/i.test(String(output || ''))) error.connectionFailed = true
+  return error
 }
 
 export function runProcess(executable, args, { cwd, timeout = 120000, onOutput = () => {}, onChild = () => {} } = {}) {
@@ -155,7 +157,7 @@ export class FirmwareInstaller {
   constructor(toolPath, { run = runProcess, ports = listPorts, identify = null, reconnect = null } = {}) {
     this.toolPath = toolPath; this.run = run; this.ports = ports
     this.identify = identify; this.reconnect = reconnect
-    this.state = { busy: false, stage: 'idle', log: '', package: null, error: '', progress: null }
+    this.state = { busy: false, stage: 'idle', log: '', package: null, error: '', progress: null, bootMode: null }
   }
   snapshot() { return structuredClone(this.state) }
   selectPort(port) {
@@ -164,6 +166,7 @@ export class FirmwareInstaller {
     this.usbTarget = detected ? installTarget(port, undefined, detected, null) : null
     this.state.selectedPort = port
     this.state.identity = null; this.state.wifi = null; this.state.identityError = ''
+    this.state.bootMode = null
     this.identityPort = null
     return this.snapshot()
   }
@@ -254,7 +257,7 @@ export class FirmwareInstaller {
     this.selected.target = target
     this.usbTarget = target
     this.expectedHardwareId = target.identity?.hardware_id
-    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', progress: null, port, selectedPort: port, identity: null, identityError: '', wifi: null }
+    this.state = { ...this.state, busy: true, stage: 'validating', error: '', log: '', progress: null, bootMode: null, port, selectedPort: port, identity: null, identityError: '', wifi: null }
     this.completion = this.install(port, baud, target).catch(e => {
       this.state.stage = 'failed'; this.state.error = e.message
     }).finally(() => { this.state.busy = false; this.child = null })
@@ -312,9 +315,22 @@ export class FirmwareInstaller {
         originalPort = await this.revalidateInstallTarget(target, pkg.manifest.board_target)
       }
       this.state.stage = 'connecting'
-      const probe = await this.run(this.toolPath, ['--chip', pkg.manifest.chip, '--port', port, '--baud', '115200', '--before', 'default-reset',
+      const probeArguments = attempts => ['--chip', pkg.manifest.chip, '--port', port, '--baud', '115200', '--before', 'default-reset',
         '--after', resumeBootloader ? 'no-reset-stub' : 'hard-reset',
-        ...(resumeBootloader ? ['--connect-attempts', '30'] : []), 'flash-id'], options)
+        '--connect-attempts', String(attempts), 'flash-id']
+      let probe
+      try { probe = await this.run(this.toolPath, probeArguments(2), options) }
+      catch (error) {
+        const wrongBootMode = error.code === 'ESPTOOL_WRONG_BOOT_MODE'
+        if (!wrongBootMode && !error.connectionFailed) throw error
+        // runProcess rejects only after esptool exits and releases the port.
+        // Keep the original identity while the user enters download mode.
+        await this.revalidateUsbPort(target)
+        this.state.bootMode = wrongBootMode ? error.bootMode : null
+        this.state.stage = wrongBootMode ? 'connecting_manual' : 'connecting'
+        probe = await this.run(this.toolPath, probeArguments(wrongBootMode || resumeBootloader ? 30 : 7), options)
+      }
+      this.state.bootMode = null
       parseProbe(probe, pkg.manifest.chip, pkg.manifest.flash.size_bytes)
       if (resumeBootloader) {
         // The ROM MAC binds this bootloader connection to the fresh firmware

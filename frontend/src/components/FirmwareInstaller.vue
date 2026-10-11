@@ -43,7 +43,7 @@ const update = computed(() => firmwareStatus(identity.value || (installBoard.val
   library.value))
 const canInstall = computed(() => available && !locked.value && !libraryBusy.value && !libraryError.value && !library.value.error && port.value && update.value.latest?.source === 'github' && installBoard.value === update.value.latest.board)
 const stageLabel = computed(() => ({ idle: 'Choose a firmware package', validating: 'Checking firmware files', ready: 'Ready to install',
-  connecting: 'Connecting to your display', checking_identity: 'Checking the connected display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
+  connecting: 'Connecting to your display', connecting_manual: 'Put your display in download mode', checking_identity: 'Checking the connected display', writing_and_verifying: 'Writing and verifying firmware', restarting: 'Restarting your display',
   identifying: 'Checking firmware startup', boot_verified: 'Firmware installed and startup verified',
   written: 'Write verified — startup still needs checking', failed: 'Installation needs attention' }[state.value.stage] || state.value.stage))
 const installationActive = computed(() => download.value.busy || (step.value === 2 && (pending.value || state.value.busy)))
@@ -67,6 +67,7 @@ const installationProgress = computed(() => {
     connecting: state.value.package?.board === 'CHEAP_YELLOW_DISPLAY'
       ? 'If connection takes too long, hold BOOT, press and release RESET/EN, then release BOOT. The app keeps the board in download mode through the firmware transfer.'
       : 'If connection takes too long, hold BOOT, press and release RESET/EN, then release BOOT.',
+    connecting_manual: 'The board is not in download mode. Hold BOOT, press and release RESET/EN, then release BOOT. We’re still trying to connect.',
     checking_identity: 'Confirming that the connected display still matches your selection before writing firmware.',
     restarting: 'All firmware files are verified. Restarting your display.',
     identifying: 'Firmware upload complete. Waiting for the display to restart and confirm its new version.'
@@ -223,7 +224,7 @@ onMounted(async () => {
   void loadLibrary('firmwareReleases')
   await perform(async () => {
     state.value = await call('firmwareState'); port.value = state.value.selectedPort || state.value.identity?.port || ''
-    if (state.value.busy && ['validating', 'connecting', 'checking_identity', 'writing_and_verifying', 'restarting', 'identifying'].includes(state.value.stage)) {
+    if (state.value.busy && ['validating', 'connecting', 'connecting_manual', 'checking_identity', 'writing_and_verifying', 'restarting', 'identifying'].includes(state.value.stage)) {
       showInstall.value = true; installationStarted.value = true
       if (state.value.port === port.value && boardItems.some(item => item.value === state.value.package?.board)) {
         board.value = state.value.package.board
@@ -265,7 +266,8 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <p class="text-h6 mb-3" role="status" aria-live="polite">{{ installationProgress.label }}</p>
           <v-progress-linear color="primary" height="12" rounded :indeterminate="installationProgress.percent === null" :model-value="installationProgress.percent ?? 0" :aria-label="installationProgress.label" />
           <p v-if="installationProgress.percent !== null" class="text-body-2 mt-2">{{ installationProgress.percent }}% {{ download.busy ? 'downloaded' : 'written' }}</p>
-          <p class="mt-3" role="status" aria-live="polite">{{ installationProgress.detail }}</p>
+          <v-alert v-if="state.stage === 'connecting_manual'" type="warning" variant="tonal" class="mt-3" role="alert">{{ installationProgress.detail }}</v-alert>
+          <p v-else class="mt-3" role="status" aria-live="polite">{{ installationProgress.detail }}</p>
           <p class="text-body-2 text-medium-emphasis mt-3">Keep the USB cable connected until installation finishes.</p>
           <v-btn v-if="download.busy" class="mt-2" variant="text" @click="call('cancelFirmwareDownload')">Cancel download</v-btn>
         </v-sheet>

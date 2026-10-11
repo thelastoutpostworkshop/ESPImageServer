@@ -570,3 +570,76 @@ test('changing ports discards the retained identified model before retrying inst
   await form.install()
   assert.equal(installs(), 0)
 })
+
+test('a detected normal boot mode gives direct download-mode guidance while connection retries continue', async t => {
+  const {form} = await mount(t)
+  form.showInstall = true
+  for (const {value:board} of form.boardItems) {
+    form.state = {...form.state,identity:null,busy:true,stage:'connecting_manual',bootMode:'0x13',package:{board}}
+    await flush()
+    assert.equal(form.stageLabel, 'Put your display in download mode')
+    assert.equal(form.installationProgress.label, 'Put your display in download mode')
+    assert.equal(form.installationProgress.percent, null)
+    assert.match(form.installationProgress.detail, /hold BOOT, press and release RESET\/EN, then release BOOT/i)
+    assert.match(form.installationProgress.detail, /We[’']re still trying to connect\./)
+    assert.doesNotMatch(form.installationProgress.detail, /^If\b/i)
+    assert.equal(form.installationActive, true)
+    assert.equal(form.locked, true)
+    assert.equal(form.canInstall, false)
+    assert.equal(form.compatible, false)
+    for (const step of [1, 3, 4]) {
+      form.goToStep(step)
+      assert.equal(form.step, 2)
+    }
+  }
+})
+
+test('reopening setup during a manual-boot connection attempt restores the installation and same-port portrait', async t => {
+  const {form} = await mount(t, {}, {
+    port:'COM8',identity:null,busy:true,stage:'connecting_manual',bootMode:'0x13',
+    package:{board:'CHEAP_YELLOW_DISPLAY',version:'1.1.42',source:'github'}
+  })
+  assert.equal(form.showInstall, true)
+  assert.equal(form.installationStarted, true)
+  assert.equal(form.installationActive, true)
+  assert.equal(form.panel, 'install')
+  assert.equal(form.step, 2)
+  assert.equal(form.locked, true)
+  assert.equal(form.detectedBoard.value, 'CHEAP_YELLOW_DISPLAY')
+  assert.equal(form.identity, null)
+  assert.equal(form.compatible, false)
+  assert.equal(form.installationProgress.label, 'Put your display in download mode')
+})
+
+test('the download-mode warning is limited to manual connection and clears when flashing advances', async t => {
+  const warning = [...descriptor.template.content.matchAll(/<v-alert\b([^>]*)>([\s\S]*?)<\/v-alert>/g)]
+    .find(([, , content]) => /{{\s*installationProgress\.detail\s*}}/.test(content))
+  assert.ok(warning, 'download-mode instructions render as a native alert')
+  assert.match(warning[1], /\btype="warning"/)
+  const condition = warning[1].match(/\bv-if="([^"]+)"/)?.[1]
+  assert.ok(condition, 'the download-mode warning has an explicit visibility condition')
+  const visible = new Function('state', `return Boolean(${condition})`)
+  const {form} = await mount(t)
+  form.showInstall = true
+  form.state = {...form.state,identity:null,busy:true,stage:'connecting_manual',bootMode:'0x13',package:{board:'CHEAP_YELLOW_DISPLAY'}}
+  await flush()
+  assert.equal(visible(form.state), true)
+
+  for (const [stage,phase] of [
+    ['writing_and_verifying','writing'],['writing_and_verifying','verifying'],['restarting'],['identifying']
+  ]) {
+    // Retain the last boot-mode report to ensure the stage removes stale guidance.
+    form.state = {...form.state,stage,progress:phase ? {phase,percent:50,verified:2,total:4} : null}
+    await flush()
+    assert.equal(visible(form.state), false)
+    assert.doesNotMatch(form.installationProgress.detail, /\bBOOT\b|\bRESET\/EN\b|still trying to connect/)
+    assert.equal(form.installationActive, true)
+    assert.equal(form.locked, true)
+  }
+
+  form.state = {...form.state,stage:'connecting',bootMode:null,progress:null}
+  await flush()
+  assert.equal(visible(form.state), false)
+  assert.equal(form.installationProgress.label, 'Connecting to your display')
+  assert.match(form.installationProgress.detail, /^If connection takes too long,/)
+})
