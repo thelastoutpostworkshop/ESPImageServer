@@ -1,5 +1,6 @@
 <script setup>
 import BoardShopping from './BoardShopping.vue'
+import BootModeGuide from './BootModeGuide.vue'
 import FirmwareReleaseNotes from './FirmwareReleaseNotes.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UsbWifiSetup from './UsbWifiSetup.vue'
@@ -266,7 +267,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           <p class="text-h6 mb-3" role="status" aria-live="polite">{{ installationProgress.label }}</p>
           <v-progress-linear color="primary" height="12" rounded :indeterminate="installationProgress.percent === null" :model-value="installationProgress.percent ?? 0" :aria-label="installationProgress.label" />
           <p v-if="installationProgress.percent !== null" class="text-body-2 mt-2">{{ installationProgress.percent }}% {{ download.busy ? 'downloaded' : 'written' }}</p>
-          <v-alert v-if="state.stage === 'connecting_manual'" type="warning" variant="tonal" class="mt-3" role="alert">{{ installationProgress.detail }}</v-alert>
+          <BootModeGuide v-if="state.stage === 'connecting_manual'" class="mt-3" />
           <p v-else class="mt-3" role="status" aria-live="polite">{{ installationProgress.detail }}</p>
           <p class="text-body-2 text-medium-emphasis mt-3">Keep the USB cable connected until installation finishes.</p>
           <v-btn v-if="download.busy" class="mt-2" variant="text" @click="call('cancelFirmwareDownload')">Cancel download</v-btn>

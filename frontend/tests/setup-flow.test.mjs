@@ -611,13 +611,11 @@ test('reopening setup during a manual-boot connection attempt restores the insta
   assert.equal(form.installationProgress.label, 'Put your display in download mode')
 })
 
-test('the download-mode warning is limited to manual connection and clears when flashing advances', async t => {
-  const warning = [...descriptor.template.content.matchAll(/<v-alert\b([^>]*)>([\s\S]*?)<\/v-alert>/g)]
-    .find(([, , content]) => /{{\s*installationProgress\.detail\s*}}/.test(content))
-  assert.ok(warning, 'download-mode instructions render as a native alert')
-  assert.match(warning[1], /\btype="warning"/)
-  const condition = warning[1].match(/\bv-if="([^"]+)"/)?.[1]
-  assert.ok(condition, 'the download-mode warning has an explicit visibility condition')
+test('the download-mode animation is limited to manual connection and clears when flashing advances', async t => {
+  const guide = descriptor.template.content.match(/<BootModeGuide\b([^>]*?)\/>/)
+  assert.ok(guide, 'manual connection displays the animated BOOT and RESET guide')
+  const condition = guide[1].match(/\bv-if="([^"]+)"/)?.[1]
+  assert.ok(condition, 'the download-mode animation has an explicit visibility condition')
   const visible = new Function('state', `return Boolean(${condition})`)
   const {form} = await mount(t)
   form.showInstall = true
