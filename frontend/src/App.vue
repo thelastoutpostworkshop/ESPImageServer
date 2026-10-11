@@ -4733,20 +4733,19 @@ onUnmounted(() => {
           </v-list>
         </v-card>
 
-        <v-card v-if="page === 'displays'">
+        <v-card v-if="page === 'displays'" class="displays-page">
           <v-card-title class="text-h5 pt-5">Displays</v-card-title>
-          <v-card-subtitle>Choose the screen used by generation, display controls, and SD-card actions.</v-card-subtitle>
+          <v-card-subtitle>Your displays and their connection status. Choose the active display from the top menu.</v-card-subtitle>
           <v-card-text>
             <v-progress-linear v-if="displayCardsLoading" indeterminate color="primary" class="mb-4" />
             <v-alert v-if="!displays.some(target => target.online)" type="info" variant="tonal" class="mb-4">
               Waiting for a display. Saved displays and their settings are kept; connection status reflects this server session.
               <BoardShopping compact />
             </v-alert>
-            <v-row v-if="displays.length">
-              <v-col v-for="target in displays" :key="target.id" cols="12" md="6">
-                <v-card variant="outlined" :class="{ 'border-primary': target.id === activeDisplayId }">
+            <div v-if="displays.length" class="display-card-grid">
+                <v-card v-for="target in displays" :key="target.id" variant="outlined" class="display-card" :class="{ 'display-card--active': target.id === activeDisplayId }">
                   <v-card-title class="display-card-heading">
-                    <BoardThumbnail :board-target="target.board_target" :size="80" />
+                    <BoardThumbnail :board-target="target.board_target" :size="160" class="display-card-portrait" />
                     <div class="display-card-heading__content">
                       <div class="display-card-heading__name text-h6">{{ target.name }}</div>
                       <div class="d-flex flex-wrap ga-2 mt-2">
@@ -4755,21 +4754,34 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </v-card-title>
-                  <v-card-text class="pt-0">
-                    <div class="text-body-2"><strong>Native size:</strong> {{ target.width }} × {{ target.height }}</div>
-                    <div class="text-body-2 mt-1"><strong>Image rotation:</strong> {{ target.rotation || 0 }}° · <strong>Video rotation:</strong> {{ target.video_rotation || 0 }}°</div>
-                    <div class="text-body-2 mt-1"><strong>SD card:</strong> {{ displayCardSdLabel(target) }}</div>
-                    <div class="text-body-2 mt-2 d-flex align-center ga-1"><v-icon :color="target.online ? 'success' : 'warning'" size="18">mdi-pulse</v-icon><strong>Activity:</strong> {{ displayActivityLabel(target) }} · {{ formatRelativeTime(target.last_activity?.at || target.last_seen) }}</div>
-                    <div class="text-caption text-medium-emphasis mt-2">MAC {{ displayHardwareAddress(target) }} · Firmware {{ target.firmware_version }} · Last seen {{ target.online ? 'now' : 'earlier' }}</div>
+                  <v-card-text class="display-card-details">
+                    <dl class="display-card-specs">
+                      <div>
+                        <dt><v-icon size="16">mdi-aspect-ratio</v-icon> Native size</dt>
+                        <dd>{{ target.width }} × {{ target.height }}</dd>
+                      </div>
+                      <div>
+                        <dt><v-icon size="16">mdi-rotate-right</v-icon> Rotation</dt>
+                        <dd>Image {{ target.rotation || 0 }}° · Video {{ target.video_rotation || 0 }}°</dd>
+                      </div>
+                    </dl>
+                    <div class="display-card-sd text-body-2">
+                      <v-icon color="primary" size="20">mdi-micro-sd</v-icon>
+                      <span><strong>SD card:</strong> {{ displayCardSdLabel(target) }}</span>
+                    </div>
                   </v-card-text>
-                  <v-card-actions>
-                    <v-btn color="primary" :variant="target.id === activeDisplayId ? 'tonal' : 'flat'" :disabled="target.id === activeDisplayId" @click="selectActiveDisplay(target.id)">
-                      {{ target.id === activeDisplayId ? 'Active display' : 'Make active' }}
-                    </v-btn>
-                  </v-card-actions>
+                  <div class="display-card-footer">
+                    <div class="display-card-activity text-body-2">
+                      <v-icon :color="target.online ? 'success' : 'warning'" size="18">mdi-pulse</v-icon>
+                      <span><strong>Activity:</strong> {{ displayActivityLabel(target) }} · {{ formatRelativeTime(target.last_activity?.at || target.last_seen) }}</span>
+                    </div>
+                    <div class="display-card-hardware text-caption text-medium-emphasis">
+                      <span>Firmware {{ target.firmware_version }} · Last seen {{ target.online ? 'now' : 'earlier' }}</span>
+                      <span>MAC {{ displayHardwareAddress(target) }}</span>
+                    </div>
+                  </div>
                 </v-card>
-              </v-col>
-            </v-row>
+            </div>
             <v-alert v-else type="info" variant="tonal">Turn on an ESP32 display to add it here.</v-alert>
           </v-card-text>
         </v-card>
