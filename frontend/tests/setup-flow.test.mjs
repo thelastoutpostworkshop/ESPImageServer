@@ -370,3 +370,52 @@ test('identity errors open recovery once per new error and respect a manually cl
   await form.poll(); await flush()
   assert.ok(form.supportPanels.includes('recovery'))
 })
+
+test('every supported board offers conditional BOOT and RESET guidance while connecting', async t => {
+  const {form} = await mount(t)
+  form.showInstall = true
+  for (const board of [...form.boardItems.map(item => item.value), undefined]) {
+    form.state = {...form.state,identity:null,busy:true,stage:'connecting',package:board ? {board} : null}
+    await flush()
+    assert.equal(form.installationProgress.label, 'Connecting to your display')
+    assert.equal(form.installationProgress.percent, null)
+    assert.match(form.installationProgress.detail, /If connection takes too long, hold BOOT, press and release RESET\/EN, then release BOOT\./)
+    if (board === 'CHEAP_YELLOW_DISPLAY') assert.match(form.installationProgress.detail, /keeps the board in download mode/)
+    else assert.doesNotMatch(form.installationProgress.detail, /keeps the board in download mode/)
+    assert.equal(form.installationActive, true)
+    assert.equal(form.locked, true)
+    assert.equal(form.identity, null)
+    assert.equal(form.compatible, false)
+    assert.equal(form.canInstall, false)
+    form.goToStep(1)
+    form.goToStep(3)
+    assert.equal(form.step, 2)
+  }
+})
+
+test('BOOT and RESET connection hints disappear during transfer, verification, restart, and startup checks', async t => {
+  const {form} = await mount(t)
+  form.showInstall = true
+  const stages = [
+    {stage:'checking_identity',label:'Checking the connected display',percent:null},
+    {stage:'writing_and_verifying',phase:'writing',label:'Writing firmware to your display',percent:62},
+    {stage:'writing_and_verifying',phase:'verifying',label:'Verifying firmware on your display',percent:62},
+    {stage:'restarting',label:'Restarting your display',percent:null},
+    {stage:'identifying',label:'Checking firmware startup',percent:null}
+  ]
+  for (const {value:board} of form.boardItems) {
+    for (const {stage,phase,label,percent} of stages) {
+      form.state = {...form.state,identity:null,busy:true,stage,package:{board},
+        progress:phase ? {phase,percent:62.9,verified:2,total:4} : null}
+      await flush()
+      assert.equal(form.installationProgress.label, label)
+      assert.equal(form.installationProgress.percent, percent)
+      assert.doesNotMatch(form.installationProgress.detail, /\bBOOT\b|\bRESET\/EN\b/)
+      if (phase) assert.equal(form.installationProgress.detail, '2 of 4 firmware files verified.')
+      assert.equal(form.installationActive, true)
+      assert.equal(form.locked, true)
+      form.goToStep(1)
+      assert.equal(form.step, 2)
+    }
+  }
+})

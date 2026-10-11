@@ -12,6 +12,7 @@ const state = ref({ busy: false, stage: 'idle', package: null, error: '', log: '
 const ports = ref([]), port = ref(''), board = ref(''), baud = ref(460800)
 const confirmedBoard = ref(null)
 const supportPanels = ref([])
+const copyingLog = ref(false), logCopyStatus = ref('')
 const pending = ref(false), error = ref('')
 const library = ref({ packages: [], issues: [], directory: '', checkedAt: null })
 const onlineAvailable = Boolean(desktop?.firmwareReleases)
@@ -61,8 +62,8 @@ const installationProgress = computed(() => {
   return { label: stageLabel.value, percent: null, detail: ({
     validating: 'Checking the firmware files before making changes.',
     connecting: state.value.package?.board === 'CHEAP_YELLOW_DISPLAY'
-      ? 'If the display does not connect, hold BOOT, press and release RESET/EN, then release BOOT. The app keeps the board in download mode through the firmware transfer.'
-      : 'Connecting over USB and checking the display’s chip and storage.',
+      ? 'If connection takes too long, hold BOOT, press and release RESET/EN, then release BOOT. The app keeps the board in download mode through the firmware transfer.'
+      : 'If connection takes too long, hold BOOT, press and release RESET/EN, then release BOOT.',
     checking_identity: 'Confirming that the connected display still matches your selection before writing firmware.',
     restarting: 'All firmware files are verified. Restarting your display.',
     identifying: 'Firmware upload complete. Waiting for the display to restart and confirm its new version.'
@@ -89,6 +90,32 @@ async function loadLibrary(method) {
   libraryBusy.value = true; libraryError.value = ''
   try { library.value = await call(method) } catch (e) { libraryError.value = e.message; library.value.checkedAt = null }
   finally { libraryBusy.value = false }
+}
+async function copyInstallationLog() {
+  const log = state.value.log
+  if (!log || copyingLog.value) return
+  copyingLog.value = true; logCopyStatus.value = ''
+  const previousFocus = document.activeElement
+  let input
+  try {
+    input = document.createElement('textarea')
+    input.value = log
+    input.setAttribute('readonly', '')
+    input.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+    document.body.append(input)
+    input.select()
+    if (!document.execCommand?.('copy')) {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable')
+      await navigator.clipboard.writeText(log)
+    }
+    logCopyStatus.value = 'Installation log copied.'
+  } catch {
+    logCopyStatus.value = 'Could not copy. Select the log text and copy it manually.'
+  } finally {
+    input?.remove()
+    previousFocus?.focus?.({ preventScroll: true })
+    copyingLog.value = false
+  }
 }
 function resetFlow() {
   confirmedBoard.value = null; supportPanels.value = []
@@ -187,6 +214,7 @@ watch([() => state.value.stage, () => state.value.identityError], ([stage, ident
 watch(step, (next, previous) => {
   if (next === 2 && previous !== 2 && available) void loadLibrary()
 })
+watch(() => state.value.log, () => { logCopyStatus.value = '' })
 onMounted(async () => {
   if (!available) return
   void loadLibrary('firmwareReleases')
@@ -315,7 +343,13 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
           </v-expansion-panel>
           <v-expansion-panel v-if="state.log" value="log">
             <v-expansion-panel-title>Installation log</v-expansion-panel-title>
-            <v-expansion-panel-text><pre class="firmware-log">{{ state.log }}</pre></v-expansion-panel-text>
+            <v-expansion-panel-text>
+              <div class="d-flex flex-wrap align-center ga-3 mb-3">
+                <v-btn color="primary" variant="tonal" size="small" prepend-icon="mdi-content-copy" :loading="copyingLog" :disabled="!state.log" @click="copyInstallationLog">Copy log</v-btn>
+                <span v-if="logCopyStatus" class="text-caption" role="status">{{ logCopyStatus }}</span>
+              </div>
+              <pre class="firmware-log" tabindex="0" aria-label="Installation log">{{ state.log }}</pre>
+            </v-expansion-panel-text>
           </v-expansion-panel>
           <v-expansion-panel v-if="identity" value="device">
             <v-expansion-panel-title>Device details</v-expansion-panel-title>
@@ -387,5 +421,5 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer) })
 .setup-summary, .setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .setup-summary { justify-content: space-between; font-size: .875rem; border-bottom: 1px solid rgb(var(--v-theme-on-surface), .12); padding-bottom: 12px; }
 .setup-path { overflow-wrap: anywhere; white-space: pre-wrap; }
-.firmware-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12px; }
+.firmware-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12px; user-select: text; }
 </style>

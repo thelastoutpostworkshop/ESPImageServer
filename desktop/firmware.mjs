@@ -109,6 +109,16 @@ export function writeArguments(m, port, segments, baud = 460800, { resumeBootloa
     '--flash-size', `${m.flash.size_bytes / 1048576}MB`, ...segments.flatMap(s => [`0x${s.offset.toString(16)}`, s.file])]
 }
 
+export function esptoolFailure(output, exitCode) {
+  const bootMode = String(output || '').match(/Wrong boot mode detected\s*\((0x[0-9a-f]+)\)/i)?.[1].toLowerCase()
+  if (bootMode) {
+    return Object.assign(new Error(`The board is not in download mode (${bootMode}). Release BOOT and press RESET/EN once, then retry installation. If it does not connect automatically, wait for “Connecting to your display”, hold BOOT, press and release RESET/EN, then release BOOT.`), {
+      code: 'ESPTOOL_WRONG_BOOT_MODE', bootMode
+    })
+  }
+  return new Error(`esptool failed (${exitCode ?? 'interrupted'}). Check the log, USB cable, and whether another app holds the port.`)
+}
+
 export function runProcess(executable, args, { cwd, timeout = 120000, onOutput = () => {}, onChild = () => {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, { cwd, windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NO_COLOR: '1', TERM: 'dumb' } })
@@ -133,7 +143,7 @@ export function runProcess(executable, args, { cwd, timeout = 120000, onOutput =
     child.once('close', code => {
       clearTimeout(timer)
       if (timedOut) reject(new Error('Device operation timed out. Reconnect the board and retry.'))
-      else if (code !== 0) reject(new Error(`esptool failed (${code ?? 'interrupted'}). Check the log, USB cable, and whether another app holds the port.`))
+      else if (code !== 0) reject(esptoolFailure(output, code))
       else resolve(output)
     })
   })

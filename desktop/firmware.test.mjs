@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, readFile, rm, access } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { FirmwareInstaller, parseProbe, validatePackage, writeArguments, runProcess } from './firmware.mjs'
+import { FirmwareInstaller, parseProbe, validatePackage, writeArguments, runProcess, esptoolFailure } from './firmware.mjs'
 import { firmwareProgress } from './firmware-progress.mjs'
 
 test('upload progress handles split chunks, carriage returns, and differently sized binaries', () => {
@@ -234,6 +234,55 @@ test('process runner handles chunked output, errors and timeouts without hardwar
   assert.ok(output.includes('one') && output.includes('two'))
   await assert.rejects(runProcess(process.execPath, ['-e', 'process.exit(1)']), /failed/)
   await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { timeout: 100 }), /timed out/)
+})
+
+for (const [description, output, bootMode] of [
+  ['normal ESP32 log', 'A fatal error occurred: Failed to connect to ESP32: Wrong boot mode detected (0x13)! The chip needs to be in download mode.\n', '0x13'],
+  ['CRLF log', 'esptool v5.1.0\r\nSerial port COM13:\r\nConnecting...\r\nWrong boot mode detected (0x17)!\r\n', '0x17'],
+  ['uppercase boot mode', 'Wrong boot mode detected (0X2A)!', '0x2a'],
+]) test(`wrong boot mode in ${description} gives actionable BOOT and RESET guidance`, () => {
+  const error = esptoolFailure(output, 2)
+  assert.ok(error instanceof Error)
+  assert.equal(error.code, 'ESPTOOL_WRONG_BOOT_MODE')
+  assert.equal(error.bootMode, bootMode)
+  assert.match(error.message, /not in download mode/i)
+  assert.ok(error.message.includes(bootMode))
+  assert.match(error.message, /BOOT/)
+  assert.match(error.message, /RESET\/EN/)
+  assert.match(error.message, /release BOOT/i)
+  assert.match(error.message, /release BOOT and press RESET\/EN once, then retry installation/i)
+  assert.match(error.message, /wait for.*Connecting to your display.*hold BOOT.*press and release RESET\/EN.*then release BOOT/i)
+})
+
+for (const output of [
+  'A fatal error occurred: Failed to connect to ESP32: No serial data received.',
+  'Failed to connect to ESP32: Invalid head of packet (0x13): Possible serial noise or corruption.',
+  'A fatal error occurred: Failed to connect to ESP32: Download mode successfully detected, but getting no sync reply.',
+  'Wrong boot mode detected (unknown)!',
+]) test(`unrelated connection failure remains generic: ${output}`, () => {
+  const error = esptoolFailure(output, 2)
+  assert.ok(error instanceof Error)
+  assert.equal(error.code, undefined)
+  assert.equal(error.bootMode, undefined)
+  assert.equal(error.message, 'esptool failed (2). Check the log, USB cable, and whether another app holds the port.')
+})
+
+test('process runner translates a nonzero wrong-boot failure from normalized chunked ANSI and CRLF output', async () => {
+  const chunks = []
+  const first = '\x1b[31mesptool v5.1.0\r\nConnecting...\r\nA fatal error occurred: Failed to connect to ESP32: Wrong bo'
+  const second = 'ot mode detected (0x13)! The chip needs to be in download mode.\x1b[0m\r\n'
+  const script = `process.stdout.write(${JSON.stringify(first)}, () => { setImmediate(() => { process.stdout.write(${JSON.stringify(second)}); process.exitCode = 2 }) })`
+  await assert.rejects(runProcess(process.execPath, ['-e', script], { onOutput: chunk => chunks.push(chunk) }), error => {
+    assert.equal(error.code, 'ESPTOOL_WRONG_BOOT_MODE')
+    assert.equal(error.bootMode, '0x13')
+    assert.match(error.message, /BOOT/)
+    assert.match(error.message, /RESET\/EN/)
+    return true
+  })
+  const log = chunks.join('')
+  assert.match(log, /Wrong boot mode detected \(0x13\)/)
+  assert.match(log, /\r\n/)
+  assert.ok(!log.includes('\x1b'), 'ANSI color sequences must be removed before failure interpretation')
 })
 
 test('USB port disappearance or replacement invalidates identity and Wi-Fi state', async () => {
