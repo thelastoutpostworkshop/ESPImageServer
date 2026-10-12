@@ -4,10 +4,12 @@ __pycache__/
 *.egg-info/
 .env
 .pytest_cache/
-*.egg-info/
 dist/
 frontend/node_modules/
 desktop/node_modules/
 desktop/release/
 desktop/tools/
 /TODO.md
+
+# Local agent instructions
+AGENTS.md
