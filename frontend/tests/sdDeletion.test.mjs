@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { sdSaveCommandEndpoint } from '../src/sdSaveProgress.js'
 import { requireSdCardCommandAvailable, waitForSdCardDeletion } from '../src/sdDeletion.js'
+import { displayExperienceDefaults } from '../src/displayExperience.js'
 
 const source = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
 const deletionCode = source.slice(source.indexOf('function displaySdCardMediaType('), source.indexOf('async function showSDCardFileOnDisplay('))
@@ -54,6 +55,11 @@ function setup({ status = 'complete', onPreferenceSave, onDelete, onPoll, onInve
     savingVideoToDisplaySdCard: { value: false },
     displayingSdCardFile: { value: '' },
     displayExperienceSaving: { value: false },
+    displayExperienceLoadSequence: 0,
+    displayExperience: { value: displayExperienceDefaults() },
+    reportedDisplayExperience: { value: null },
+    displayExperienceLoading: { value: false },
+    displayExperienceDefaults,
     displayExperiencePreviewChanging: { value: false },
     requireSdCardCommandAvailable,
     AbortSignal,

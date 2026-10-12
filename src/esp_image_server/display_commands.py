@@ -9,6 +9,7 @@ from time import time
 from uuid import uuid4
 
 from .retention import DISPLAY_COMMAND_RETENTION, RetentionPolicy
+from .sd_orientation import sd_media_rotation
 
 
 LEGACY_DISPLAY_ID = "__legacy__"
@@ -31,6 +32,7 @@ class DisplayCommandStore:
         self._sd_card_report_versions: dict[str, int] = {}
         self._sd_card_reports: dict[str, dict[str, object]] = {}
         self._reservations: dict[str, str] = {}
+        self._image_snapshots: dict[str, bytes] = {}
 
     def reserve(self, display_id: str, owner_id: str) -> None:
         """Reserve an idle channel without replacing any pending command."""
@@ -52,6 +54,7 @@ class DisplayCommandStore:
         *,
         display_id: str = LEGACY_DISPLAY_ID,
         thumbnail_url: str | None = None,
+        image_jpeg: bytes | None = None,
         owner_id: str | None = None,
         **values: object,
     ) -> dict[str, object]:
@@ -62,6 +65,7 @@ class DisplayCommandStore:
             image_id=image_id,
             content_key=content_key,
             thumbnail_url=thumbnail_url or f"/display-sd-card/thumbnails/{filename}",
+            image_jpeg=image_jpeg,
             owner_id=owner_id,
             **values,
         )
@@ -69,7 +73,7 @@ class DisplayCommandStore:
 
     def queue(
         self, command_type: str, *, display_id: str = LEGACY_DISPLAY_ID,
-        owner_id: str | None = None, **values: object,
+        owner_id: str | None = None, image_jpeg: bytes | None = None, **values: object,
     ) -> dict[str, object]:
         with self._lock:
             self._check_owner_locked(display_id, owner_id)
@@ -104,6 +108,12 @@ class DisplayCommandStore:
                 "display_id": display_id,
             }
             command.update({key: value for key, value in values.items() if value is not None})
+            if image_jpeg is not None:
+                # Freeze the rendered pixels before the board can poll. Later
+                # rotation, quality or source changes must not relabel a save.
+                self._image_snapshots[command_id] = image_jpeg
+                prefix = "" if display_id == LEGACY_DISPLAY_ID else f"/displays/{display_id}"
+                command["image_url"] = f"{prefix}/display-commands/{command_id}/image"
             self._pending[display_id] = command
             self._completed[command_id] = command
             self._prune_completed_locked()
@@ -134,12 +144,17 @@ class DisplayCommandStore:
 
     def find_sd_card_image(
         self, image_hash: str, *, display_id: str = LEGACY_DISPLAY_ID,
+        orientation_rotation: int | None = None,
     ) -> str | None:
         """Find a verified image using its current content key."""
-        return self.find_sd_card_content(f"v1-{image_hash}", "image", display_id=display_id)
+        return self.find_sd_card_content(
+            f"v1-{image_hash}", "image", display_id=display_id,
+            orientation_rotation=orientation_rotation,
+        )
 
     def find_sd_card_content(
         self, content_key: str, media_type: str, *, display_id: str = LEGACY_DISPLAY_ID,
+        orientation_rotation: int | None = None,
     ) -> str | None:
         """Return the filename currently reported for a stable SD-card content key."""
         with self._lock:
@@ -155,6 +170,8 @@ class DisplayCommandStore:
                 if item.get("verified") is not True:
                     continue
                 name = str(item.get("name", ""))
+                if orientation_rotation is not None and sd_media_rotation(name) != orientation_rotation:
+                    continue
                 if str(item.get("content_key", "")) == content_key:
                     return name
             return None
@@ -280,6 +297,14 @@ class DisplayCommandStore:
                 return None
             return dict(command)
 
+    def image_snapshot(self, command_id: str, *, display_id: str = LEGACY_DISPLAY_ID) -> bytes | None:
+        """Read only the exact rendition owned by this display's retained save."""
+        with self._lock:
+            command = self._completed.get(command_id)
+            if command is None or command.get("display_id") != display_id:
+                return None
+            return self._image_snapshots.get(command_id)
+
     def referenced_video_ids(self) -> set[str]:
         """Return media still needed by the command waiting for the display."""
         with self._lock:
@@ -322,8 +347,11 @@ class DisplayCommandStore:
         for command_id in dict.fromkeys(remove_ids):
             self._completed.pop(command_id, None)
             self._finished_at.pop(command_id, None)
+            self._image_snapshots.pop(command_id, None)
         return len(set(remove_ids))
 
-    @staticmethod
-    def _command_size(command: dict[str, object]) -> int:
-        return len(json.dumps(command, default=str, separators=(",", ":")).encode("utf-8"))
+    def _command_size(self, command: dict[str, object]) -> int:
+        return (
+            len(json.dumps(command, default=str, separators=(",", ":")).encode("utf-8"))
+            + len(self._image_snapshots.get(str(command.get("id", "")), b""))
+        )

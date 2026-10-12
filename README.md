@@ -147,6 +147,10 @@ In **Display Experience**, choose the experience and click **Save** while the bo
 
 The board needs configured Wi-Fi and a working SD card containing matching images or videos. It starts the saved experience after losing contact with ESPImageServer and returns to server control when contact is restored. An empty card or an unsaved experience cannot provide offline playback.
 
+Orientation filtering in **Display Experience** is off by default. Enable it and choose **0°**, **90°**, **180°**, or **270°** to play only files saved for that exact rotation. The board preview shows how the sample artwork appears with the active display. The filter applies to both preview and saved offline playback; it selects matching files without rotating their pixels.
+
+Images are saved using the active display's **Image rotation** setting. Videos use the orientation selected when they were generated. Choose the corresponding orientation in **Display Experience**, then save your settings or preview playback. The matching count helps you check that the SD card contains suitable media.
+
 ### The display orientation is wrong
 
 Choose the intended display, change **Image rotation** on **Generate image** or **Video rotation** on **Generate video**, then add a new job. Each job keeps the orientation selected when it entered the queue. Changing rotation does not alter jobs already queued, existing creations, or files already saved to the SD card.

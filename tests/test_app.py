@@ -998,7 +998,7 @@ def test_display_can_save_a_specific_creation_library_image_to_sd_card(tmp_path)
     assert command.json()["thumbnail_url"].endswith(command.json()["filename"])
     assert command.json()["content_key"].startswith("v1-")
     assert re.fullmatch(
-        r"esp-image-\d{8}-\d{6}-v1-[0-9a-f]{16}\.jpg", command.json()["filename"],
+        r"esp-image-\d{8}-\d{6}-r0-v1-[0-9a-f]{16}\.jpg", command.json()["filename"],
     )
     assert report.status_code == 204
     assert reused.json()["status"] == "already_saved"

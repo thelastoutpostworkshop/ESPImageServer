@@ -9,6 +9,7 @@ import MakerTools from './components/MakerTools.vue'
 import GenerationNavIndicator from './components/GenerationNavIndicator.vue'
 import BoardShopping from './components/BoardShopping.vue'
 import BoardThumbnail from './components/BoardThumbnail.vue'
+import ExperienceOrientationPreview from './components/ExperienceOrientationPreview.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import AppUpdateNotice from './components/AppUpdateNotice.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
@@ -18,6 +19,7 @@ import { saveThemePreference } from './themePreference.js'
 import { createAppSettingsSaver } from './appSettings.js'
 import { supportLinks } from './makerResources.js'
 import { gallerySelectionKey, selectAllGalleryItems, selectedGalleryItems, filterGallerySelection, reconcileGallerySelection, isGalleryBulkSaveActive, galleryBulkSaveProgressMessage } from './galleryBulkSave.js'
+import { displayExperienceDefaults, normalizeDisplayExperience, displayExperienceSettings, experienceMediaCounts } from './displayExperience.js'
 
 let displaySelectionInitialized = false
 let sdCardDisplaySelectionVersion = 0
@@ -202,7 +204,7 @@ const displaySdCardLoading = ref(false)
 const sdCardItemsPerPage = ref(loadSDCardItemsPerPage())
 const sdCardMediaFilter = ref('all')
 const sdCardPage = ref(1)
-const displayExperience = ref({ current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_ms: 15000, slideshow_order: 'newest_first' })
+const displayExperience = ref(displayExperienceDefaults())
 const displayExperienceIntervalSeconds = ref(15)
 const displayExperienceLoading = ref(false)
 const displayExperienceSaving = ref(false)
@@ -211,11 +213,18 @@ const displayExperiencePreviewChanging = ref(false)
 const displayExperienceError = ref('')
 const displayExperienceStatus = ref('')
 const reportedDisplayExperience = ref(null)
+let displayExperienceLoadSequence = 0
 const displayExperienceHasChanges = computed(() => {
   const saved = reportedDisplayExperience.value
   return saved && (saved.offline_experience !== displayExperience.value.offline_experience
     || saved.slideshow_interval_ms !== Math.round(Number(displayExperienceIntervalSeconds.value) * 1000)
-    || saved.slideshow_order !== displayExperience.value.slideshow_order)
+    || saved.slideshow_order !== displayExperience.value.slideshow_order
+    || saved.orientation_filter_enabled !== displayExperience.value.orientation_filter_enabled
+    || saved.orientation_rotation !== displayExperience.value.orientation_rotation)
+})
+const displayExperienceMediaCounts = computed(() => {
+  if (displaySdCardScope.value !== selectedDisplayEndpoint('') || !displaySdCard.value.available) return null
+  return experienceMediaCounts(displaySdCard.value.files, displayExperience.value)
 })
 const displayingSdCardFile = ref('')
 const sdCardSnackbar = ref(false)
@@ -696,16 +705,19 @@ function creationSdCardStatus(creation, mediaType) {
       ? savedImages.value.find(item => item.id === creation.id) || creation
       : creation
     const contentKeys = currentCreation.sd_card_content_keys || [currentCreation.sd_card_content_key].filter(Boolean)
-    const file = files.find(item => contentKeys.includes(item.content_key)) || null
-    return { known: true, present: Boolean(file), file, activeFormat: Boolean(file) }
+    const file = files.find(item => contentKeys.includes(item.content_key) && item.orientation_rotation === displayRotation.value)
+      || files.find(item => contentKeys.includes(item.content_key)) || null
+    return { known: true, present: Boolean(file), file, activeFormat: Boolean(file) && file.orientation_rotation === displayRotation.value }
   }
   const videoId = String(creation.id || '')
   const expectedKey = display.value?.connected
     ? `v1-${videoId}-${display.value.width}x${display.value.height}-fps${savedVideoFps(creation)}`
     : ''
-  const file = files.find(item => item.content_key === expectedKey)
+  const rotation = [0, 90, 180, 270].includes(creation.metadata?.rotation) ? creation.metadata.rotation : null
+  const file = files.find(item => item.content_key === expectedKey && (item.orientation_rotation ?? null) === rotation)
+    || files.find(item => item.content_key === expectedKey)
     || files.find(item => String(item.content_key || '').startsWith(`v1-${videoId}-`)) || null
-  const activeFormat = Boolean(file) && Boolean(expectedKey) && file.content_key === expectedKey
+  const activeFormat = Boolean(file) && Boolean(expectedKey) && file.content_key === expectedKey && (file.orientation_rotation ?? null) === rotation
   return { known: true, present: Boolean(file), file, activeFormat }
 }
 
@@ -713,6 +725,7 @@ function creationSdCardLabel(creation, mediaType) {
   const sdCardStatus = creationSdCardStatus(creation, mediaType)
   if (!sdCardStatus.present) return ''
   const verification = sdCardStatus.file?.verified !== true ? ' · save not verified' : ''
+  if (mediaType === 'image' && !sdCardStatus.activeFormat) return `${onDisplaySdCardLabel.value} · another orientation${verification}`
   if (mediaType === 'video' && display.value?.connected && !sdCardStatus.activeFormat) return `${onDisplaySdCardLabel.value} · another format${verification}`
   if (mediaType === 'video' && !display.value?.connected) return onDisplaySdCardLabel.value + verification
   if (mediaType === 'video') return `${onDisplaySdCardLabel.value} · ${display?.value?.width}×${display?.value?.height} · ${savedVideoFps(creation)} fps${verification}`
@@ -1005,6 +1018,10 @@ watch(page, (nextPage, previousPage) => {
 })
 
 watch(activeDisplayId, displayId => {
+  ++displayExperienceLoadSequence
+  displayExperience.value = displayExperienceDefaults()
+  reportedDisplayExperience.value = null
+  displayExperienceLoading.value = false
   ++galleryBulkSaveRequestVersion
   galleryBulkSave.value = null
   galleryBulkSaveError.value = ''
@@ -2209,30 +2226,39 @@ function openSDCardPage() {
 }
 
 async function loadDisplayExperience() {
+  const sequence = ++displayExperienceLoadSequence
+  const scope = selectedDisplayEndpoint('')
   reportedDisplayExperience.value = null
+  displayExperience.value = displayExperienceDefaults()
+  displayExperienceIntervalSeconds.value = 15
   displayExperienceStatus.value = ''
+  displayExperienceError.value = ''
   if (!display.value?.connected) {
-    displayExperience.value = { current_mode: 'server_controlled', offline_experience: 'slideshow', slideshow_interval_ms: 15000, slideshow_order: 'newest_first' }
+    displayExperienceLoading.value = false
     return
   }
   displayExperienceLoading.value = true
   displayExperienceError.value = ''
   try {
-    const response = await fetch(selectedDisplayEndpoint('/display-experience'))
+    const response = await fetch(`${scope}/display-experience`)
     if (!response.ok) throw new Error(`Request failed (${response.status})`)
-    displayExperience.value = await response.json()
+    const settings = await response.json()
+    if (sequence !== displayExperienceLoadSequence || scope !== selectedDisplayEndpoint('')) return
+    displayExperience.value = normalizeDisplayExperience(settings)
     reportedDisplayExperience.value = { ...displayExperience.value }
     displayExperienceIntervalSeconds.value = Number(displayExperience.value.slideshow_interval_ms) / 1000
   } catch (requestError) {
+    if (sequence !== displayExperienceLoadSequence || scope !== selectedDisplayEndpoint('')) return
     displayExperienceError.value = `Could not load display experience: ${requestError.message}`
   } finally {
-    displayExperienceLoading.value = false
+    if (sequence === displayExperienceLoadSequence) displayExperienceLoading.value = false
   }
 }
 
 function openDisplayExperiencePage() {
   navigate('display-experience')
-  loadDisplayExperience()
+  void loadDisplayExperience()
+  void loadDisplaySdCard()
 }
 
 function openDisplaysPage() {
@@ -2246,18 +2272,15 @@ function navigate(nextPage) {
 }
 
 async function saveDisplayExperience() {
-  if (!activeDisplayOnline.value) return
+  if (!activeDisplayOnline.value || displayExperienceSaving.value) return
+  const scope = selectedDisplayEndpoint('')
   displayExperienceSaving.value = true
   displayExperienceError.value = ''
   displayExperienceStatus.value = ''
-  const settings = {
-    offline_experience: displayExperience.value.offline_experience,
-    slideshow_interval_ms: Math.round(Number(displayExperienceIntervalSeconds.value) * 1000),
-    slideshow_order: displayExperience.value.slideshow_order
-  }
+  const settings = displayExperienceSettings(displayExperience.value, displayExperienceIntervalSeconds.value)
   try {
     requireDisplayCommandAvailable()
-    const response = await fetch(selectedDisplayEndpoint('/display-experience'), {
+    const response = await fetch(`${scope}/display-experience`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
     })
@@ -2266,12 +2289,15 @@ async function saveDisplayExperience() {
       throw new Error(body.detail || `Request failed (${response.status})`)
     }
     const command = await response.json()
+    if (scope !== selectedDisplayEndpoint('')) return
     displayExperienceStatus.value = 'Saving to the display…'
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise(resolve => window.setTimeout(resolve, 500))
-      const commandResponse = await fetch(selectedDisplayCommandEndpoint(command.id))
+      if (scope !== selectedDisplayEndpoint('')) return
+      const commandResponse = await fetch(sdSaveCommandEndpoint(command))
       if (!commandResponse.ok) continue
       const result = await commandResponse.json()
+      if (scope !== selectedDisplayEndpoint('')) return
       if (result.status === 'complete') {
         displayExperienceStatus.value = 'Display experience saved. The display will use it when ESPImageServer is unavailable.'
         // The acknowledgement confirms persistence before the next SD report.
@@ -2282,7 +2308,7 @@ async function saveDisplayExperience() {
     }
     displayExperienceStatus.value = 'The display has not confirmed the save yet. Keep ESPImageServer open until it does.'
   } catch (requestError) {
-    displayExperienceError.value = `Could not save display experience: ${requestError.message}`
+    if (scope === selectedDisplayEndpoint('')) displayExperienceError.value = `Could not save display experience: ${requestError.message}`
   } finally {
     displayExperienceSaving.value = false
   }
@@ -2290,23 +2316,24 @@ async function saveDisplayExperience() {
 
 async function previewDisplayExperience() {
   if (!activeDisplayOnline.value || displayExperiencePreviewing.value || displayExperiencePreviewChanging.value) return
+  const scope = selectedDisplayEndpoint('')
   displayExperienceError.value = ''
   displayExperiencePreviewChanging.value = true
   try {
     requireDisplayCommandAvailable()
-    const response = await fetch(selectedDisplayEndpoint('/display-experience/preview'), {
+    const response = await fetch(`${scope}/display-experience/preview`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        offline_experience: displayExperience.value.offline_experience,
-        slideshow_interval_ms: Math.round(Number(displayExperienceIntervalSeconds.value) * 1000),
-        slideshow_order: displayExperience.value.slideshow_order
-      })
+      body: JSON.stringify(displayExperienceSettings(displayExperience.value, displayExperienceIntervalSeconds.value))
     })
-    if (!response.ok) throw new Error(`Request failed (${response.status})`)
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || `Request failed (${response.status})`)
+    }
+    if (scope !== selectedDisplayEndpoint('')) return
     displayExperiencePreviewing.value = true
     displayExperienceStatus.value = `${displayExperience.value.offline_experience === 'video_loop' ? 'Video loop' : 'Slideshow'} preview is starting on the display.`
   } catch (requestError) {
-    displayExperienceError.value = `Could not start preview: ${requestError.message}`
+    if (scope === selectedDisplayEndpoint('')) displayExperienceError.value = `Could not start preview: ${requestError.message}`
   } finally {
     displayExperiencePreviewChanging.value = false
   }
@@ -4813,10 +4840,10 @@ onUnmounted(() => {
               The display will not start an offline slideshow or video loop until you save an experience. Choose the settings below, then click Save. Previewing does not save them.
             </v-alert>
             <v-alert v-else-if="!displayExperienceLoading && reportedDisplayExperience?.offline_experience_saved === true" type="success" variant="tonal" class="mb-4" :title="activeDisplayOnline ? 'Display Experience saved on this display' : 'Display Experience saved — last reported by this display'">
-              Saved: {{ reportedDisplayExperience.offline_experience === 'video_loop' ? 'SD Card Video Loop' : `SD Card Slideshow · every ${reportedDisplayExperience.slideshow_interval_ms / 1000} seconds` }} · {{ reportedDisplayExperience.slideshow_order === 'random' ? 'Random' : reportedDisplayExperience.slideshow_order === 'oldest_first' ? 'Oldest first' : 'Newest first' }}.
+              Saved: {{ reportedDisplayExperience.offline_experience === 'video_loop' ? 'SD Card Video Loop' : `SD Card Slideshow · every ${reportedDisplayExperience.slideshow_interval_ms / 1000} seconds` }} · {{ reportedDisplayExperience.slideshow_order === 'random' ? 'Random' : reportedDisplayExperience.slideshow_order === 'oldest_first' ? 'Oldest first' : 'Newest first' }} · {{ reportedDisplayExperience.orientation_filter_enabled ? `Only ${reportedDisplayExperience.orientation_rotation}°` : 'All orientations' }}.
             </v-alert>
             <v-alert v-else-if="!displayExperienceLoading" type="warning" variant="tonal" class="mb-4" title="Saved experience not confirmed">
-              The app has not received a saved-status report from this display. Save an experience and wait for confirmation. Older firmware needs an update to report this status after reconnecting.
+              The app has not received a saved-status report from this display. Save an experience and wait for confirmation.
             </v-alert>
             <v-alert v-if="displayExperienceHasChanges" type="warning" variant="tonal" density="compact" class="mb-4">
               You have unsaved changes. Click Save to apply these settings to the display.
@@ -4831,6 +4858,42 @@ onUnmounted(() => {
                 variant="outlined"
                 class="mb-3"
               />
+              <v-card variant="outlined" class="mb-5 rounded-lg">
+                <v-card-text>
+                  <v-switch
+                    v-model="displayExperience.orientation_filter_enabled"
+                    label="Play only one orientation"
+                    color="primary"
+                    :disabled="!activeDisplayOnline || displayExperienceLoading || displayExperienceSaving"
+                    hide-details
+                    class="mb-2"
+                  />
+                  <p class="text-body-2 text-medium-emphasis mb-0">Off by default. When off, all {{ displayExperience.offline_experience === 'video_loop' ? 'videos' : 'images' }} can play.</p>
+                  <v-row v-if="displayExperience.orientation_filter_enabled" class="mt-2" align="center">
+                    <v-col cols="12" md="6">
+                      <v-select
+                        v-model="displayExperience.orientation_rotation"
+                        label="Playback orientation"
+                        :items="rotationOptions"
+                        :disabled="!activeDisplayOnline || displayExperienceSaving"
+                        variant="outlined"
+                        hide-details
+                        class="mb-3"
+                      />
+                      <p class="text-body-2 mb-3">Only {{ displayExperience.offline_experience === 'video_loop' ? 'videos' : 'images' }} saved for this exact orientation will play.</p>
+                      <div v-if="displayExperienceMediaCounts" role="status" aria-live="polite" class="mb-3">
+                        <v-chip :color="displayExperienceMediaCounts.matching ? 'primary' : 'warning'" variant="tonal" prepend-icon="mdi-filter-outline">{{ displayExperienceMediaCounts.matching }} of {{ displayExperienceMediaCounts.total }} {{ displayExperience.offline_experience === 'video_loop' ? 'videos' : 'images' }} match</v-chip>
+                        <p v-if="!displayExperienceMediaCounts.matching" class="text-body-2 mt-2">Save {{ displayExperience.offline_experience === 'video_loop' ? 'videos' : 'images' }} in this orientation before starting playback.</p>
+                      </div>
+                      <p v-else class="text-body-2 text-medium-emphasis mb-3">Matching counts appear when the display reports its SD-card files.</p>
+                      <p class="text-caption text-medium-emphasis mb-0">Files without a recorded orientation are skipped. Save images or videos through the app to include them.</p>
+                    </v-col>
+                    <v-col cols="12" md="6">
+                      <ExperienceOrientationPreview :display="display" :rotation="displayExperience.orientation_rotation" :video="displayExperience.offline_experience === 'video_loop'" />
+                    </v-col>
+                  </v-row>
+                </v-card-text>
+              </v-card>
               <v-text-field v-if="displayExperience.offline_experience === 'slideshow'"
                 v-model.number="displayExperienceIntervalSeconds"
                 label="Change image every"

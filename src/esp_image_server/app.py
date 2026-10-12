@@ -24,7 +24,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from PIL import Image
 from starlette.background import BackgroundTask
 
@@ -39,6 +39,7 @@ from .firmware_updates import FirmwareUpdateChecker
 from .display import ActiveDisplayStore, DisplayProfile
 from .display_commands import LEGACY_DISPLAY_ID, DisplayCommandBusyError, DisplayCommandStore
 from .sd_save_batches import SDSaveBatchStore
+from .sd_orientation import sd_media_rotation, valid_media_rotation, video_media_rotation
 from .display_registry import (
     DisplayDevice,
     DisplayNotFoundError,
@@ -240,12 +241,30 @@ class DisplaySDCardReport(BaseModel):
     offline_experience: str = Field(default="slideshow", pattern="^(slideshow|video_loop)$")
     slideshow_interval_ms: int = Field(default=15_000, ge=500, le=3_600_000)
     slideshow_order: str = Field(default="newest_first", pattern="^(newest_first|oldest_first|random)$")
+    orientation_filter_enabled: bool = Field(default=False, strict=True)
+    orientation_rotation: int = Field(default=0, strict=True)
+
+    @field_validator("orientation_rotation")
+    @classmethod
+    def validate_orientation_rotation(cls, value: int) -> int:
+        if valid_media_rotation(value) is None:
+            raise ValueError("Orientation must be 0, 90, 180, or 270 degrees")
+        return value
 
 
 class DisplayExperienceRequest(BaseModel):
     offline_experience: str = Field(default="slideshow", pattern="^(slideshow|video_loop)$")
     slideshow_interval_ms: int = Field(ge=500, le=3_600_000)
     slideshow_order: str = Field(pattern="^(newest_first|oldest_first|random)$")
+    orientation_filter_enabled: bool = Field(default=False, strict=True)
+    orientation_rotation: int = Field(default=0, strict=True)
+
+    @field_validator("orientation_rotation")
+    @classmethod
+    def validate_orientation_rotation(cls, value: int) -> int:
+        if valid_media_rotation(value) is None:
+            raise ValueError("Orientation must be 0, 90, 180, or 270 degrees")
+        return value
 
 
 class VideoGenerateRequest(BaseModel):
@@ -826,24 +845,22 @@ def create_app(
         profile = active_display_store.get()
         width = profile.width if profile else settings.output_width
         height = profile.height if profile else settings.output_height
+        rotation = display_settings_store.get_rotation()
         jpeg, _ = rendered_jpeg(
             assignment.image,
             width=width,
             height=height,
-            rotation=display_settings_store.get_rotation(),
+            rotation=rotation,
             aspect_mode=assignment.aspect_mode,
         )
         image_library.remember_sd_card_rendition(
             assignment.image.jpeg, f"v1-{hashlib.sha256(jpeg).hexdigest()[:16]}",
         )
-        return queue_image_save(jpeg)
+        return queue_image_save(jpeg, rotation=rotation)
 
     @app.post("/display-commands/save-saved-image/{image_id}", status_code=status.HTTP_202_ACCEPTED)
     def save_creation_library_image_to_display_sd_card(image_id: str) -> dict[str, object]:
-        image_path = image_library.find_path(image_id)
-        if image_path is None:
-            raise HTTPException(status_code=404, detail="Saved image not found")
-        return queue_image_save(image_path.read_bytes(), image_id)
+        return queue_saved_image_to_display_sd_card(image_id)
 
     @app.post("/display-commands/save-saved-video/{video_id}", status_code=status.HTTP_202_ACCEPTED)
     def save_saved_video_to_display_sd_card(video_id: str) -> dict[str, object]:
@@ -868,6 +885,7 @@ def create_app(
         record = next((item for item in video_library.list(limit=10_000) if item.get("id") == video_id), {})
         metadata = record.get("metadata", {}) if isinstance(record, dict) else {}
         fps = metadata.get("fps", 15) if isinstance(metadata, dict) else 15
+        rotation = video_media_rotation(metadata)
         try:
             fps = max(1, min(24, int(fps)))
         except (TypeError, ValueError):
@@ -875,6 +893,7 @@ def create_app(
         content_key = f"v1-{video_id}-{width}x{height}-fps{fps}"
         existing_filename = display_command_store.find_sd_card_content(
             content_key, "video", display_id=display_id,
+            orientation_rotation=rotation,
         )
         if existing_filename is not None:
             return {
@@ -892,7 +911,8 @@ def create_app(
         # Keep the stable content key for deduplication, but prefix it with the
         # UTC save time so the board can report a real Created value later.
         saved_at = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        filename = f"esp-video-{saved_at}-{content_key}.mjpeg"
+        orientation = f"-r{rotation}" if rotation is not None else ""
+        filename = f"esp-video-{saved_at}{orientation}-{content_key}.mjpeg"
         thumbnail_path = video_library.find_thumbnail_path(video_id)
         if thumbnail_path is not None:
             write_sd_thumbnail(filename, thumbnail_path.read_bytes(), display_id=display_id)
@@ -900,19 +920,23 @@ def create_app(
             "save_saved_video", display_id=display_id, filename=filename, video_id=video_id,
             video_url=f"/saved-videos/{video_id}/mjpeg-download", fps=fps,
             content_key=content_key, thumbnail_url=f"/saved-videos/{video_id}/thumbnail",
+            orientation_rotation=rotation,
             owner_id=owner_id, bulk_save_id=owner_id,
             bulk_save_index=bulk_save_index, bulk_save_total=bulk_save_total,
         )
 
     def queue_image_save(
         jpeg: bytes, image_id: str | None = None, *, display_id: str = LEGACY_DISPLAY_ID,
+        rotation: int,
         owner_id: str | None = None,
         bulk_save_index: int | None = None,
         bulk_save_total: int | None = None,
     ) -> dict[str, object]:
         image_hash = hashlib.sha256(jpeg).hexdigest()[:16]
         content_key = f"v1-{image_hash}"
-        existing_filename = display_command_store.find_sd_card_image(image_hash, display_id=display_id)
+        existing_filename = display_command_store.find_sd_card_image(
+            image_hash, display_id=display_id, orientation_rotation=rotation,
+        )
         if existing_filename is not None:
             return {
                 "status": "already_saved",
@@ -923,18 +947,44 @@ def create_app(
         # See the equivalent video name above.  The ESP32 extracts this UTC
         # timestamp when it reports the SD-card inventory.
         saved_at = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        filename = f"esp-image-{saved_at}-{content_key}.jpg"
+        filename = f"esp-image-{saved_at}-r{rotation}-{content_key}.jpg"
         write_sd_thumbnail(filename, jpeg, display_id=display_id)
         command = display_command_store.queue_save(
             filename,
             image_id,
             content_key=content_key,
+            image_jpeg=jpeg,
+            orientation_rotation=rotation,
             display_id=display_id,
             thumbnail_url=sd_thumbnail_url(display_id, filename),
             owner_id=owner_id, bulk_save_id=owner_id,
             bulk_save_index=bulk_save_index, bulk_save_total=bulk_save_total,
         )
         return command
+
+    def queue_saved_image_to_display_sd_card(
+        image_id: str, *, display_id: str = LEGACY_DISPLAY_ID, **arguments: object,
+    ) -> dict[str, object]:
+        """Save the target rendition, rather than labelling unrotated artwork."""
+        image_path = image_library.find_path(image_id)
+        if image_path is None:
+            raise HTTPException(status_code=404, detail="Saved image not found")
+        profile = active_display_store.get() if display_id == LEGACY_DISPLAY_ID else get_registered_display(display_id)
+        width = profile.width if profile is not None else settings.output_width
+        height = profile.height if profile is not None else settings.output_height
+        rotation = display_settings_store.get_rotation() if display_id == LEGACY_DISPLAY_ID else profile.rotation
+        original_jpeg = image_path.read_bytes()
+        try:
+            with Image.open(BytesIO(original_jpeg)) as source:
+                jpeg = to_display_jpeg(
+                    source, width=width, height=height, rotation=rotation, quality=jpeg_quality,
+                )
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"Could not prepare saved image for the display: {exc}") from exc
+        image_library.remember_sd_card_rendition(
+            original_jpeg, f"v1-{hashlib.sha256(jpeg).hexdigest()[:16]}",
+        )
+        return queue_image_save(jpeg, image_id, display_id=display_id, rotation=rotation, **arguments)
 
     def batch_display_connected(display_id: str) -> bool:
         if display_id == LEGACY_DISPLAY_ID:
@@ -950,10 +1000,7 @@ def create_app(
         arguments = {"display_id": display_id, "owner_id": batch_id,
                      "bulk_save_index": index, "bulk_save_total": total}
         if item["type"] == "image":
-            image_path = image_library.find_path(str(item["id"]))
-            if image_path is None:
-                raise HTTPException(status_code=404, detail="Saved image not found")
-            return queue_image_save(image_path.read_bytes(), str(item["id"]), **arguments)
+            return queue_saved_image_to_display_sd_card(str(item["id"]), **arguments)
         display = active_display_store.get() if display_id == LEGACY_DISPLAY_ID else get_registered_display(display_id)
         if display is None:
             raise HTTPException(status_code=409, detail="Connect a display before saving to its SD card")
@@ -1139,6 +1186,7 @@ def create_app(
             report["files"] = [
                 {
                     **file,
+                    "orientation_rotation": sd_media_rotation(str(file.get("name", ""))),
                     "thumbnail_available": sd_thumbnail_path_for(
                         display_id, str(file.get("name", "")),
                     ).is_file(),
@@ -1156,7 +1204,14 @@ def create_app(
             "offline_experience_saved": report.get("offline_experience_saved"),
             "slideshow_interval_ms": report.get("slideshow_interval_ms", 15_000),
             "slideshow_order": report.get("slideshow_order", "newest_first"),
+            "orientation_filter_enabled": report.get("orientation_filter_enabled") is True,
+            "orientation_rotation": report.get("orientation_rotation", 0),
         }
+
+    def queue_display_experience(
+        command_type: str, request: DisplayExperienceRequest, *, display_id: str = LEGACY_DISPLAY_ID,
+    ) -> dict[str, object]:
+        return display_command_store.queue(command_type, display_id=display_id, **request.model_dump())
 
     @app.get("/display-sd-card")
     def get_display_sd_card() -> dict[str, object]:
@@ -1180,21 +1235,11 @@ def create_app(
 
     @app.put("/display-experience", status_code=status.HTTP_202_ACCEPTED)
     def set_display_experience(request: DisplayExperienceRequest) -> dict[str, object]:
-        return display_command_store.queue(
-            "set_display_experience",
-            offline_experience=request.offline_experience,
-            slideshow_interval_ms=request.slideshow_interval_ms,
-            slideshow_order=request.slideshow_order,
-        )
+        return queue_display_experience("set_display_experience", request)
 
     @app.post("/display-experience/preview", status_code=status.HTTP_202_ACCEPTED)
     def preview_display_experience(request: DisplayExperienceRequest) -> dict[str, object]:
-        return display_command_store.queue(
-            "preview_display_experience",
-            offline_experience=request.offline_experience,
-            slideshow_interval_ms=request.slideshow_interval_ms,
-            slideshow_order=request.slideshow_order,
-        )
+        return queue_display_experience("preview_display_experience", request)
 
     @app.delete("/display-experience/preview", status_code=status.HTTP_202_ACCEPTED)
     def stop_display_experience_preview() -> dict[str, object]:
@@ -1237,6 +1282,21 @@ def create_app(
             raise HTTPException(status_code=404, detail="Display command not found")
         return command
 
+    def saved_command_image(command_id: str, display_id: str = LEGACY_DISPLAY_ID) -> Response:
+        jpeg = display_command_store.image_snapshot(command_id, display_id=display_id)
+        if jpeg is None:
+            raise HTTPException(status_code=404, detail="Prepared SD-card image not found")
+        return Response(content=jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+    @app.get("/display-commands/{command_id}/image", response_class=Response)
+    def legacy_saved_command_image(command_id: str) -> Response:
+        return saved_command_image(command_id)
+
+    @app.get("/displays/{display_id}/display-commands/{command_id}/image", response_class=Response)
+    def registered_saved_command_image(display_id: str, command_id: str) -> Response:
+        get_registered_display(display_id)
+        return saved_command_image(command_id, display_id)
+
     @app.post("/displays/{display_id}/display-commands/save-latest", status_code=status.HTTP_202_ACCEPTED)
     def save_latest_to_registered_display_sd_card(display_id: str) -> dict[str, object]:
         display = get_registered_display(display_id)
@@ -1253,7 +1313,7 @@ def create_app(
         image_library.remember_sd_card_rendition(
             assignment.image.jpeg, f"v1-{hashlib.sha256(jpeg).hexdigest()[:16]}",
         )
-        return queue_image_save(jpeg, display_id=display_id)
+        return queue_image_save(jpeg, display_id=display_id, rotation=display.rotation)
 
     @app.post(
         "/displays/{display_id}/display-commands/save-saved-image/{image_id}",
@@ -1263,10 +1323,7 @@ def create_app(
         display_id: str, image_id: str,
     ) -> dict[str, object]:
         get_registered_display(display_id)
-        image_path = image_library.find_path(image_id)
-        if image_path is None:
-            raise HTTPException(status_code=404, detail="Saved image not found")
-        return queue_image_save(image_path.read_bytes(), image_id, display_id=display_id)
+        return queue_saved_image_to_display_sd_card(image_id, display_id=display_id)
 
     @app.post(
         "/displays/{display_id}/display-commands/save-saved-video/{video_id}",
@@ -1313,26 +1370,14 @@ def create_app(
         display_id: str, request: DisplayExperienceRequest,
     ) -> dict[str, object]:
         get_registered_display(display_id)
-        return display_command_store.queue(
-            "set_display_experience",
-            display_id=display_id,
-            offline_experience=request.offline_experience,
-            slideshow_interval_ms=request.slideshow_interval_ms,
-            slideshow_order=request.slideshow_order,
-        )
+        return queue_display_experience("set_display_experience", request, display_id=display_id)
 
     @app.post("/displays/{display_id}/display-experience/preview", status_code=status.HTTP_202_ACCEPTED)
     def preview_registered_display_experience(
         display_id: str, request: DisplayExperienceRequest,
     ) -> dict[str, object]:
         get_registered_display(display_id)
-        return display_command_store.queue(
-            "preview_display_experience",
-            display_id=display_id,
-            offline_experience=request.offline_experience,
-            slideshow_interval_ms=request.slideshow_interval_ms,
-            slideshow_order=request.slideshow_order,
-        )
+        return queue_display_experience("preview_display_experience", request, display_id=display_id)
 
     @app.delete("/displays/{display_id}/display-experience/preview", status_code=status.HTTP_202_ACCEPTED)
     def stop_registered_display_experience_preview(display_id: str) -> dict[str, object]:

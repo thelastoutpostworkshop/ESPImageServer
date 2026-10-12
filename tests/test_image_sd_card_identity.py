@@ -183,7 +183,7 @@ def test_already_saved_also_persists_rendition_identity(application, registered)
             assert client.put("/display-settings", json={"rotation": 90}).status_code == 200
             prefix = ""
         actual = key(client.get(f"{prefix}/latest.jpg").content)
-        filename = f"esp-image-{actual}.jpg"
+        filename = f"esp-image-20261012-120000-r90-{actual}.jpg"
         report = client.post(f"{prefix}/display-sd-card/report", json={
             "available": True, "mode": "server_controlled", "verified_saves": True,
             "total_bytes": 1024, "used_bytes": 256,
