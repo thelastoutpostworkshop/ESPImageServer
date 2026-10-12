@@ -2316,7 +2316,7 @@ async function saveDisplayExperience() {
 }
 
 async function previewDisplayExperience() {
-  if (!activeDisplayOnline.value || displayExperiencePreviewing.value || displayExperiencePreviewChanging.value) return
+  if (!activeDisplayOnline.value || displayExperiencePreviewChanging.value || displayExperienceSaving.value || displayExperienceLoading.value) return
   const scope = selectedDisplayEndpoint('')
   displayExperienceError.value = ''
   displayExperiencePreviewChanging.value = true
@@ -2340,17 +2340,29 @@ async function previewDisplayExperience() {
   }
 }
 
-async function stopDisplayExperiencePreview() {
+async function stopDisplayExperiencePreview(notify = false) {
   if (!displayExperiencePreviewing.value) return
   if (sdCardDeletionActive.value) return
+  const scope = selectedDisplayEndpoint('')
   displayExperiencePreviewing.value = false
   displayExperiencePreviewChanging.value = true
   try {
     if (activeDisplayOnline.value) {
-      await fetch(selectedDisplayEndpoint('/display-experience/preview'), { method: 'DELETE', keepalive: true })
+      const response = await fetch(`${scope}/display-experience/preview`, { method: 'DELETE', keepalive: true })
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.detail || `Request failed (${response.status})`)
+      }
+      if (notify && scope === selectedDisplayEndpoint('')) {
+        displayExperienceError.value = ''
+        displayExperienceStatus.value = 'Stopping preview on the display.'
+      }
     }
-  } catch {
-    // The firmware will return to server control on its next successful command poll.
+  } catch (requestError) {
+    if (notify && scope === selectedDisplayEndpoint('')) {
+      displayExperiencePreviewing.value = true
+      displayExperienceError.value = `Could not stop preview: ${requestError.message}`
+    }
   } finally {
     displayExperiencePreviewChanging.value = false
   }
@@ -4918,8 +4930,11 @@ onUnmounted(() => {
                 variant="outlined"
                 class="mb-3"
               />
-              <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline || sdCardCommandsBlocked" prepend-icon="mdi-content-save">Save {{ display?.name || 'display' }} experience</v-btn>
-              <v-btn type="button" class="ml-2" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperiencePreviewing || displayExperiencePreviewChanging || sdCardCommandsBlocked" prepend-icon="mdi-play-circle-outline" @click="previewDisplayExperience">Preview {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }} on {{ display?.name || 'display' }}</v-btn>
+              <div class="d-flex flex-wrap ga-2">
+                <v-btn type="submit" color="primary" :loading="displayExperienceSaving" :disabled="!activeDisplayOnline || displayExperienceLoading || displayExperiencePreviewChanging || sdCardCommandsBlocked" prepend-icon="mdi-content-save">Save {{ display?.name || 'display' }} experience</v-btn>
+                <v-btn type="button" variant="tonal" color="primary" :disabled="!activeDisplayOnline || displayExperienceLoading || displayExperienceSaving || displayExperiencePreviewChanging || sdCardCommandsBlocked" :prepend-icon="displayExperiencePreviewing ? 'mdi-restart' : 'mdi-play-circle-outline'" @click="previewDisplayExperience">{{ displayExperiencePreviewing ? 'Restart' : 'Preview' }} {{ displayExperience.offline_experience === 'video_loop' ? 'video loop' : 'slideshow' }} on {{ display?.name || 'display' }}</v-btn>
+                <v-btn v-if="displayExperiencePreviewing" type="button" variant="text" :disabled="!activeDisplayOnline || displayExperienceSaving || displayExperiencePreviewChanging || sdCardCommandsBlocked" prepend-icon="mdi-stop-circle-outline" @click="stopDisplayExperiencePreview(true)">Stop preview</v-btn>
+              </div>
               <div v-if="!activeDisplayOnline" class="text-caption text-medium-emphasis mt-3">Reconnect the display to save or preview these settings.</div>
               <v-alert v-if="displayExperienceStatus" type="success" variant="tonal" density="compact" class="mt-4">{{ displayExperienceStatus }}</v-alert>
               <v-alert v-if="displayExperienceError" type="error" variant="tonal" density="compact" class="mt-4">{{ displayExperienceError }}</v-alert>

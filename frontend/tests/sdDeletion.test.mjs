@@ -549,7 +549,7 @@ test('refresh, playback, and navigation stop-preview cannot replace a pending de
   run.ui.deletingSdCardFiles.value = true
   const refreshCode = source.slice(source.indexOf('async function refreshDisplaySdCardInventory()'), source.indexOf('async function refreshDisplaySdCard()'))
   const playbackCode = source.slice(source.indexOf('async function showSDCardFileOnDisplay('), source.indexOf('async function loadAppSettings()'))
-  const stopPreviewCode = source.slice(source.indexOf('async function stopDisplayExperiencePreview()'), source.indexOf('async function sendDisplaySdCardCommand('))
+  const stopPreviewCode = source.slice(source.indexOf('async function stopDisplayExperiencePreview('), source.indexOf('async function sendDisplaySdCardCommand('))
   run.ui.status = { value: '' }
   vm.runInContext(refreshCode + '\n' + playbackCode + '\n' + stopPreviewCode, run.ui)
   await assert.rejects(run.ui.refreshDisplaySdCardInventory(), /current SD-card deletion/)
