@@ -969,7 +969,7 @@ def test_display_can_save_a_specific_creation_library_image_to_sd_card(tmp_path)
     library = ImageLibrary(tmp_path / "images", tmp_path / "image_library_index.json")
     image = BytesIO()
     Image.new("RGB", (64, 64), "blue").save(image, format="JPEG")
-    record = library.save(image.getvalue(), {"prompt": "saved creation"})
+    record = library.save(image.getvalue(), {"prompt": "saved creation", "rotation": 0})
     app = create_app(Settings(), FakeGenerator(), image_library=library, enable_mdns=False)
 
     with TestClient(app) as client:

@@ -705,9 +705,10 @@ function creationSdCardStatus(creation, mediaType) {
       ? savedImages.value.find(item => item.id === creation.id) || creation
       : creation
     const contentKeys = currentCreation.sd_card_content_keys || [currentCreation.sd_card_content_key].filter(Boolean)
-    const file = files.find(item => contentKeys.includes(item.content_key) && item.orientation_rotation === displayRotation.value)
+    const rotation = [0, 90, 180, 270].includes(currentCreation.metadata?.rotation) ? currentCreation.metadata.rotation : null
+    const file = files.find(item => contentKeys.includes(item.content_key) && (item.orientation_rotation ?? null) === rotation)
       || files.find(item => contentKeys.includes(item.content_key)) || null
-    return { known: true, present: Boolean(file), file, activeFormat: Boolean(file) && file.orientation_rotation === displayRotation.value }
+    return { known: true, present: Boolean(file), file, activeFormat: Boolean(file) && rotation !== null && file.orientation_rotation === rotation }
   }
   const videoId = String(creation.id || '')
   const expectedKey = display.value?.connected

@@ -168,12 +168,12 @@ def test_orientation_filter_requires_an_explicit_boolean(application, enabled):
 
 @pytest.mark.parametrize("registered", [False, True])
 @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
-def test_gallery_save_labels_target_rotation_instead_of_master_metadata(application, registered, rotation):
+def test_gallery_save_keeps_creation_rotation_despite_current_board_preference(application, registered, rotation):
     app, client = application
     prefix = board_prefix(client, registered)
     source = pattern_jpeg()
-    image = app.state.image_library.save(source, {"rotation": 270})
-    client.put(prefix + "/display-settings", json={"rotation": rotation})
+    image = app.state.image_library.save(source, {"rotation": rotation})
+    client.put(prefix + "/display-settings", json={"rotation": (rotation + 90) % 360})
     response = client.post(prefix + f"/display-commands/save-saved-image/{image['id']}")
     assert response.status_code == 202, response.text
     command = response.json()
@@ -187,6 +187,20 @@ def test_gallery_save_labels_target_rotation_instead_of_master_metadata(applicat
     assert command["content_key"] in app.state.image_library.list()[0]["sd_card_rendition_keys"]
     client.put(prefix + "/display-settings", json={"rotation": (rotation + 90) % 360})
     assert client.get(command["image_url"]).content == expected
+
+
+@pytest.mark.parametrize("metadata", [
+    {}, {"rotation": None}, {"rotation": True}, {"rotation": "90"},
+    {"rotation": 90.0}, {"rotation": 45}, {"rotation": 360},
+])
+def test_gallery_sd_save_rejects_missing_or_invalid_recorded_orientation(application, metadata):
+    app, client = application
+    prefix = f"/displays/{register(client)}"
+    image = app.state.image_library.save(pattern_jpeg(), metadata)
+    response = client.post(prefix + f"/display-commands/save-saved-image/{image['id']}")
+    assert response.status_code == 422
+    assert "valid recorded orientation" in response.json()["detail"]
+    assert client.get(prefix + "/display-commands/next").status_code == 204
 
 
 @pytest.mark.parametrize("metadata,rotation", [
@@ -285,13 +299,59 @@ def test_bulk_image_save_has_native_orientation_snapshot_and_owned_command(appli
     command = response.json()
     assert command["type"] == "save_saved_image"
     assert command["bulk_save_id"] == batch["id"]
-    assert sd_media_rotation(command["filename"]) == 90
+    assert sd_media_rotation(command["filename"]) == 270
     snapshot = client.get(command["image_url"]).content
     with Image.open(BytesIO(source)) as artwork:
-        expected = to_display_jpeg(artwork, width=240, height=320, rotation=90, quality=85)
+        expected = to_display_jpeg(artwork, width=240, height=320, rotation=270, quality=85)
     assert snapshot == expected
     client.put(prefix + "/display-settings", json={"rotation": 0})
     assert client.get(command["image_url"]).content == expected
     client.post(prefix + f"/display-commands/{command['id']}/ack", json={"success": True})
     finished = eventually(lambda: client.get(prefix + f"/sd-card-save-batches/{batch['id']}").json(), lambda b: b["status"] == "complete")
     assert finished["saved"] == 1
+
+
+def test_bulk_save_preserves_portrait_and_landscape_creations_on_the_same_board(application):
+    app, client = application
+    prefix = f"/displays/{register(client)}"
+    client.put(prefix + "/display-settings", json={"rotation": 90})
+    creations = []
+    for rotation, size, color in [(0, (80, 120), "red"), (0, (80, 120), "green"), (90, (120, 80), "blue")]:
+        source = Image.new("RGB", size, color)
+        ImageDraw.Draw(source).rectangle((0, 0, 20, 30), fill="yellow")
+        jpeg = BytesIO()
+        source.save(jpeg, "JPEG", quality=95)
+        record = app.state.image_library.save(jpeg.getvalue(), {"rotation": rotation})
+        with Image.open(BytesIO(jpeg.getvalue())) as artwork:
+            expected = to_display_jpeg(artwork, width=240, height=320, rotation=rotation, quality=85)
+        creations.append((record, rotation, expected))
+
+    batch_response = client.post(prefix + "/sd-card-save-batches", json={
+        "items": [{"id": record["id"], "type": "image"} for record, _, _ in creations],
+    })
+    assert batch_response.status_code == 202, batch_response.text
+    batch = batch_response.json()
+    refresh = client.get(prefix + "/display-commands/next").json()
+    assert refresh["type"] == "refresh_sd_card"
+    client.post(prefix + f"/display-commands/{refresh['id']}/ack", json={"success": True})
+    report(client, prefix)
+
+    files = []
+    for _, rotation, expected in creations:
+        response = eventually(lambda: client.get(prefix + "/display-commands/next"), lambda r: r.status_code == 200)
+        command = response.json()
+        assert command["type"] == "save_saved_image"
+        assert command["orientation_rotation"] == rotation
+        assert sd_media_rotation(command["filename"]) == rotation
+        assert client.get(command["image_url"]).content == expected
+        files.append({"name": command["filename"], "type": "image",
+                      "content_key": command["content_key"], "verified": True})
+        client.post(prefix + f"/display-commands/{command['id']}/ack", json={"success": True})
+
+    finished = eventually(lambda: client.get(prefix + f"/sd-card-save-batches/{batch['id']}").json(),
+                          lambda value: value["status"] == "complete")
+    assert finished["saved"] == 3
+    report(client, prefix, files=files)
+    inventory = client.get(prefix + "/display-sd-card").json()["files"]
+    assert [item["orientation_rotation"] for item in inventory].count(0) == 2
+    assert [item["orientation_rotation"] for item in inventory].count(90) == 1

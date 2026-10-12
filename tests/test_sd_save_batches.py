@@ -222,7 +222,7 @@ def test_bulk_api_saves_mixed_sources_and_skips_verified_duplicate_from_fresh_re
     app = create_app(Settings(), SimpleNamespace(device="cpu", ready=False), enable_mdns=False)
     jpeg = BytesIO()
     Image.new("RGB", (64, 64), "red").save(jpeg, "JPEG")
-    image = app.state.image_library.save(jpeg.getvalue(), {"prompt": "red"})
+    image = app.state.image_library.save(jpeg.getvalue(), {"prompt": "red", "rotation": 0})
     source = tmp_path / "movie.mp4"
     source.write_bytes(b"fake mp4, conversion not run")
     video = app.state.video_library.save(source, {"fps": 12})

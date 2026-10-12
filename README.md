@@ -149,7 +149,7 @@ The board needs configured Wi-Fi and a working SD card containing matching image
 
 Orientation filtering in **Display Experience** is off by default. Enable it and choose **0°**, **90°**, **180°**, or **270°** to play only files saved for that exact rotation. The board preview shows how the sample artwork appears with the active display. The filter applies to both preview and saved offline playback; it selects matching files without rotating their pixels.
 
-Images are saved using the active display's **Image rotation** setting. Videos use the orientation selected when they were generated. Choose the corresponding orientation in **Display Experience**, then save your settings or preview playback. The matching count helps you check that the SD card contains suitable media.
+Gallery images and videos keep the orientation saved with each creation when you copy them to the SD card, including bulk saves. Choose the corresponding orientation in **Display Experience**, then save your settings or preview playback. The matching count helps you check that the SD card contains suitable media.
 
 ### The display orientation is wrong
 

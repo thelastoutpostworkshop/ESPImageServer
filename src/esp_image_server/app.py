@@ -965,14 +965,18 @@ def create_app(
     def queue_saved_image_to_display_sd_card(
         image_id: str, *, display_id: str = LEGACY_DISPLAY_ID, **arguments: object,
     ) -> dict[str, object]:
-        """Save the target rendition, rather than labelling unrotated artwork."""
+        """Render gallery artwork using the orientation saved with that creation."""
         image_path = image_library.find_path(image_id)
         if image_path is None:
             raise HTTPException(status_code=404, detail="Saved image not found")
         profile = active_display_store.get() if display_id == LEGACY_DISPLAY_ID else get_registered_display(display_id)
         width = profile.width if profile is not None else settings.output_width
         height = profile.height if profile is not None else settings.output_height
-        rotation = display_settings_store.get_rotation() if display_id == LEGACY_DISPLAY_ID else profile.rotation
+        record = next((item for item in image_library.list(limit=None) if item.get("id") == image_id), {})
+        metadata = record.get("metadata")
+        rotation = valid_media_rotation(metadata.get("rotation")) if isinstance(metadata, dict) else None
+        if rotation is None:
+            raise HTTPException(status_code=422, detail="This saved image has no valid recorded orientation")
         original_jpeg = image_path.read_bytes()
         try:
             with Image.open(BytesIO(original_jpeg)) as source:
@@ -1744,6 +1748,26 @@ def create_app(
         metadata = extract_jpeg_metadata(jpeg)
         if metadata is None:
             raise HTTPException(status_code=422, detail="The image does not contain ESPImageServer generation details")
+        rotation = valid_media_rotation(metadata.get("rotation"))
+        if rotation is None:
+            raise HTTPException(status_code=422, detail="The image does not contain a valid recorded orientation")
+        # Manual saves upload the display preview. Store upright artwork, as
+        # automatic gallery saves do, so later SD saves rotate it exactly once.
+        if rotation:
+            reverse_rotation = {
+                90: Image.Transpose.ROTATE_90,
+                180: Image.Transpose.ROTATE_180,
+                270: Image.Transpose.ROTATE_270,
+            }[rotation]
+            try:
+                with Image.open(BytesIO(jpeg)) as preview:
+                    artwork = preview.transpose(reverse_rotation)
+                    jpeg = embed_jpeg_metadata(
+                        to_jpeg(artwork, width=artwork.width, height=artwork.height, quality=95),
+                        metadata,
+                    )
+            except (OSError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail=f"Could not save image artwork: {exc}") from exc
         return image_library.save(jpeg, metadata)
 
     @app.get("/saved-images/{image_id}/image", response_class=Response)
