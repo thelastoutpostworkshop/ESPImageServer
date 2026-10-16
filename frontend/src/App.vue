@@ -659,6 +659,10 @@ function creationDisplayName(creation) {
 }
 
 const creationSdCardInventoryConfirmed = computed(() => Number(displaySdCard.value?.report_version) > 0)
+const creationSdCardStatusText = computed(() => {
+  if (!creationSdCardInventoryConfirmed.value) return 'SD card status not checked'
+  return displaySdCard.value.available ? 'SD card status reported' : 'No SD card reported'
+})
 const creationSdCardFilterOptions = computed(() => [
   { title: 'Yes', value: 'on_sd_card' },
   { title: 'No', value: 'not_on_sd_card' }
@@ -3695,21 +3699,27 @@ onUnmounted(() => {
         @pointerup="stopImageLibraryResize"
         @pointercancel="stopImageLibraryResize"
       />
-      <div class="d-flex align-center pa-4">
-        <div>
-          <div class="text-h6">Creation Library</div>
-          <div class="text-caption text-medium-emphasis">Browse saved creations and restore their generation settings.</div>
+      <div class="creation-library-toolbar px-4 py-2">
+        <div class="creation-library-toolbar__title text-subtitle-1 font-weight-bold">Creation Library</div>
+        <div class="creation-library-toolbar__actions">
+          <v-tooltip location="bottom" max-width="320" text="Export all prompts (.txt). Includes settings for all saved images and videos, regardless of filters.">
+            <template #activator="{ props }">
+              <v-btn v-bind="props" icon="mdi-file-document-arrow-right-outline" variant="text" size="small"
+                aria-label="Export all prompts (.txt)" title="Export all prompts (.txt)"
+                :loading="exportingAllPrompts" :disabled="exportingAllPrompts" @click="exportAllPrompts" />
+            </template>
+          </v-tooltip>
+          <v-btn
+            :icon="imageLibraryView === 'thumbnails' ? 'mdi-format-list-bulleted' : 'mdi-view-grid'"
+            variant="text"
+            size="small"
+            :aria-label="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
+            :title="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
+            @click="toggleImageLibraryView"
+          />
+          <v-btn v-if="!compact" :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" size="small" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" :title="metadataPanePinned ? 'Unpin Creation Library' : 'Pin Creation Library open'" @click="toggleMetadataPanePin" />
+          <v-btn icon="mdi-close" variant="text" size="small" aria-label="Close Creation Library" title="Close Creation Library" @click="closeMetadataPane" />
         </div>
-        <v-spacer />
-        <v-btn
-          :icon="imageLibraryView === 'thumbnails' ? 'mdi-format-list-bulleted' : 'mdi-view-grid'"
-          variant="text"
-          :aria-label="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
-          :title="imageLibraryView === 'thumbnails' ? 'Use list view' : 'Use thumbnail view'"
-          @click="toggleImageLibraryView"
-        />
-        <v-btn v-if="!compact" :icon="metadataPanePinned ? 'mdi-pin' : 'mdi-pin-outline'" variant="text" :aria-label="metadataPanePinned ? 'Unpin image library pane' : 'Pin image library pane'" :title="metadataPanePinned ? 'Unpin Creation Library' : 'Pin Creation Library open'" @click="toggleMetadataPanePin" />
-        <v-btn icon="mdi-close" variant="text" aria-label="Close Creation Library" title="Close Creation Library" @click="closeMetadataPane" />
       </div>
       <v-divider />
       <div class="creation-library-drawer__body pa-4">
@@ -3727,32 +3737,38 @@ onUnmounted(() => {
           aria-label="Thumbnail size"
           class="mb-5"
         />
-        <div class="text-subtitle-1 font-weight-bold mb-2">Saved creations</div>
-        <div class="creation-library-context text-body-2 mb-3">
-          <strong>Active display:</strong> {{ display?.connected ? display.name : 'No display selected' }}
+        <div class="creation-library-summary mb-3">
+          <div class="creation-library-summary__heading">
+            <div class="creation-library-summary__title">
+              <h2 class="text-subtitle-1 font-weight-bold">Saved creations</h2>
+              <span v-if="!savedImagesLoading" class="text-caption text-medium-emphasis">
+                {{ filteredCreationsCount }}<template v-if="filteredCreationsCount !== savedImages.length + savedVideos.length"> of {{ savedImages.length + savedVideos.length }}</template>
+              </span>
+            </div>
+            <div class="creation-library-summary__actions">
+              <v-tooltip location="bottom" max-width="320">
+                <template #activator="{ props }">
+                  <span v-bind="props" class="creation-library-sd-status" tabindex="0" role="img" :aria-label="creationSdCardStatusText">
+                    <v-icon :icon="!creationSdCardInventoryConfirmed ? 'mdi-help-circle-outline' : displaySdCard.available ? 'mdi-sd' : 'mdi-sd-off'"
+                      :color="!creationSdCardInventoryConfirmed ? undefined : displaySdCard.available ? 'success' : 'warning'" size="20" aria-hidden="true" />
+                  </span>
+                </template>
+                <div>{{ creationSdCardStatusText }}</div>
+                <div v-if="displaySdCard.reported_at">Last reported by {{ display?.name || 'the display' }}: {{ formatDateTime(displaySdCard.reported_at) }}</div>
+              </v-tooltip>
+              <v-tooltip text="Refresh SD card status" location="bottom">
+                <template #activator="{ props }">
+                  <v-btn v-bind="props" icon="mdi-refresh" size="small" variant="text" aria-label="Refresh SD card status" title="Refresh SD card status"
+                    :loading="displaySdCardLoading" :disabled="sdCardCommandsBlocked" @click="refreshCreationLibrarySdCardStatus" />
+                </template>
+              </v-tooltip>
+            </div>
+          </div>
+          <div class="creation-library-context text-caption text-medium-emphasis">
+            <strong>Active:</strong> {{ display?.connected ? display.name : 'No display selected' }}
+          </div>
         </div>
-        <div class="d-flex align-center flex-wrap ga-2 mb-3">
-          <v-chip v-if="creationSdCardInventoryConfirmed && displaySdCard.available" size="small" color="success" variant="tonal" prepend-icon="mdi-sd">
-            SD card status reported
-          </v-chip>
-          <v-chip v-else-if="creationSdCardInventoryConfirmed" size="small" color="warning" variant="tonal" prepend-icon="mdi-sd-off">
-            No SD card reported
-          </v-chip>
-          <v-chip v-else size="small" variant="tonal" prepend-icon="mdi-help-circle-outline">
-            SD card status not checked
-          </v-chip>
-          <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="displaySdCardLoading" :disabled="sdCardCommandsBlocked" @click="refreshCreationLibrarySdCardStatus">
-            Refresh SD card status
-          </v-btn>
-        </div>
-        <div v-if="displaySdCard.reported_at" class="text-caption text-medium-emphasis mb-3">
-          Last reported by {{ display?.name || 'the display' }}: {{ formatDateTime(displaySdCard.reported_at) }}
-        </div>
-        <div class="mb-3">
-          <v-btn prepend-icon="mdi-download-outline" variant="tonal" size="small" :loading="exportingAllPrompts" :disabled="exportingAllPrompts" @click="exportAllPrompts">Export all prompts (.txt)</v-btn>
-          <div class="text-caption text-medium-emphasis mt-2">Includes prompts and settings for all saved images and videos, regardless of the filters below.</div>
-          <v-alert v-if="promptExportError" type="warning" variant="tonal" density="compact" class="mt-2">{{ promptExportError }}</v-alert>
-        </div>
+        <v-alert v-if="promptExportError" type="warning" variant="tonal" density="compact" class="mb-3">{{ promptExportError }}</v-alert>
         <div class="creation-library-filters mb-3">
             <v-select
               v-model="creationModelFilter"
