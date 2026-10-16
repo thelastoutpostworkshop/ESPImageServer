@@ -25,7 +25,8 @@ import { makerTools, supportLinks } from '../makerResources.js'
     </section>
 
     <section class="maker-tools-grid" aria-label="Maker utilities">
-      <article v-for="tool in makerTools" :key="tool.id" class="maker-tool-card" :aria-labelledby="`maker-tool-${tool.id}`">
+      <article v-for="(tool, index) in makerTools" :key="tool.id" class="maker-tool-card"
+        :style="{ '--tool-reveal-delay': `${index * 100}ms` }" :aria-labelledby="`maker-tool-${tool.id}`">
         <a class="maker-tool-thumbnail" :href="tool.tutorialHref || tool.href" target="_blank" rel="noopener noreferrer"
           :aria-label="tool.tutorialHref ? `Watch the ${tool.title} tutorial` : `${tool.action}: ${tool.title}`">
           <img :src="tool.thumbnail" :alt="`${tool.title} preview`" loading="lazy" width="480" height="270" />
@@ -65,6 +66,15 @@ h1 { font-size: clamp(2rem, 4cqi, 3rem); line-height: 1.2; letter-spacing: -.03e
 .maker-tools-support-actions { display: flex; flex-wrap: wrap; gap: 12px; grid-column: 2; min-width: 0; }
 .maker-tools-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .maker-tool-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid rgba(var(--v-theme-on-background), .12); border-radius: 16px; background: rgb(var(--v-theme-surface)); }
+.maker-tool-card { animation: maker-tool-reveal 650ms cubic-bezier(.22, 1, .36, 1) var(--tool-reveal-delay) both; }
+.maker-tool-card:focus-within { animation: none; }
+@keyframes maker-tool-reveal {
+  from { opacity: 0; transform: translateY(24px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .maker-tool-card { animation: none; }
+}
 .maker-tool-thumbnail { position: relative; display: block; width: 50%; margin-inline: auto; aspect-ratio: 16 / 9; overflow: hidden; background: rgba(var(--v-theme-primary), .06); }
 .maker-tool-thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .maker-tool-thumbnail:focus-visible { outline: 3px solid rgb(var(--v-theme-primary)); outline-offset: -3px; }
