@@ -238,6 +238,7 @@ const savedImagesLoading = ref(false)
 const creationModelFilter = ref(null)
 const creationDisplayFilter = ref(null)
 const creationSdCardFilter = ref(null)
+const creationRotationFilter = ref(null)
 const exportingAllPrompts = ref(false)
 const promptExportError = ref('')
 const selectedCreationKeys = ref([])
@@ -630,6 +631,13 @@ const rotationOptions = [
   { title: 'Rotate 180°', value: 180 },
   { title: 'Rotate 90° counter-clockwise', value: 270 }
 ]
+const creationRotationFilterOptions = [
+  { title: 'Normal (0°)', value: 0 },
+  { title: '90°', value: 90 },
+  { title: '180°', value: 180 },
+  { title: '270°', value: 270 },
+  { title: 'No rotation recorded', value: '__no_rotation__' }
+]
 const sdCardTableHeaders = [
   { title: 'Preview', key: 'thumbnail', sortable: false, width: '96px' },
   { title: 'File name', key: 'name' },
@@ -822,6 +830,11 @@ function matchesCreationFilters(creation, mediaType) {
   if (creationModelFilter.value && creationModelName(creation) !== creationModelFilter.value) return false
   if (creationDisplayFilter.value === '__no_display__' && creationDisplayName(creation)) return false
   if (creationDisplayFilter.value && creationDisplayFilter.value !== '__no_display__' && creationDisplayName(creation) !== creationDisplayFilter.value) return false
+  if (creationRotationFilter.value !== null) {
+    const rotation = [0, 90, 180, 270].includes(creation.metadata?.rotation) ? creation.metadata.rotation : null
+    const selectedRotation = creationRotationFilter.value === '__no_rotation__' ? null : creationRotationFilter.value
+    if (rotation !== selectedRotation) return false
+  }
   if (creationSdCardFilter.value === 'on_sd_card') return creationIsOnDisplaySdCard(creation, mediaType)
   if (creationSdCardFilter.value === 'not_on_sd_card') return !creationIsOnDisplaySdCard(creation, mediaType)
   return true
@@ -3782,6 +3795,18 @@ onUnmounted(() => {
               persistent-clear
               clearable
               :disabled="!creationSdCardInventoryConfirmed"
+              hide-details
+              density="compact"
+              variant="outlined"
+            >
+              <template #selection="{ item }"><span class="creation-library-filter-value">{{ item.title }}</span></template>
+            </v-select>
+            <v-select
+              v-model="creationRotationFilter"
+              :items="creationRotationFilterOptions"
+              label="Rotation"
+              persistent-clear
+              clearable
               hide-details
               density="compact"
               variant="outlined"

@@ -34,6 +34,7 @@ function setup(t, options = {}) {
     creationDisplayFilter: ref(null),
     creationModelFilter: ref(null),
     creationSdCardFilter: ref(null),
+    creationRotationFilter: ref(null),
     creationIsOnDisplaySdCard: () => false,
   })
   const scope = effectScope()
