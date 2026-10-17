@@ -1669,7 +1669,7 @@ def create_app(
             if profile is not None:
                 current_display = (profile.width, profile.height, display_settings_store.get_rotation())
         records: list[dict[str, object]] = []
-        for record in image_library.list():
+        for record in image_library.list(limit=None):
             image_path = image_library.find_path(str(record.get("id", "")))
             if image_path is None:
                 continue
@@ -1686,7 +1686,7 @@ def create_app(
 
     @app.get("/saved-videos")
     def saved_videos() -> list[dict[str, object]]:
-        return video_library.list()
+        return video_library.list(limit=None)
 
     @app.get("/saved-videos/{video_id}/video")
     def saved_video(video_id: str) -> FileResponse:
