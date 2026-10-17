@@ -49,6 +49,7 @@ from .display_registry import (
 from .display_settings import DisplaySettingsStore, VALID_ROTATIONS
 from .devices import DeviceError, DeviceManager
 from .diagnostics import ConsoleLogStore, DiagnosticLogStore
+from .support_report import create_support_report
 from .generator import DiffusersGenerator
 from .generation_jobs import GenerationCancelled
 from .generation_queue import GenerationQueue
@@ -474,6 +475,16 @@ def create_app(
     @app.get("/diagnostics")
     def get_diagnostics() -> list[dict[str, str]]:
         return diagnostics.list()
+
+    @app.get("/diagnostics/report")
+    def get_support_report(include_logs: bool = False) -> JSONResponse:
+        return JSONResponse(create_support_report(
+            app_version=app.version,
+            device=generator.device,
+            include_logs=include_logs,
+            diagnostic_entries=diagnostics.list() if include_logs else (),
+            console_lines=console_output.list() if include_logs else (),
+        ), headers={"Cache-Control": "no-store"})
 
     @app.delete("/diagnostics", status_code=status.HTTP_204_NO_CONTENT)
     def clear_diagnostics() -> Response:

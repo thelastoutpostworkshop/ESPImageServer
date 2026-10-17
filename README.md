@@ -176,7 +176,9 @@ Changes on **Settings** save automatically. After typing a library path, press E
 - For generation: GPU, selected model, and image or video settings.
 - For display or SD problems: board model, firmware version, and whether the board is online.
 
-Use **Diagnostics > Summary > Copy diagnostics** and **Diagnostics > Console > Copy console** for relevant logs. Clear the console search before copying if you need the full recent output, and capture the details before clearing logs or restarting. For a startup failure, include the error from **Startup details**; for an installation failure, include the **Installation log** in Set up display. Remove passwords and other private information before posting.
+Use **Diagnostics > Report a problem** to describe the problem and copy an issue report with system, model, and display details. Select **Include recent logs** if relevant, review **Preview report**, then choose **Copy issue report** and **Open GitHub issue** to paste it into the issue description. Known secrets and personal paths are redacted; review the report before posting.
+
+**Diagnostics > Summary > Copy diagnostics** and **Diagnostics > Console > Copy console** remain available for additional logs. Clear the console search before copying if you need the full recent output, and capture the details before clearing logs or restarting. For a startup failure, include the error from **Startup details**; for an installation failure, include the **Installation log** in Set up display. Remove passwords and other private information from manually copied logs before posting.
 
 ## Privacy and network use
 

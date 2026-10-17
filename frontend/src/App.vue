@@ -12,6 +12,7 @@ import BoardThumbnail from './components/BoardThumbnail.vue'
 import ExperienceOrientationPreview from './components/ExperienceOrientationPreview.vue'
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import AppUpdateNotice from './components/AppUpdateNotice.vue'
+import IssueReport from './components/IssueReport.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
 import { requireSdCardCommandAvailable, waitForSdCardDeletion } from './sdDeletion.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
@@ -4309,6 +4310,8 @@ onUnmounted(() => {
               </template>
             </div>
           </v-card-title>
+          <IssueReport class="mx-4 mb-4" :app-version="serverInfo?.version" :image-model="activeModelId || serverInfo?.model_id"
+            :video-model="videoModelId" :display="display?.connected ? display : null" :image-rotation="displayRotation" :video-rotation="videoRotation" :copy-text="copyText" />
           <v-tabs v-model="diagnosticsTab" color="primary">
             <v-tab value="summary" prepend-icon="mdi-clipboard-text-outline">Summary</v-tab>
             <v-tab value="console" prepend-icon="mdi-console-line">Console</v-tab>
