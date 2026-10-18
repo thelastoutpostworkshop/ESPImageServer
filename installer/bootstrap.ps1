@@ -9,7 +9,7 @@ $logPath = Join-Path $projectRoot 'bootstrap.log'
 $statusPath = Join-Path $projectRoot 'installer_status.txt'
 $resultPath = Join-Path $projectRoot 'installer_result.txt'
 $SupportedPythonVersion = '3.12'
-$supportedPythonCheck = "import platform, sys, sysconfig; raise SystemExit(0 if platform.python_implementation() == 'CPython' and sys.version_info[:2] == (3, 12) and sysconfig.get_platform() == 'win-amd64' else 1)"
+$supportedPythonCheck = "import platform, sys, sysconfig; print('Detected Python:', platform.python_implementation(), sys.version.split()[0], sysconfig.get_platform()); raise SystemExit(0 if platform.python_implementation() == 'CPython' and sys.version_info[:2] == (3, 12) and sysconfig.get_platform() == 'win-amd64' else 1)"
 
 Remove-Item $statusPath, $resultPath, $logPath -Force -ErrorAction SilentlyContinue
 function Write-SharedText([string]$Path, [string]$Text, [bool]$Append = $false) {
@@ -60,6 +60,7 @@ function Set-InstallStatus([int]$Step, [string]$Message) {
 
 function Test-SupportedPythonCommand([string[]]$Command) {
     if (-not $Command -or [string]::IsNullOrWhiteSpace($Command[0])) { return $false }
+    Write-InstallLog "Checking Python: $($Command -join ' ')"
     $allArguments = @($Command | Select-Object -Skip 1) + @('-c', $supportedPythonCheck)
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -67,9 +68,17 @@ function Test-SupportedPythonCommand([string[]]$Command) {
         # A missing or broken executable must not inherit a previous successful
         # process exit code (for example, winget's).
         $global:LASTEXITCODE = 1
-        & $Command[0] @allArguments *> $null
-        return $global:LASTEXITCODE -eq 0
+        $probeOutput = @(& $Command[0] @allArguments 2>&1)
+        $probeExitCode = $global:LASTEXITCODE
+        foreach ($line in $probeOutput | Select-Object -First 20) {
+            Write-InstallLog "  $($line.ToString())"
+        }
+        if ($probeExitCode -ne 0) {
+            Write-InstallLog "Python check failed (exit code $probeExitCode). Setup requires working CPython $SupportedPythonVersion x64."
+        }
+        return $probeExitCode -eq 0
     } catch {
+        Write-InstallLog "Could not run Python: $($_.Exception.Message)"
         return $false
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
@@ -104,6 +113,7 @@ function Get-RegisteredPythonPaths {
                 }
             } catch {
                 # An unreadable registration must not hide other installations.
+                Write-InstallLog "Could not read Python registration ($hive, $view): $($_.Exception.Message)"
             } finally {
                 if ($null -ne $baseKey) { $baseKey.Dispose() }
             }
@@ -126,19 +136,30 @@ function Get-DefaultPythonPaths {
 }
 
 function Get-PythonCommand {
+    Write-InstallLog "Looking for CPython $SupportedPythonVersion x64. Current account: $env:USERNAME; local app data: $env:LOCALAPPDATA"
     $candidates = @(Get-RegisteredPythonPaths) + @(Get-DefaultPythonPaths)
     foreach ($candidate in $candidates | Select-Object -Unique) {
-        if (-not [string]::IsNullOrWhiteSpace($candidate) -and
-            [System.IO.Path]::IsPathRooted($candidate) -and
-            (Test-Path -LiteralPath $candidate -PathType Leaf) -and
-            (Test-SupportedPythonCommand @($candidate))) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        if (-not [System.IO.Path]::IsPathRooted($candidate)) {
+            Write-InstallLog "Ignoring Python registration with a relative path: $candidate"
+            continue
+        }
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            Write-InstallLog "Python executable not found: $candidate"
+            continue
+        }
+        if (Test-SupportedPythonCommand @($candidate)) {
             return @($candidate)
         }
     }
     foreach ($name in @('py', 'python')) {
         $application = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         # Do not launch the Store's python.exe placeholder on a fresh account.
-        if (-not $application -or $application.Source -like '*\Microsoft\WindowsApps\*') { continue }
+        if (-not $application) { continue }
+        if ($application.Source -like '*\Microsoft\WindowsApps\*') {
+            Write-InstallLog "Skipping Windows Store alias: $($application.Source)"
+            continue
+        }
         $command = @($application.Source)
         if ($name -eq 'py') { $command += "-$SupportedPythonVersion" }
         if (Test-SupportedPythonCommand $command) { return $command }
@@ -154,13 +175,25 @@ function Get-OrInstallPythonCommand {
         throw 'Python is missing and Windows Package Manager (winget) is unavailable.'
     }
     Write-InstallLog "Installing supported CPython $SupportedPythonVersion (x64)..."
-    if ((Invoke-LoggedExternal $winget.Source @('install', '--id', 'Python.Python.3.12', '--exact', '--source', 'winget', '--scope', 'user', '--architecture', 'x64', '--accept-package-agreements', '--accept-source-agreements')) -ne 0) {
-        throw 'Python installation failed.'
+    $wingetExitCode = Invoke-LoggedExternal $winget.Source @('install', '--id', 'Python.Python.3.12', '--exact', '--source', 'winget', '--scope', 'user', '--architecture', 'x64', '--accept-package-agreements', '--accept-source-agreements')
+    Write-InstallLog "Windows Package Manager finished with exit code $wingetExitCode."
+    # APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE means winget found an
+    # installed package but no upgrade. Package registration alone is not proof
+    # that Python works: validate it again before allowing setup to continue.
+    $alreadyInstalled = $wingetExitCode -in @(-1978335189, 2316632107)
+    if ($wingetExitCode -ne 0 -and -not $alreadyInstalled) {
+        throw "Python installation failed (winget exit code $wingetExitCode). See the preceding package-manager output."
+    }
+    if ($alreadyInstalled) {
+        Write-InstallLog 'Windows Package Manager reports Python is already installed with no available upgrade. Checking the interpreter again...'
     }
     # Re-read registration and installation paths; no restart or PATH change is
     # required before this same setup process can create the virtual environment.
     $command = Get-PythonCommand
     if (-not $command) {
+        if ($alreadyInstalled) {
+            throw "Windows reports Python $SupportedPythonVersion is installed, but setup could not run a supported x64 interpreter. See the Python checks above for the paths and errors. Repair Python $SupportedPythonVersion from the same Windows account, then retry setup."
+        }
         throw "Python installation completed, but no working x64 CPython $SupportedPythonVersion was found in its registered location, standard installation folders, or PATH. Repair Python $SupportedPythonVersion and run setup again."
     }
     return $command

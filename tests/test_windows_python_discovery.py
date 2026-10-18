@@ -57,7 +57,8 @@ function New-FixtureFile([string]$RelativePath) {
     [IO.File]::WriteAllBytes($path, [byte[]](0))
     return $path
 }
-function Write-InstallLog([string]$Message) {}
+$script:installLogs = [Collections.Generic.List[string]]::new()
+function Write-InstallLog([string]$Message) { $script:installLogs.Add($Message) }
 $script:unexpectedExternalCalls = 0
 function Invoke-LoggedExternal([string]$Command, [string[]]$Arguments) {
     $script:unexpectedExternalCalls += 1
@@ -148,6 +149,7 @@ $script:defaults = @($supported)
 $script:accepted[$supported] = $true
 Assert-Equal @(Get-PythonCommand) @($supported) 'Find the default install after invalid registry paths'
 Assert-Equal $script:probes.Count 1 'Do not execute relative or missing candidate paths'
+Assert-True (($script:installLogs -join "`n").Contains((Join-Path $FixtureRoot 'missing\python.exe'))) 'Record searched installation paths that were missing'
 ''')
 
 
@@ -234,12 +236,49 @@ Assert-Equal $script:unexpectedExternalCalls 0 'Missing winget must fail before 
 ''')
 
 
-@pytest.mark.parametrize("exit_code", [0, 42])
-def test_installation_failure_or_missing_installed_executable_cannot_succeed(tmp_path, exit_code):
-    run_powershell(tmp_path, DISCOVERY_MOCKS + WINGET_MOCK + f"\n$script:wingetExitCode = {exit_code}\n" + r'''
+def test_successful_install_without_working_python_cannot_succeed(tmp_path):
+    run_powershell(tmp_path, DISCOVERY_MOCKS + WINGET_MOCK + r'''
 Assert-Fails { Get-OrInstallPythonCommand } 'Python'
 Assert-Equal $script:wingetCalls 1 'A failed install is not repeated'
 Assert-Equal $script:probes.Count 0 'No working executable was installed'
+''')
+
+
+@pytest.mark.parametrize("exit_code", [-1978335189, 2316632107])
+@pytest.mark.parametrize("usable", [False, True])
+def test_no_upgrade_result_requires_a_working_python(tmp_path, exit_code, usable):
+    usable_value = "$true" if usable else "$false"
+    run_powershell(tmp_path, DISCOVERY_MOCKS + WINGET_MOCK +
+                   f"\n$script:wingetExitCode = {exit_code}\n$script:usable = {usable_value}\n" + r'''
+$script:onInstall = {
+    $python = New-FixtureFile 'Registered Python\python.exe'
+    $script:registered = @($python)
+    $script:accepted[$python] = $script:usable
+}
+if ($script:usable) {
+    Assert-Equal @(Get-OrInstallPythonCommand) @($script:registered[0]) 'Reuse the verified runtime after winget reports no upgrade'
+} else {
+    Assert-Fails { Get-OrInstallPythonCommand } '(?i)installed.*(could not|unusable|not working)'
+    Assert-True (($script:installLogs -join "`n") -match '(?i)Python') 'Keep Python diagnostic context in the install log'
+}
+Assert-Equal $script:wingetCalls 1 'An installed but unusable Python must not trigger repeated installs or automatic repair'
+Assert-Equal $script:probes.Count 1 'Recheck executable compatibility after the no-upgrade result'
+''')
+
+
+@pytest.mark.parametrize("exit_code", [42, -1978335212])
+def test_other_winget_errors_fail_with_the_actual_exit_code(tmp_path, exit_code):
+    run_powershell(tmp_path, DISCOVERY_MOCKS + WINGET_MOCK +
+                   f"\n$script:wingetExitCode = {exit_code}\n" + r'''
+# A partially created executable does not turn an installation failure into success.
+$script:onInstall = {
+    $python = New-FixtureFile 'Partial Python\python.exe'
+    $script:registered = @($python)
+    $script:accepted[$python] = $true
+}
+Assert-Fails { Get-OrInstallPythonCommand } ([regex]::Escape([string]$script:wingetExitCode))
+Assert-Equal $script:wingetCalls 1 'Do not retry an unexpected installer failure'
+Assert-Equal $script:probes.Count 0 'Unexpected installer errors must remain failures'
 ''')
 
 
@@ -259,16 +298,27 @@ def test_actual_probe_rejects_unsupported_runtime_without_installing_one(
         "import platform, sys, sysconfig\n"
         f"platform.python_implementation = lambda: {implementation!r}\n"
         f"sys.version_info = {version!r}\n"
+        f"sys.version = '{version[0]}.{version[1]}.0 (synthetic runtime)'\n"
         f"sysconfig.get_platform = lambda: {platform_name!r}\n"
         "assert sys.argv[1] == '-c'\n"
         "exec(sys.argv[2])\n",
         encoding="utf-8",
     )
     expected = "$true" if accepted else "$false"
-    run_powershell(tmp_path, f"\n$expected = {expected}\n" + r'''
+    run_powershell(tmp_path,
+                   f"\n$expected = {expected}\n$implementation = '{implementation}'\n"
+                   f"$platformName = '{platform_name}'\n$runtimeVersion = '{version[0]}.{version[1]}.0'\n" + r'''
 $wrapper = Join-Path $FixtureRoot 'runtime-probe.py'
 $result = Test-SupportedPythonCommand @($Interpreter, $wrapper)
 Assert-Equal $result $expected 'Production compatibility probe must validate implementation, version, and architecture'
+$log = $script:installLogs -join "`n"
+Assert-True ($log.Contains($Interpreter)) 'Record the actual executable that was probed'
+Assert-True ($log.Contains($implementation)) 'Record the detected Python implementation'
+Assert-True ($log.Contains($runtimeVersion)) 'Record the detected Python version'
+Assert-True ($log.Contains($platformName)) 'Record the detected Python architecture'
+if (-not $expected) {
+    Assert-True ($log -match '(?i)(exit|reject|unsupported)') 'Explain why the runtime was rejected'
+}
 ''')
 
 
@@ -299,4 +349,24 @@ $global:LASTEXITCODE = 7
 $wrapper = Join-Path $FixtureRoot 'runtime-warning.py'
 $result = Test-SupportedPythonCommand @($Interpreter, $wrapper)
 Assert-Equal $result $true 'A supported interpreter that warns on stderr and exits zero must be accepted'
+Assert-True (($script:installLogs -join "`n").Contains('Synthetic Python startup warning')) 'Preserve startup warning details without rejecting a successful process'
+''')
+
+
+def test_python_startup_failure_is_recorded_without_becoming_a_return_value(tmp_path):
+    wrapper = tmp_path / "runtime-failure.py"
+    wrapper.write_text(
+        "import sys\n"
+        "sys.stderr.write('Synthetic startup failure\\n')\n"
+        "raise SystemExit(17)\n",
+        encoding="utf-8",
+    )
+    run_powershell(tmp_path, r'''
+$wrapper = Join-Path $FixtureRoot 'runtime-failure.py'
+$result = Test-SupportedPythonCommand @($Interpreter, $wrapper)
+Assert-Equal $result $false 'Diagnostic output must not contaminate the Boolean probe result'
+$log = $script:installLogs -join "`n"
+Assert-True ($log.Contains($Interpreter)) 'Identify the executable that could not start'
+Assert-True ($log.Contains('Synthetic startup failure')) 'Preserve the underlying interpreter startup error'
+Assert-True ($log -match '\b17\b') 'Record the failing interpreter exit code'
 ''')
