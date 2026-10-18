@@ -4827,15 +4827,22 @@ onUnmounted(() => {
               <BoardShopping compact />
             </v-alert>
             <div v-if="displays.length" class="display-card-grid">
-                <v-card v-for="target in displays" :key="target.id" variant="outlined" class="display-card" :class="{ 'display-card--active': target.id === activeDisplayId }">
+                <v-card v-for="target in displays" :key="target.id" variant="outlined" class="display-card" :class="{ 'display-card--active': target.id === activeDisplayId, 'display-card--online': target.online }">
+                  <div class="display-card-status">
+                    <span v-if="target.id === activeDisplayId" class="display-card-status__active">
+                      <v-icon size="22">mdi-monitor-star</v-icon>
+                      Active display
+                    </span>
+                    <v-chip
+                      class="display-card-status__connection"
+                      variant="flat"
+                      :prepend-icon="target.online ? 'mdi-check-circle' : 'mdi-lan-disconnect'"
+                    >{{ displayConnectionLabel(target) }}</v-chip>
+                  </div>
                   <v-card-title class="display-card-heading">
                     <BoardThumbnail :board-target="target.board_target" :size="160" class="display-card-portrait" />
                     <div class="display-card-heading__content">
                       <div class="display-card-heading__name text-h6">{{ target.name }}</div>
-                      <div class="d-flex flex-wrap ga-2 mt-2">
-                        <v-chip v-if="target.id === activeDisplayId" color="primary" size="small" variant="tonal">Active</v-chip>
-                        <v-chip :color="target.online ? 'success' : 'warning'" size="small" variant="tonal">{{ displayConnectionLabel(target) }}</v-chip>
-                      </div>
                     </div>
                   </v-card-title>
                   <v-card-text class="display-card-details">
