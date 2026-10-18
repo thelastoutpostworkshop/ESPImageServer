@@ -9,7 +9,7 @@ $logPath = Join-Path $projectRoot 'bootstrap.log'
 $statusPath = Join-Path $projectRoot 'installer_status.txt'
 $resultPath = Join-Path $projectRoot 'installer_result.txt'
 $SupportedPythonVersion = '3.12'
-$supportedPythonCheck = "import platform, sys; raise SystemExit(0 if platform.python_implementation() == 'CPython' and sys.version_info[:2] == (3, 12) else 1)"
+$supportedPythonCheck = "import platform, sys, sysconfig; raise SystemExit(0 if platform.python_implementation() == 'CPython' and sys.version_info[:2] == (3, 12) and sysconfig.get_platform() == 'win-amd64' else 1)"
 
 Remove-Item $statusPath, $resultPath, $logPath -Force -ErrorAction SilentlyContinue
 function Write-SharedText([string]$Path, [string]$Text, [bool]$Append = $false) {
@@ -59,27 +59,111 @@ function Set-InstallStatus([int]$Step, [string]$Message) {
 }
 
 function Test-SupportedPythonCommand([string[]]$Command) {
+    if (-not $Command -or [string]::IsNullOrWhiteSpace($Command[0])) { return $false }
     $allArguments = @($Command | Select-Object -Skip 1) + @('-c', $supportedPythonCheck)
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & $Command[0] @allArguments 2>$null
-        return $LASTEXITCODE -eq 0
+        # A missing or broken executable must not inherit a previous successful
+        # process exit code (for example, winget's).
+        $global:LASTEXITCODE = 1
+        & $Command[0] @allArguments *> $null
+        return $global:LASTEXITCODE -eq 0
+    } catch {
+        return $false
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
 }
 
-function Get-PythonCommand {
-    if (Get-Command py -ErrorAction SilentlyContinue) {
-        $launcherCommand = @('py', "-$SupportedPythonVersion")
-        if (Test-SupportedPythonCommand $launcherCommand) { return $launcherCommand }
+function Get-RegisteredPythonPaths {
+    # PEP 514 registration is available immediately after installation, unlike
+    # PATH inherited by this already-running setup process. Explicit views also
+    # find x64 Python when setup was started from a 32-bit PowerShell process.
+    foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryHive]::LocalMachine)) {
+        foreach ($view in @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)) {
+            $baseKey = $null
+            try {
+                $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, $view)
+                foreach ($tag in @($SupportedPythonVersion, "$SupportedPythonVersion-64")) {
+                    $installKey = $null
+                    try {
+                        $installKey = $baseKey.OpenSubKey("Software\Python\PythonCore\$tag\InstallPath")
+                        if ($null -eq $installKey) { continue }
+                        $executable = $installKey.GetValue('ExecutablePath')
+                        if ($executable -is [string] -and -not [string]::IsNullOrWhiteSpace($executable)) {
+                            $executable
+                        }
+                        $directory = $installKey.GetValue('')
+                        if ($directory -is [string] -and -not [string]::IsNullOrWhiteSpace($directory)) {
+                            Join-Path $directory 'python.exe'
+                        }
+                    } finally {
+                        if ($null -ne $installKey) { $installKey.Dispose() }
+                    }
+                }
+            } catch {
+                # An unreadable registration must not hide other installations.
+            } finally {
+                if ($null -ne $baseKey) { $baseKey.Dispose() }
+            }
+        }
     }
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        $pythonCommand = @('python')
-        if (Test-SupportedPythonCommand $pythonCommand) { return $pythonCommand }
+}
+
+function Get-DefaultPythonPaths {
+    $versionDigits = $SupportedPythonVersion.Replace('.', '')
+    if ($env:LOCALAPPDATA) {
+        Join-Path $env:LOCALAPPDATA "Programs\Python\Python$versionDigits\python.exe"
+        Join-Path $env:LOCALAPPDATA "Programs\Python\Python$versionDigits-64\python.exe"
+    }
+    foreach ($programs in @($env:ProgramW6432, $env:ProgramFiles) | Select-Object -Unique) {
+        if ($programs) {
+            Join-Path $programs "Python$versionDigits\python.exe"
+            Join-Path $programs "Python $SupportedPythonVersion\python.exe"
+        }
+    }
+}
+
+function Get-PythonCommand {
+    $candidates = @(Get-RegisteredPythonPaths) + @(Get-DefaultPythonPaths)
+    foreach ($candidate in $candidates | Select-Object -Unique) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and
+            [System.IO.Path]::IsPathRooted($candidate) -and
+            (Test-Path -LiteralPath $candidate -PathType Leaf) -and
+            (Test-SupportedPythonCommand @($candidate))) {
+            return @($candidate)
+        }
+    }
+    foreach ($name in @('py', 'python')) {
+        $application = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        # Do not launch the Store's python.exe placeholder on a fresh account.
+        if (-not $application -or $application.Source -like '*\Microsoft\WindowsApps\*') { continue }
+        $command = @($application.Source)
+        if ($name -eq 'py') { $command += "-$SupportedPythonVersion" }
+        if (Test-SupportedPythonCommand $command) { return $command }
     }
     return $null
+}
+
+function Get-OrInstallPythonCommand {
+    $command = Get-PythonCommand
+    if ($command) { return $command }
+    $winget = Get-Command winget -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $winget) {
+        throw 'Python is missing and Windows Package Manager (winget) is unavailable.'
+    }
+    Write-InstallLog "Installing supported CPython $SupportedPythonVersion (x64)..."
+    if ((Invoke-LoggedExternal $winget.Source @('install', '--id', 'Python.Python.3.12', '--exact', '--source', 'winget', '--scope', 'user', '--architecture', 'x64', '--accept-package-agreements', '--accept-source-agreements')) -ne 0) {
+        throw 'Python installation failed.'
+    }
+    # Re-read registration and installation paths; no restart or PATH change is
+    # required before this same setup process can create the virtual environment.
+    $command = Get-PythonCommand
+    if (-not $command) {
+        throw "Python installation completed, but no working x64 CPython $SupportedPythonVersion was found in its registered location, standard installation folders, or PATH. Repair Python $SupportedPythonVersion and run setup again."
+    }
+    return $command
 }
 
 function Invoke-PythonCommand([string[]]$Command, [string[]]$Arguments) {
@@ -102,18 +186,8 @@ function Write-ResolvedDependencyVersions([string]$Python) {
 }
 
 try {
-    $pythonCommand = Get-PythonCommand
-    if (-not $pythonCommand) {
-        if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-            throw 'Python is missing and Windows Package Manager (winget) is unavailable.'
-        }
-        Write-InstallLog "Installing supported CPython $SupportedPythonVersion..."
-        if ((Invoke-LoggedExternal 'winget' @('install', '--id', 'Python.Python.3.12', '--exact', '--scope', 'user', '--accept-package-agreements', '--accept-source-agreements')) -ne 0) {
-            throw 'Python installation failed.'
-        }
-        $pythonCommand = Get-PythonCommand
-        if (-not $pythonCommand) { throw "CPython $SupportedPythonVersion was installed but is not yet available. Run the installer again to continue." }
-    }
+    $pythonCommand = Get-OrInstallPythonCommand
+    Write-InstallLog "Using CPython $SupportedPythonVersion (x64): $($pythonCommand -join ' ')"
     Invoke-PythonCommand $pythonCommand @('-c', 'import platform, sys; print(platform.python_implementation(), sys.version)')
 
     $venvPath = Join-Path $projectRoot '.venv'
