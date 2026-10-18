@@ -13,11 +13,13 @@ import ExperienceOrientationPreview from './components/ExperienceOrientationPrev
 import FirmwareUpdateNotice from './components/FirmwareUpdateNotice.vue'
 import AppUpdateNotice from './components/AppUpdateNotice.vue'
 import IssueReport from './components/IssueReport.vue'
+import QualitySlider from './components/QualitySlider.vue'
 import { sdSaveProgressMessage, sdSaveCommandEndpoint } from './sdSaveProgress.js'
 import { requireSdCardCommandAvailable, waitForSdCardDeletion } from './sdDeletion.js'
 import { displayConnectionLabel, sessionDisplayId } from './displaySession.js'
 import { saveThemePreference } from './themePreference.js'
 import { createAppSettingsSaver } from './appSettings.js'
+import { imageQualityLevel, videoQualityLevel, imageQualityFromLevel, videoQualityFromLevel } from './qualitySettings.js'
 import { supportLinks } from './makerResources.js'
 import { gallerySelectionKey, selectAllGalleryItems, selectedGalleryItems, filterGallerySelection, reconcileGallerySelection, isGalleryBulkSaveActive, galleryBulkSaveProgressMessage } from './galleryBulkSave.js'
 import { displayExperienceDefaults, normalizeDisplayExperience, displayExperienceSettings, experienceMediaCounts } from './displayExperience.js'
@@ -2760,7 +2762,7 @@ async function saveImageLibraryLocation() {
     folderActions.value = settings.folder_actions || { choose: false, reveal: false }
     await Promise.all([loadSavedImages(), loadSavedVideos()])
   } catch {
-    // Keep the entered path available for correction when a move fails.
+    // Keep the confirmed location visible; the chooser can retry a failed move.
   } finally {
     if (pendingImageLibraryLocation === location) pendingImageLibraryLocation = null
   }
@@ -2788,6 +2790,7 @@ async function revealImageLibrary() {
 }
 
 async function chooseImageLibrary() {
+  if (choosingImageLibrary.value) return
   choosingImageLibrary.value = true
   settingsError.value = ''
   try {
@@ -5167,103 +5170,115 @@ onUnmounted(() => {
           </v-card-text>
         </v-card>
 
-        <v-card v-if="page === 'settings'" class="settings-card">
-          <v-card-title class="text-h5 pt-5">Settings</v-card-title>
-          <v-card-text>
-            <v-select
-              v-model="selectedTheme"
-              :items="themeOptions"
-              label="Theme"
-              variant="outlined"
-              :prepend-inner-icon="selectedTheme === 'dark' ? 'mdi-weather-night' : 'mdi-white-balance-sunny'"
-              hint="Changes apply immediately and are saved automatically for this device."
-              persistent-hint
-              class="mb-6"
-            />
-            <v-divider class="mb-6" />
-            <p class="text-body-2 text-medium-emphasis mb-4">Changes are saved automatically.</p>
-              <div>
-                <v-text-field
-                  :model-value="imageLibraryLocation"
-                  label="Image library location"
+        <v-card v-if="page === 'settings'" class="settings-card settings-page">
+          <div class="settings-page__header">
+            <div>
+              <h1 class="text-h5">Settings</h1>
+              <p class="text-body-2 text-medium-emphasis mt-1">Appearance, your library, and the quality of media sent to displays.</p>
+            </div>
+            <div class="settings-save-status text-body-2" role="status" aria-live="polite">
+              <v-progress-circular v-if="settingsSaving" indeterminate :size="18" :width="2" color="primary" />
+              <v-icon v-else :color="settingsError ? 'warning' : undefined" size="20">{{ settingsError ? 'mdi-alert-circle-outline' : 'mdi-content-save-check-outline' }}</v-icon>
+              <span>{{ settingsSaving ? 'Saving settings…' : settingsError ? 'Settings need attention' : settingsStatus || 'Changes save automatically' }}</span>
+            </div>
+          </div>
+          <v-card-text class="settings-page__body">
+            <v-alert v-if="settingsError" type="error" variant="tonal" density="compact" class="mb-4">{{ settingsError }}</v-alert>
+            <div class="settings-sections">
+              <section class="settings-section" aria-labelledby="settings-appearance-title">
+                <h2 id="settings-appearance-title" class="settings-section__title"><v-icon size="22">mdi-palette-outline</v-icon> Appearance</h2>
+                <p class="settings-section__description">Choose how the app looks on this device.</p>
+                <v-select
+                  v-model="selectedTheme"
+                  :items="themeOptions"
+                  label="Theme"
                   variant="outlined"
-                  hint="Enter an absolute path to an empty folder on the server computer. The library moves when you press Enter or leave this field."
+                  :prepend-inner-icon="selectedTheme === 'dark' ? 'mdi-weather-night' : 'mdi-white-balance-sunny'"
+                  hint="Applies immediately and is saved on this device."
                   persistent-hint
-                  prepend-inner-icon="mdi-folder-image"
-                  class="mb-7"
-                  @update:model-value="setImageLibraryLocation"
-                  @change="saveImageLibraryLocation"
-                  @keydown.enter.prevent="saveImageLibraryLocation"
                 />
-                <p v-if="!canChooseLibrary" class="mb-4">A folder chooser is unavailable here. Enter the library path above, then press Enter or leave the field to save it.</p>
-                <p v-if="!canRevealLibrary" class="mb-4">Opening folders is unavailable here. Use the library path in the server computer's file manager.</p>
-                <p v-if="!windowDesktop" class="mb-4">Folder actions open on the computer running ESPImageServer, not on this browser's device.</p>
-                <div class="d-flex flex-wrap ga-2 mb-6">
-                  <v-btn type="button" variant="tonal" prepend-icon="mdi-folder-search" :disabled="!canChooseLibrary" :loading="choosingImageLibrary" @click="chooseImageLibrary">
-                    Choose image library folder
+              </section>
+
+              <section class="settings-section" aria-labelledby="settings-library-title">
+                <h2 id="settings-library-title" class="settings-section__title"><v-icon size="22">mdi-folder-image</v-icon> Image library</h2>
+                <p class="settings-section__description">Choose an empty folder to move your saved images and videos.</p>
+                <dl class="settings-library-location">
+                  <dt class="text-caption text-medium-emphasis">Current library folder</dt>
+                  <dd>{{ savedImageLibraryLocation || 'Loading library location…' }}</dd>
+                </dl>
+                <div class="settings-folder-actions">
+                  <v-btn type="button" variant="tonal" color="primary" prepend-icon="mdi-folder-search" :disabled="!canChooseLibrary || choosingImageLibrary || settingsSaving" :loading="choosingImageLibrary" @click="chooseImageLibrary">
+                    Choose folder
                   </v-btn>
-                  <v-btn type="button" variant="tonal" prepend-icon="mdi-folder-open" :disabled="!canRevealLibrary" :loading="openingImageLibrary" @click="revealImageLibrary">
-                    Open image library folder
+                  <v-btn type="button" variant="text" prepend-icon="mdi-folder-open" :disabled="!canRevealLibrary || choosingImageLibrary || !savedImageLibraryLocation" :loading="openingImageLibrary" @click="revealImageLibrary">
+                    Open folder
                   </v-btn>
                 </div>
-              </div>
-              <v-slider
-                :model-value="jpegQuality"
-                label="JPEG quality"
-                min="40"
-                max="100"
-                step="5"
-                thumb-label
-                color="primary"
-                class="mt-2"
-                @update:model-value="value => saveAppSetting('jpeg_quality', Number(value))"
-              />
-              <div class="text-body-2 text-medium-emphasis mb-5">
-                Higher quality produces larger files and can take a little longer for the ESP32 to download. This applies to newly generated images only.
-              </div>
-              <v-slider
-                :model-value="videoJpegQuality"
-                label="Video JPEG quality"
-                min="2"
-                max="20"
-                step="1"
-                thumb-label
-                color="primary"
-                class="mt-2"
-                @update:model-value="value => saveAppSetting('video_jpeg_quality', Number(value))"
-              />
-              <div class="text-body-2 text-medium-emphasis mb-5">
-                Used when saving videos to the display SD card. Lower values retain more detail but create larger files; 10 is recommended.
-              </div>
-              <v-switch
-                :model-value="autoCheckAppUpdates"
-                label="Automatically check for app updates"
-                hint="Notify me when a newer public ESPImageServer release is available. Checks GitHub at most once every 24 hours; download and install updates when ready."
-                persistent-hint
-                color="primary"
-                class="mb-4"
-                @update:model-value="value => saveAppSetting('auto_check_app_updates', value)"
-              />
-              <v-switch
-                :model-value="autoCheckFirmwareUpdates"
-                label="Automatically check for firmware updates"
-                hint="Notify me when newer firmware is available for a connected board. Checks GitHub once an hour; updates are installed manually by USB."
-                persistent-hint
-                color="primary"
-                class="mb-4"
-                @update:model-value="value => saveAppSetting('auto_check_firmware_updates', value)"
-              />
-              <v-switch
-                :model-value="confirmDeletion"
-                label="Ask before deleting saved images, videos, and SD card files"
-                color="primary"
-                hint="Turn this off to delete saved creations and display SD card files immediately."
-                persistent-hint
-                class="mb-5"
-                @update:model-value="value => saveAppSetting('confirm_deletion', value)"
-              />
-              <p v-if="settingsSaving || settingsStatus" class="text-body-2 text-medium-emphasis mt-4" role="status" aria-live="polite">{{ settingsSaving ? 'Saving settings…' : settingsStatus }}</p>
-              <v-alert v-if="settingsError" type="error" variant="tonal" density="compact" class="mt-4">{{ settingsError }}</v-alert>
+                <p v-if="!canChooseLibrary" class="text-body-2 text-medium-emphasis mt-3">To change this location, use the folder chooser in the ESPImageServer desktop app.</p>
+                <p v-if="!canRevealLibrary" class="text-body-2 text-medium-emphasis mt-3">You can select and copy the path above to open it in the server computer's file manager.</p>
+                <p v-if="!windowDesktop" class="text-body-2 text-medium-emphasis mt-3">Folder actions open on the computer running ESPImageServer.</p>
+              </section>
+
+              <section class="settings-section settings-section--wide" aria-labelledby="settings-quality-title">
+                <h2 id="settings-quality-title" class="settings-section__title"><v-icon size="22">mdi-tune</v-icon> Display quality</h2>
+                <p class="settings-section__description">Both sliders run from 1 (lowest quality) to 10 (highest quality). Higher quality retains more detail and creates larger files.</p>
+                <div class="settings-quality-grid">
+                  <QualitySlider
+                    id="image-quality"
+                    label="Image quality"
+                    :model-value="imageQualityLevel(jpegQuality)"
+                    description="Controls image detail when sending to displays or saving to their SD cards. Creation Gallery originals are unchanged."
+                    @update:model-value="value => saveAppSetting('jpeg_quality', imageQualityFromLevel(value))"
+                  />
+                  <QualitySlider
+                    id="video-quality"
+                    label="Video quality"
+                    :model-value="videoQualityLevel(videoJpegQuality)"
+                    description="Controls video detail when saving to a display's SD card. Level 6 is a good starting point."
+                    @update:model-value="value => saveAppSetting('video_jpeg_quality', videoQualityFromLevel(value))"
+                  >
+                    <p class="text-body-2 text-medium-emphasis mt-3">Already on the SD card? Remove that copy and save the video again from Creation Gallery to apply a new quality level.</p>
+                  </QualitySlider>
+                </div>
+              </section>
+
+              <section class="settings-section" aria-labelledby="settings-updates-title">
+                <h2 id="settings-updates-title" class="settings-section__title"><v-icon size="22">mdi-update</v-icon> Update notifications</h2>
+                <p class="settings-section__description">Get notified about new versions. You choose when to install them.</p>
+                <v-switch
+                  :model-value="autoCheckAppUpdates"
+                  label="Check for app updates"
+                  hint="Checks GitHub at most once a day."
+                  persistent-hint
+                  color="primary"
+                  class="settings-switch"
+                  @update:model-value="value => saveAppSetting('auto_check_app_updates', value)"
+                />
+                <v-switch
+                  :model-value="autoCheckFirmwareUpdates"
+                  label="Check for display firmware updates"
+                  hint="Checks GitHub once an hour. Install firmware updates manually by USB."
+                  persistent-hint
+                  color="primary"
+                  class="settings-switch mt-3"
+                  @update:model-value="value => saveAppSetting('auto_check_firmware_updates', value)"
+                />
+              </section>
+
+              <section class="settings-section" aria-labelledby="settings-deletion-title">
+                <h2 id="settings-deletion-title" class="settings-section__title"><v-icon size="22">mdi-delete-outline</v-icon> Deletion</h2>
+                <p class="settings-section__description">Choose whether to confirm before removing saved media.</p>
+                <v-switch
+                  :model-value="confirmDeletion"
+                  label="Ask before deleting"
+                  color="primary"
+                  hint="Applies to saved images, videos, and display SD card files. When off, files are deleted immediately."
+                  persistent-hint
+                  class="settings-switch"
+                  @update:model-value="value => saveAppSetting('confirm_deletion', value)"
+                />
+              </section>
+            </div>
           </v-card-text>
         </v-card>
       </v-container>

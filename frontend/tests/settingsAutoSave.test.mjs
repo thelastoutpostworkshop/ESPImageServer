@@ -4,6 +4,10 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { ref } from 'vue'
 import { createAppSettingsSaver } from '../src/appSettings.js'
+import {
+  imageQualityLevel, videoQualityLevel,
+  imageQualityFromLevel, videoQualityFromLevel,
+} from '../src/qualitySettings.js'
 
 const source = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
 
@@ -86,7 +90,7 @@ test('loading persisted settings restores all controls without writing them back
   assert.equal(ui.settingsSaving.value, false)
 })
 
-test('quality and switch changes save partial patches without a partially typed folder path', async () => {
+test('quality and switch changes save partial patches without a pending folder selection', async () => {
   const { ui, requests, refreshes } = setup()
   ui.setImageLibraryLocation('C:\\Pictures\\Unfinished')
   await ui.saveAppSetting('jpeg_quality', 75)
@@ -101,6 +105,39 @@ test('quality and switch changes save partial patches without a partially typed 
   assert.equal(ui.videoJpegQuality.value, 15)
   assert.equal(ui.confirmDeletion.value, false)
   assert.deepEqual(refreshes, ['images'])
+})
+
+test('the common quality levels save the corresponding image and video encoder settings', async () => {
+  const { ui, requests } = setup()
+  for (const level of [1, 6, 10]) {
+    await ui.saveAppSetting('jpeg_quality', imageQualityFromLevel(level))
+    await ui.saveAppSetting('video_jpeg_quality', videoQualityFromLevel(level))
+    assert.equal(imageQualityLevel(ui.jpegQuality.value), level)
+    assert.equal(videoQualityLevel(ui.videoJpegQuality.value), level)
+  }
+  assert.deepEqual(requests.map(call => call.patch), [
+    { jpeg_quality: 40 }, { video_jpeg_quality: 20 },
+    { jpeg_quality: 73 }, { video_jpeg_quality: 10 },
+    { jpeg_quality: 100 }, { video_jpeg_quality: 2 },
+  ])
+})
+
+test('displaying approximate quality levels leaves legacy encoder settings unchanged', async () => {
+  for (const settings of [
+    { jpeg_quality: 85, video_jpeg_quality: 11 },
+    { jpeg_quality: 1, video_jpeg_quality: 31 },
+  ]) {
+    const { ui, requests } = setup({ settings })
+    await ui.loadAppSettings()
+    assert.ok(imageQualityLevel(ui.jpegQuality.value) >= 1)
+    assert.ok(videoQualityLevel(ui.videoJpegQuality.value) >= 1)
+    await ui.saveAppSetting('confirm_deletion', false)
+    assert.equal(ui.jpegQuality.value, settings.jpeg_quality)
+    assert.equal(ui.videoJpegQuality.value, settings.video_jpeg_quality)
+    assert.deepEqual(requests.filter(call => call.method === 'PUT').map(call => call.patch), [
+      { confirm_deletion: false },
+    ])
+  }
 })
 
 test('a delayed quality response cannot overwrite the newer slider choice', async () => {
@@ -133,12 +170,12 @@ test('a failed change rolls back only its field and a later attempt still saves'
   } })
   const changed = ui.saveAppSetting('jpeg_quality', 75)
   ui.videoJpegQuality.value = 17
-  ui.setImageLibraryLocation('C:\\Pictures\\Still editing')
+  ui.setImageLibraryLocation('C:\\Pictures\\Pending selection')
   failure.reject(new Error('Connection lost'))
   await changed
   assert.equal(ui.jpegQuality.value, 85)
   assert.equal(ui.videoJpegQuality.value, 17)
-  assert.equal(ui.imageLibraryLocation.value, 'C:\\Pictures\\Still editing')
+  assert.equal(ui.imageLibraryLocation.value, 'C:\\Pictures\\Pending selection')
   assert.match(ui.settingsError.value, /Connection lost/)
   assert.equal(ui.settingsSaving.value, false)
   await ui.saveAppSetting('jpeg_quality', 80)
@@ -205,10 +242,10 @@ test('initial hydration started after an edit preserves the pending optimistic v
 })
 
 for (const editBeforeLoading of [true, false]) {
-  test(`initial hydration preserves a typed folder ${editBeforeLoading ? 'before' : 'during'} its GET`, async () => {
+  test(`initial hydration preserves a pending folder selected ${editBeforeLoading ? 'before' : 'during'} its GET`, async () => {
     const loaded = deferred()
     const { ui, requests } = setup({ fetch: () => loaded.promise })
-    const draft = 'C:\\Pictures\\Typing the new folder'
+    const draft = 'C:\\Pictures\\Selected new folder'
     if (editBeforeLoading) ui.setImageLibraryLocation(draft)
     const loading = ui.loadAppSettings()
     if (!editBeforeLoading) ui.setImageLibraryLocation(draft)
@@ -259,7 +296,7 @@ test('existing automatic-save and deletion-dialog handlers share ordered partial
   assert.equal(ui.confirmDeletion.value, false)
 })
 
-test('completing a typed library path saves it once and refreshes images and videos', async () => {
+test('saving a selected library path saves it once and refreshes images and videos', async () => {
   const moved = deferred()
   const { ui, requests, refreshes } = setup({ fetch: () => moved.promise })
   const location = 'C:\\Pictures\\New library'
@@ -331,9 +368,90 @@ for (const desktop of [false, true]) {
     assert.equal(ui.savedImageLibraryLocation.value, defaults.image_library_location)
     assert.equal(ui.choosingImageLibrary.value, false)
   })
+
+  test(`${desktop ? 'desktop' : 'server'} folder chooser ignores repeat clicks until selection and relocation finish`, async () => {
+    const selection = deferred(), relocation = deferred(), savingStarted = deferred()
+    const location = 'C:\\Pictures\\Chosen library'
+    let dialogs = 0
+    const { ui, requests } = setup({
+      desktop: desktop ? { chooseImageLibrary: () => { dialogs += 1; return selection.promise } } : undefined,
+      fetch: call => {
+        if (call.url.endsWith('/choose')) {
+          dialogs += 1
+          return selection.promise
+        }
+        assert.equal(call.method, 'PUT')
+        savingStarted.resolve()
+        return relocation.promise
+      },
+    })
+    const choosing = ui.chooseImageLibrary()
+    await ui.chooseImageLibrary()
+    assert.equal(dialogs, 1)
+    assert.equal(ui.choosingImageLibrary.value, true)
+    selection.resolve(desktop ? location : response({ selected: true, image_library_location: location }))
+    await savingStarted.promise
+    await ui.chooseImageLibrary()
+    assert.equal(dialogs, 1)
+    assert.equal(ui.choosingImageLibrary.value, true)
+    assert.equal(ui.savedImageLibraryLocation.value, defaults.image_library_location)
+    relocation.resolve(response({ ...defaults, image_library_location: location }))
+    await choosing
+    assert.equal(ui.choosingImageLibrary.value, false)
+    assert.equal(ui.savedImageLibraryLocation.value, location)
+    assert.deepEqual(requests.filter(call => call.method === 'PUT').map(call => call.patch), [
+      { image_library_location: location },
+    ])
+  })
+
+  test(`${desktop ? 'desktop' : 'server'} failed relocation preserves the confirmed path and can be retried through the chooser`, async () => {
+    const location = 'C:\\Pictures\\Chosen library'
+    let attempts = 0
+    const { ui, refreshes } = setup({
+      desktop: desktop ? { chooseImageLibrary: async () => location } : undefined,
+      fetch: call => {
+        if (call.url.endsWith('/choose')) return response({ selected: true, image_library_location: location })
+        assert.equal(call.method, 'PUT')
+        assert.equal(call.patch.image_library_location, location)
+        if (++attempts === 1) throw new Error('Choose an empty folder')
+        return response({ ...defaults, image_library_location: location })
+      },
+    })
+    await ui.chooseImageLibrary()
+    assert.equal(ui.savedImageLibraryLocation.value, defaults.image_library_location)
+    assert.equal(ui.choosingImageLibrary.value, false)
+    assert.match(ui.settingsError.value, /empty folder/)
+    assert.deepEqual(refreshes, [])
+    await ui.chooseImageLibrary()
+    assert.equal(ui.savedImageLibraryLocation.value, location)
+    assert.equal(ui.choosingImageLibrary.value, false)
+    assert.equal(ui.settingsError.value, '')
+    assert.equal(attempts, 2)
+    assert.deepEqual(refreshes.sort(), ['images', 'videos'])
+  })
+
+  test(`${desktop ? 'desktop' : 'server'} confirmed chooser path survives a late settings response`, async () => {
+    const loaded = deferred()
+    const location = 'C:\\Pictures\\Chosen library'
+    const { ui } = setup({
+      desktop: desktop ? { chooseImageLibrary: async () => location } : undefined,
+      fetch: call => {
+        if (call.method === 'GET') return loaded.promise
+        if (call.url.endsWith('/choose')) return response({ selected: true, image_library_location: location })
+        return response({ ...defaults, image_library_location: location })
+      },
+    })
+    const loading = ui.loadAppSettings()
+    await ui.chooseImageLibrary()
+    assert.equal(ui.savedImageLibraryLocation.value, location)
+    loaded.resolve(response(defaults))
+    await loading
+    assert.equal(ui.savedImageLibraryLocation.value, location)
+    assert.equal(ui.imageLibraryLocation.value, location)
+  })
 }
 
-test('a failed library move keeps the draft available and retries on completion', async () => {
+test('a failed library move keeps the selected path available for retry', async () => {
   let attempts = 0
   const { ui } = setup({ fetch: call => ++attempts === 1
     ? Promise.reject(new Error('Choose an empty folder'))

@@ -34,7 +34,7 @@ def reveal_folder(folder: Path) -> None:
 
 def choose_folder(current: Path) -> str:
     if not capabilities()["choose"]:
-        raise FolderActionUnavailable("A folder chooser is unavailable on this server. Enter an absolute library path and save settings, or use the desktop app.")
+        raise FolderActionUnavailable("A folder chooser is unavailable on this server. Use the ESPImageServer desktop app to choose a library folder.")
     command = (
         "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); "
         "Add-Type -AssemblyName System.Windows.Forms; "

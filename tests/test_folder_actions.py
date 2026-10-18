@@ -45,7 +45,7 @@ def test_native_open_uses_argument_array(monkeypatch, tmp_path, name, command):
     folder = tmp_path / "Images with spaces"
     actions.reveal_folder(folder)
     assert calls == [[command, str(folder)]]
-    with pytest.raises(actions.FolderActionUnavailable, match="absolute library path"):
+    with pytest.raises(actions.FolderActionUnavailable, match="desktop app to choose a library folder"):
         actions.choose_folder(folder)
 
 
