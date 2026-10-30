@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import venv
 
 import pytest
 
@@ -40,7 +41,7 @@ $gpuBlock = @($ast.FindAll({ param($node)
 if ($gpuBlock.Count -ne 1) { throw 'Missing production GPU validation block' }
 function Write-InstallLog([string]$Message) { Write-Host $Message }
 $UseCuda = $true
-$venvPython = $Interpreter
+$runtimePython = $Interpreter
 $projectRoot = $FixtureRoot
 $gpuCheckExitCode = $null
 $failure = $null
@@ -127,18 +128,21 @@ def run_validation(tmp_path, scenario="success", *, check_source=None, missing_s
             shutil.copyfile(PROJECT / "installer/verify-gpu.py", destination)
         else:
             destination.write_text(check_source, encoding="utf-8")
-    (fixture / "torch.py").write_text(FAKE_TORCH, encoding="utf-8")
+    isolated = tmp_path / "Private Python é 日本語"
+    venv.EnvBuilder(with_pip=False).create(isolated)
+    site = isolated / "Lib/site-packages"
+    (site / "torch.py").write_text(FAKE_TORCH, encoding="utf-8")
     harness = tmp_path / "gpu-harness.ps1"
     harness.write_text(HARNESS, encoding="utf-8-sig")
     outcome = tmp_path / "outcome.json"
-    interpreter = fixture / "missing-python.exe" if missing_interpreter else Path(sys.executable)
+    interpreter = fixture / "missing-python.exe" if missing_interpreter else isolated / "Scripts/python.exe"
     powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     environment = os.environ.copy()
     environment.pop("PYTHONHOME", None)
     environment.pop("PYTHONPATH", None)
     environment.update(
         ESP_TEST_GPU_SCENARIO=scenario,
-        PYTHONOPTIMIZE="2",  # Validation must not disappear with Python asserts.
+        PYTHONOPTIMIZE="2",  # Setup isolates Python from inherited interpreter flags.
         PYTHONIOENCODING="utf-8",
     )
     result = subprocess.run(
@@ -149,7 +153,7 @@ def run_validation(tmp_path, scenario="success", *, check_source=None, missing_s
     )
     assert result.returncode == 0, result.stdout + result.stderr
     details = json.loads(outcome.read_text(encoding="utf-8-sig"))
-    calls_path = fixture / "calls.jsonl"
+    calls_path = site / "calls.jsonl"
     calls = [json.loads(line) for line in calls_path.read_text(encoding="utf-8").splitlines()] if calls_path.exists() else []
     return details, calls, result.stdout + result.stderr
 
@@ -174,7 +178,7 @@ def test_validation_rejects_failures_with_specific_recovery_advice(tmp_path, sce
         assert "NVIDIA driver" not in outcome["error"]
 
 
-def test_success_runs_and_verifies_the_complete_computation_with_optimization_enabled(tmp_path):
+def test_success_runs_and_verifies_the_complete_computation_in_isolated_python(tmp_path):
     outcome, calls, output = run_validation(tmp_path)
     assert outcome == {"code": 0, "error": None, "native_exit_code": 0}, output
     assert calls == ["available", "ones", "matmul", "synchronize", "compare", "all", "item", "properties"]

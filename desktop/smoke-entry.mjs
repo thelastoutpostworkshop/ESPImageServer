@@ -4,9 +4,21 @@ import assert from 'node:assert/strict'
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { ServerRuntime } from './runtime.mjs'
+import { smokePythonArguments } from './smoke-python.mjs'
 
 const storage = process.env.ESP_DESKTOP_SMOKE_STORAGE
 if (!storage) throw new Error('Launch through npm run test:smoke.')
+// Keep test instrumentation outside the production runtime. Only the server
+// module entry is wrapped; native tools and process-tree cleanup stay unchanged.
+if (process.platform === 'win32') {
+  const start = ServerRuntime.prototype.start
+  ServerRuntime.prototype.start = function () {
+    const spawn = this.spawnProcess
+    this.spawnProcess = (command, args, options) => spawn(command, smokePythonArguments(args), options)
+    try { return start.call(this) } finally { this.spawnProcess = spawn }
+  }
+}
 app.setPath('userData', path.join(storage, 'electron'))
 let completed = false
 let loadedWindows = 0

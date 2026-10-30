@@ -1,15 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { runtimePaths, requireRuntimeFile, ServerRuntime, registerWindowLifecycle } from './runtime.mjs'
+import { smokePythonArguments } from './smoke-python.mjs'
 
-test('Windows development and installed paths remain unchanged', () => {
+test('Windows installation uses private Python while development keeps its virtual environment', () => {
   const dev = runtimePaths({ desktopDirectory: 'C:\\My Repo\\desktop', platform: 'win32', arch: 'x64' })
   assert.equal(dev.pythonPath, 'C:\\My Repo\\.venv\\Scripts\\python.exe')
   assert.equal(dev.toolPath, 'C:\\My Repo\\desktop\\tools\\esptool\\esptool-windows-amd64\\esptool.exe')
   const installed = runtimePaths({ packaged: true, resourcesPath: 'C:\\Apps\\ESP\\desktop\\resources', platform: 'win32', arch: 'x64' })
   assert.equal(installed.projectRoot, 'C:\\Apps\\ESP')
-  assert.equal(installed.pythonPath, 'C:\\Apps\\ESP\\.venv\\Scripts\\python.exe')
+  assert.equal(installed.pythonPath, 'C:\\Apps\\ESP\\runtime\\python.exe')
   assert.equal(installed.appIcon, 'C:\\Apps\\ESP\\espimageserver-icon.ico')
 })
 
@@ -74,6 +80,95 @@ test('launch is single-instance, forwards logs and stops only an owned server', 
   assert.equal(server.child, null)
   assert.equal(server.error, null)
   assert.equal(signals.length, 1)
+})
+
+for (const packaged of [false, true]) {
+  test(`Windows ${packaged ? 'packaged' : 'development'} startup isolates Python without changing app configuration`, () => {
+    const environment = Object.freeze({
+      PYTHONHOME: 'C:\\Old Python', pythonpath: 'C:\\Another app', PythonHome: 'C:\\Third Python',
+      ESP_IMAGE_MODEL_CACHE: 'C:\\My models', ESP_IMAGE_PORT: '8123', PATH: 'C:\\System tools',
+      PYTHONUTF8: '1', ESP_IMAGE_OPEN_BROWSER: '1'
+    })
+    const { server, calls } = fixture({ environment })
+    server.runtime = runtimePaths({ packaged, platform: 'win32', arch: 'x64',
+      desktopDirectory: 'C:\\My Repo\\desktop', resourcesPath: 'C:\\Apps\\ESP\\desktop\\resources' })
+    server.start()
+    assert.equal(calls[0][0], packaged ? 'C:\\Apps\\ESP\\runtime\\python.exe' : 'C:\\My Repo\\.venv\\Scripts\\python.exe')
+    assert.deepEqual(calls[0][1], [packaged ? '-I' : '-E', '-u', '-m', 'esp_image_server'])
+    assert.deepEqual(calls[0][2].env, {
+      ESP_IMAGE_MODEL_CACHE: environment.ESP_IMAGE_MODEL_CACHE, ESP_IMAGE_PORT: '8123',
+      PATH: environment.PATH, PYTHONUTF8: '1', ESP_IMAGE_OPEN_BROWSER: '0'
+    })
+    assert.equal(environment.PYTHONHOME, 'C:\\Old Python')
+    assert.equal(environment.pythonpath, 'C:\\Another app')
+    assert.equal(calls[0][2].windowsHide, true)
+    assert.equal(calls[0][2].shell, false)
+  })
+}
+
+test('smoke instrumentation wraps only the Windows server module entry', () => {
+  const args = ['-E', '-u', '-m', 'esp_image_server']
+  const wrapped = smokePythonArguments(args, 'win32')
+  assert.deepEqual(wrapped.slice(0, 2), ['-E', '-u'])
+  assert.ok(wrapped[2].endsWith(path.join('ci', 'smoke-python', 'run-server.py')))
+  assert.deepEqual(smokePythonArguments(args, 'linux'), args)
+  assert.deepEqual(smokePythonArguments(args, 'darwin'), args)
+  const killArgs = ['/PID', '1234', '/T', '/F']
+  assert.deepEqual(smokePythonArguments(killArgs, 'win32'), killArgs)
+})
+
+const workspace = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const testPython = path.join(workspace, '.venv', 'Scripts', 'python.exe')
+test('real Windows Python startup ignores conflicting account variables', {
+  skip: process.platform !== 'win32' || !existsSync(testPython)
+}, async t => {
+  const temporary = await mkdtemp(path.join(workspace, '.tmp-runtime-startup-'))
+  const root = path.join(temporary, 'User é 日本語')
+  const prefix = path.join(root, 'fixture-python')
+  await mkdir(root)
+  try {
+    // Only a no-pip test venv and a print-only module are created. No app code,
+    // server ports, package downloads, user settings, or GPUs are touched.
+    execFileSync(testPython, ['-I', '-m', 'venv', '--without-pip', prefix], { timeout: 30000, windowsHide: true })
+    await writeFile(path.join(prefix, 'Lib', 'site-packages', 'esp_image_server.py'), `
+import json, os, sys
+print(json.dumps({"isolated": sys.flags.isolated, "ignore_environment": sys.flags.ignore_environment,
+                  "home": os.environ.get("PYTHONHOME"), "path": os.environ.get("PYTHONPATH"),
+                  "cache": os.environ.get("ESP_IMAGE_MODEL_CACHE")}))
+`)
+    for (const packaged of [false, true]) {
+      await t.test(packaged ? 'packaged isolation flags' : 'development isolation flags', async () => {
+        let output = ''
+        const runtime = { packaged, platform: 'win32', projectRoot: root,
+          pythonPath: path.join(prefix, 'Scripts', 'python.exe') }
+        const environment = { ...process.env, PATH: '', PYTHONHOME: path.join(root, 'missing-home'),
+          PYTHONPATH: path.join(root, 'missing-packages'), ESP_IMAGE_MODEL_CACHE: path.join(root, 'models') }
+        const server = new ServerRuntime(runtime, { environment, onOutput: data => { output += data.toString() } })
+        try {
+          server.start()
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('Fixture interpreter did not exit')), 15000)
+            server.child.once('error', error => { clearTimeout(timer); reject(error) })
+            server.child.once('close', code => {
+              clearTimeout(timer)
+              if (code === 0) resolve()
+              else reject(new Error(`Fixture interpreter failed (${code}): ${output}`))
+            })
+          })
+          assert.deepEqual(JSON.parse(output), { isolated: Number(packaged), ignore_environment: 1,
+            home: null, path: null, cache: environment.ESP_IMAGE_MODEL_CACHE })
+          assert.ok(environment.PYTHONHOME.endsWith('missing-home'))
+          assert.ok(environment.PYTHONPATH.endsWith('missing-packages'))
+        } finally {
+          await server.stop()
+        }
+      })
+    }
+  } finally {
+    assert.equal(path.dirname(temporary), workspace)
+    assert.ok(path.basename(temporary).startsWith('.tmp-runtime-startup-'))
+    await rm(temporary, { recursive: true, force: true })
+  }
 })
 
 test('spawn errors and early exits are recorded instead of becoming uncaught errors', () => {

@@ -17,10 +17,12 @@ Choose the installer for your computer from the release's **Assets** list. Insta
 
 | Platform | Installer | Generation setup |
 | --- | --- | --- |
-| Windows x64 | `ESPImageServer-Setup-<version>.exe` | Downloads dependencies during installation |
+| Windows x64 | `ESPImageServer-Setup-<version>.exe` | Includes private Python; downloads generation dependencies during installation |
 | Ubuntu 24.04 x64 | `ESPImageServer-<version>-linux-x64.deb` | Downloads dependencies automatically on first launch |
 
 Both platforms require a supported NVIDIA GPU with CUDA for image and video generation. macOS installers are not included in the current release.
+
+Windows installation is for your current account and requires Windows 10 22H2 or Windows 11 22H2 or newer. Python and the basic server packages are included; you do not need to install Python or WinGet. Setup prepares and checks a replacement runtime before activating it, and preserves your settings, model cache, and creations during an update or repair.
 
 On Windows, setup checks the Microsoft Visual C++ x64 runtime before installing the app. It downloads the current Microsoft package, verifies its signature, and installs or repairs it when needed. Windows may request administrator approval for this prerequisite. If a restart is required, restart Windows and run the ESPImageServer installer again. Runtime setup logs are kept in `%LOCALAPPDATA%\ESPImageServer\setup-logs`.
 
@@ -42,7 +44,7 @@ Install compatible firmware through **Set up display** in the desktop app.
 
 ## What you need
 
-- A Windows x64 or Ubuntu 24.04 x64 computer.
+- A Windows 10 22H2 / Windows 11 22H2 or newer x64 computer, or Ubuntu 24.04 x64.
 - For displaying your creations: a supported ESP32 board running compatible firmware, connected to the same local network. You can generate images and videos without a connected display.
 - Enough free disk space for AI models. The first use of a model downloads its files.
 

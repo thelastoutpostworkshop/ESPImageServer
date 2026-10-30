@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import electron from 'electron'
 import { runtimePaths, ServerRuntime } from './runtime.mjs'
+import { smokePythonArguments } from './smoke-python.mjs'
 
 const desktopDirectory = path.dirname(fileURLToPath(import.meta.url))
 const runtime = runtimePaths({ desktopDirectory })
@@ -56,7 +57,8 @@ for (const scenario of ['owned', 'external']) {
   for (const variable of ['LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
     'ESP_IMAGE_MODEL_CACHE', 'HF_HOME', 'HF_HUB_CACHE', 'HUGGINGFACE_HUB_CACHE']) env[variable] = path.join(storage, variable)
   const external = new ServerRuntime(runtime, {
-    spawnProcess: (command, args, options) => spawn(command, args, { ...options, env }),
+    environment: env,
+    spawnProcess: (command, args, options) => spawn(command, smokePythonArguments(args), options),
     onOutput: data => process.stdout.write(data)
   })
   let child

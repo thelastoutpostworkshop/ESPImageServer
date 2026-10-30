@@ -8,8 +8,6 @@ $projectRoot = $PSScriptRoot
 $logPath = Join-Path $projectRoot 'bootstrap.log'
 $statusPath = Join-Path $projectRoot 'installer_status.txt'
 $resultPath = Join-Path $projectRoot 'installer_result.txt'
-$SupportedPythonVersion = '3.12'
-$supportedPythonCheck = "import platform, sys, sysconfig; print('Detected Python:', platform.python_implementation(), sys.version.split()[0], sysconfig.get_platform()); raise SystemExit(0 if platform.python_implementation() == 'CPython' and sys.version_info[:2] == (3, 12) and sysconfig.get_platform() == 'win-amd64' else 1)"
 
 Remove-Item $statusPath, $resultPath, $logPath -Force -ErrorAction SilentlyContinue
 function Write-SharedText([string]$Path, [string]$Text, [bool]$Append = $false) {
@@ -42,6 +40,12 @@ function Invoke-LoggedExternal([string]$Command, [string[]]$Arguments) {
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $exitCode = 1
+    $savedEnvironment = @{}
+    foreach ($entry in @(Get-ChildItem Env: | Where-Object { $_.Name -match '^(PYTHON|PIP_)' })) {
+        $savedEnvironment[$entry.Name] = $entry.Value
+        [Environment]::SetEnvironmentVariable($entry.Name, $null, 'Process')
+    }
+    $env:PIP_CONFIG_FILE = 'NUL'
     try {
         # A failed process launch must not reuse a previous command's success.
         $global:LASTEXITCODE = 1
@@ -50,6 +54,12 @@ function Invoke-LoggedExternal([string]$Command, [string[]]$Arguments) {
         }
         $exitCode = $LASTEXITCODE
     } finally {
+        foreach ($entry in @(Get-ChildItem Env: | Where-Object { $_.Name -match '^(PYTHON|PIP_)' })) {
+            [Environment]::SetEnvironmentVariable($entry.Name, $null, 'Process')
+        }
+        foreach ($name in $savedEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process')
+        }
         $ErrorActionPreference = $previousErrorActionPreference
     }
     return $exitCode
@@ -60,198 +70,182 @@ function Set-InstallStatus([int]$Step, [string]$Message) {
     Write-InstallLog "[$Step/6] $Message"
 }
 
-function Test-SupportedPythonCommand([string[]]$Command) {
-    if (-not $Command -or [string]::IsNullOrWhiteSpace($Command[0])) { return $false }
-    Write-InstallLog "Checking Python: $($Command -join ' ')"
-    $allArguments = @($Command | Select-Object -Skip 1) + @('-c', $supportedPythonCheck)
-    $previousErrorActionPreference = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
+function Get-OwnedRuntimePath([string]$Root, [string]$Name) {
+    if (-not [IO.Path]::IsPathRooted($Root) -or $Name -notmatch '^(runtime|runtime-base|runtime-staging-[0-9a-f]{32}|runtime-backup-[0-9a-f]{32})$') {
+        throw 'Invalid app-owned runtime path.'
+    }
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    $candidate = [IO.Path]::GetFullPath((Join-Path $rootFull $Name))
+    if ([IO.Path]::GetDirectoryName($candidate) -ne $rootFull) {
+        throw 'The runtime path is outside the application directory.'
+    }
+    return $candidate
+}
+
+function Assert-PlainRuntimeDirectory([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { throw "Runtime directory is missing: $Path" }
+    $directory = Get-Item -LiteralPath $Path -Force
+    if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Refusing a runtime directory that is a link: $Path"
+    }
+    foreach ($entry in Get-ChildItem -LiteralPath $Path -Recurse -Force) {
+        if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Refusing a linked file or directory inside the app runtime: $($entry.FullName)"
+        }
+    }
+}
+
+function Remove-StagedRuntime([string]$Root, [string]$Name) {
+    if ($Name -notmatch '^runtime-(staging|backup)-[0-9a-f]{32}$') {
+        throw 'Only an owned staging or backup runtime can be removed.'
+    }
+    $path = Get-OwnedRuntimePath $Root $Name
+    if (Test-Path -LiteralPath $path) {
+        Assert-PlainRuntimeDirectory $path
+        Remove-Item -LiteralPath $path -Recurse -Force
+    }
+}
+
+function Recover-RuntimePromotion([string]$Root) {
+    $active = Get-OwnedRuntimePath $Root 'runtime'
+    # A forced exit while writing the record cannot leave a partial journal:
+    # only the closed pending file is renamed to the durable record.
+    [IO.File]::Delete((Join-Path $Root 'runtime-promotion.pending.json'))
+    $journalPath = Join-Path $Root 'runtime-promotion.json'
+    if (-not (Test-Path -LiteralPath $journalPath)) { return }
+    $journal = Get-Content -LiteralPath $journalPath -Raw | ConvertFrom-Json
+    if ($journal.stage -notmatch '^runtime-staging-[0-9a-f]{32}$' -or
+        $journal.backup -notmatch '^runtime-backup-[0-9a-f]{32}$') {
+        throw 'The runtime recovery record is invalid. Repair the app installation.'
+    }
+    $stage = Get-OwnedRuntimePath $Root $journal.stage
+    $backup = Get-OwnedRuntimePath $Root $journal.backup
+    if (Test-Path -LiteralPath $backup) {
+        Assert-PlainRuntimeDirectory $backup
+        if (Test-Path -LiteralPath $active) {
+            Assert-PlainRuntimeDirectory $active
+            if (Test-Path -LiteralPath $stage) { throw 'Runtime recovery found conflicting staged files. Close the app and retry setup.' }
+            [IO.Directory]::Move($active, $stage)
+        }
+        [IO.Directory]::Move($backup, $active)
+        Write-InstallLog 'Recovered the previous runtime after an interrupted setup.'
+    }
+    # No backup means the first install or a transaction that did not move the
+    # old runtime yet. Never delete the active runtime in either case.
+    Remove-StagedRuntime $Root $journal.stage
+    Remove-Item -LiteralPath $journalPath -Force
+}
+
+function New-StagedRuntime([string]$Root) {
+    $base = Get-OwnedRuntimePath $Root 'runtime-base'
+    Assert-PlainRuntimeDirectory $base
+    if (-not (Test-Path -LiteralPath (Join-Path $base 'python.exe') -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $base 'runtime-manifest.json') -PathType Leaf)) {
+        throw 'The bundled Python runtime is incomplete. Run the ESPImageServer installer again.'
+    }
+    $name = 'runtime-staging-' + [guid]::NewGuid().ToString('N')
+    $stage = Get-OwnedRuntimePath $Root $name
+    try { Copy-Item -LiteralPath $base -Destination $stage -Recurse -Force }
+    catch {
+        if (Test-Path -LiteralPath $stage) { Remove-StagedRuntime $Root $name }
+        throw
+    }
+    return $stage
+}
+
+function Remove-AbandonedRuntimeStages([string]$Root) {
+    # Inno's SetupMutex prevents a second setup from owning one of these paths.
+    # Recovery must finish first; its journal can still reference a staged copy.
+    if (Test-Path -LiteralPath (Join-Path $Root 'runtime-promotion.json')) {
+        throw 'Runtime recovery must finish before cleaning abandoned staging directories.'
+    }
+    foreach ($directory in Get-ChildItem -LiteralPath $Root -Directory -Force) {
+        if ($directory.Name -match '^runtime-staging-[0-9a-f]{32}$') {
+            Remove-StagedRuntime $Root $directory.Name
+        }
+    }
+}
+
+function Complete-RuntimePromotion([string]$Root, [string]$Stage, [scriptblock]$Verify) {
+    $stageName = [IO.Path]::GetFileName($Stage)
+    if ((Get-OwnedRuntimePath $Root $stageName) -ne [IO.Path]::GetFullPath($Stage) -or
+        $stageName -notmatch '^runtime-staging-[0-9a-f]{32}$') { throw 'Invalid staged runtime for promotion.' }
+    Assert-PlainRuntimeDirectory $Stage
+    if (-not (Test-Path -LiteralPath (Join-Path $Stage 'runtime-ready.txt') -PathType Leaf) -or
+        [IO.File]::ReadAllText((Join-Path $Stage 'runtime-ready.txt')).Trim() -cne 'ready') {
+        throw 'The staged runtime has not passed validation.'
+    }
+    $active = Get-OwnedRuntimePath $Root 'runtime'
+    $backupName = 'runtime-backup-' + [guid]::NewGuid().ToString('N')
+    $backup = Get-OwnedRuntimePath $Root $backupName
+    $journalPath = Join-Path $Root 'runtime-promotion.json'
+    if (Test-Path -LiteralPath $journalPath) { throw 'Recover the previous runtime transaction before installing another.' }
+    if (Test-Path -LiteralPath $active) { Assert-PlainRuntimeDirectory $active }
+    $pendingPath = Join-Path $Root 'runtime-promotion.pending.json'
+    [IO.File]::Delete($pendingPath)
+    $record = @{ stage = $stageName; backup = $backupName } | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText($pendingPath, $record, [Text.UTF8Encoding]::new($false))
+    [IO.File]::Move($pendingPath, $journalPath)
+    $promoted = $false
     try {
-        # A missing or broken executable must not inherit a previous successful
-        # process exit code (for example, winget's).
-        $global:LASTEXITCODE = 1
-        $probeOutput = @(& $Command[0] @allArguments 2>&1)
-        $probeExitCode = $global:LASTEXITCODE
-        foreach ($line in $probeOutput | Select-Object -First 20) {
-            Write-InstallLog "  $($line.ToString())"
-        }
-        if ($probeExitCode -ne 0) {
-            Write-InstallLog "Python check failed (exit code $probeExitCode). Setup requires working CPython $SupportedPythonVersion x64."
-        }
-        return $probeExitCode -eq 0
+        if (Test-Path -LiteralPath $active) { [IO.Directory]::Move($active, $backup) }
+        [IO.Directory]::Move($Stage, $active)
+        $promoted = $true
+        & $Verify $active
     } catch {
-        Write-InstallLog "Could not run Python: $($_.Exception.Message)"
-        return $false
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
+        $failure = $_.Exception.Message
+        try {
+            if ($promoted) { [IO.Directory]::Move($active, $Stage) }
+            if (Test-Path -LiteralPath $backup) { [IO.Directory]::Move($backup, $active) }
+            Remove-Item -LiteralPath $journalPath -Force
+        } catch {
+            throw "Runtime activation failed: $failure Recovery is pending; close ESPImageServer and rerun setup. $($_.Exception.Message)"
+        }
+        throw "Runtime activation failed; the previous runtime was preserved. Close ESPImageServer and retry setup. $failure"
     }
+    # Commit by removing the recovery record before discarding the backup. A
+    # forced exit can leave an unused backup, but cannot roll back a later run.
+    Remove-Item -LiteralPath $journalPath -Force
+    try { Remove-StagedRuntime $Root $backupName }
+    catch { Write-InstallLog "The previous runtime backup could not be removed: $($_.Exception.Message)" }
 }
 
-function Get-RegisteredPythonPaths {
-    # PEP 514 registration is available immediately after installation, unlike
-    # PATH inherited by this already-running setup process. Explicit views also
-    # find x64 Python when setup was started from a 32-bit PowerShell process.
-    foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryHive]::LocalMachine)) {
-        foreach ($view in @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)) {
-            $baseKey = $null
-            try {
-                $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, $view)
-                foreach ($tag in @($SupportedPythonVersion, "$SupportedPythonVersion-64")) {
-                    $installKey = $null
-                    try {
-                        $installKey = $baseKey.OpenSubKey("Software\Python\PythonCore\$tag\InstallPath")
-                        if ($null -eq $installKey) { continue }
-                        $executable = $installKey.GetValue('ExecutablePath')
-                        if ($executable -is [string] -and -not [string]::IsNullOrWhiteSpace($executable)) {
-                            $executable
-                        }
-                        $directory = $installKey.GetValue('')
-                        if ($directory -is [string] -and -not [string]::IsNullOrWhiteSpace($directory)) {
-                            Join-Path $directory 'python.exe'
-                        }
-                    } finally {
-                        if ($null -ne $installKey) { $installKey.Dispose() }
-                    }
-                }
-            } catch {
-                # An unreadable registration must not hide other installations.
-                Write-InstallLog "Could not read Python registration ($hive, $view): $($_.Exception.Message)"
-            } finally {
-                if ($null -ne $baseKey) { $baseKey.Dispose() }
-            }
-        }
+function Invoke-RuntimeSetup([string]$Python, [string]$Operation, [string]$Runtime) {
+    $arguments = @('-I', (Join-Path $projectRoot 'runtime-setup.py'), $Operation, $Runtime)
+    if ($Operation -eq 'requirements') { $arguments += @('--project', $projectRoot) }
+    if ((Invoke-LoggedExternal $Python $arguments) -ne 0) {
+        throw "The private Python runtime failed its $Operation check. See bootstrap.log and run the installer again."
     }
-}
-
-function Get-DefaultPythonPaths {
-    $versionDigits = $SupportedPythonVersion.Replace('.', '')
-    if ($env:LOCALAPPDATA) {
-        Join-Path $env:LOCALAPPDATA "Programs\Python\Python$versionDigits\python.exe"
-        Join-Path $env:LOCALAPPDATA "Programs\Python\Python$versionDigits-64\python.exe"
-    }
-    foreach ($programs in @($env:ProgramW6432, $env:ProgramFiles) | Select-Object -Unique) {
-        if ($programs) {
-            Join-Path $programs "Python$versionDigits\python.exe"
-            Join-Path $programs "Python $SupportedPythonVersion\python.exe"
-        }
-    }
-}
-
-function Get-PythonCommand {
-    Write-InstallLog "Looking for CPython $SupportedPythonVersion x64. Current account: $env:USERNAME; local app data: $env:LOCALAPPDATA"
-    $candidates = @(Get-RegisteredPythonPaths) + @(Get-DefaultPythonPaths)
-    foreach ($candidate in $candidates | Select-Object -Unique) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        if (-not [System.IO.Path]::IsPathRooted($candidate)) {
-            Write-InstallLog "Ignoring Python registration with a relative path: $candidate"
-            continue
-        }
-        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-            Write-InstallLog "Python executable not found: $candidate"
-            continue
-        }
-        if (Test-SupportedPythonCommand @($candidate)) {
-            return @($candidate)
-        }
-    }
-    foreach ($name in @('py', 'python')) {
-        $application = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        # Do not launch the Store's python.exe placeholder on a fresh account.
-        if (-not $application) { continue }
-        if ($application.Source -like '*\Microsoft\WindowsApps\*') {
-            Write-InstallLog "Skipping Windows Store alias: $($application.Source)"
-            continue
-        }
-        $command = @($application.Source)
-        if ($name -eq 'py') { $command += "-$SupportedPythonVersion" }
-        if (Test-SupportedPythonCommand $command) { return $command }
-    }
-    return $null
-}
-
-function Get-OrInstallPythonCommand {
-    $command = Get-PythonCommand
-    if ($command) { return $command }
-    $winget = Get-Command winget -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $winget) {
-        throw 'Python is missing and Windows Package Manager (winget) is unavailable.'
-    }
-    Write-InstallLog "Installing supported CPython $SupportedPythonVersion (x64)..."
-    $wingetExitCode = Invoke-LoggedExternal $winget.Source @('install', '--id', 'Python.Python.3.12', '--exact', '--source', 'winget', '--scope', 'user', '--architecture', 'x64', '--accept-package-agreements', '--accept-source-agreements')
-    Write-InstallLog "Windows Package Manager finished with exit code $wingetExitCode."
-    # APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE means winget found an
-    # installed package but no upgrade. Package registration alone is not proof
-    # that Python works: validate it again before allowing setup to continue.
-    $alreadyInstalled = $wingetExitCode -in @(-1978335189, 2316632107)
-    if ($wingetExitCode -ne 0 -and -not $alreadyInstalled) {
-        throw "Python installation failed (winget exit code $wingetExitCode). See the preceding package-manager output."
-    }
-    if ($alreadyInstalled) {
-        Write-InstallLog 'Windows Package Manager reports Python is already installed with no available upgrade. Checking the interpreter again...'
-    }
-    # Re-read registration and installation paths; no restart or PATH change is
-    # required before this same setup process can create the virtual environment.
-    $command = Get-PythonCommand
-    if (-not $command) {
-        if ($alreadyInstalled) {
-            throw "Windows reports Python $SupportedPythonVersion is installed, but setup could not run a supported x64 interpreter. See the Python checks above for the paths and errors. Repair Python $SupportedPythonVersion from the same Windows account, then retry setup."
-        }
-        throw "Python installation completed, but no working x64 CPython $SupportedPythonVersion was found in its registered location, standard installation folders, or PATH. Repair Python $SupportedPythonVersion and run setup again."
-    }
-    return $command
-}
-
-function Invoke-PythonCommand([string[]]$Command, [string[]]$Arguments) {
-    $allArguments = @($Command | Select-Object -Skip 1) + $Arguments
-    if ((Invoke-LoggedExternal $Command[0] $allArguments) -ne 0) {
-        throw "Python command failed: $($Arguments -join ' ')"
-    }
-}
-
-function Test-SupportedVirtualEnvironment([string]$Python) {
-    if (-not (Test-Path $Python)) { return $false }
-    return Test-SupportedPythonCommand @($Python)
 }
 
 function Write-ResolvedDependencyVersions([string]$Python) {
     Write-InstallLog 'Resolved Python package versions (pip freeze --all):'
-    if ((Invoke-LoggedExternal $Python @('-m', 'pip', 'freeze', '--all')) -ne 0) {
+    if ((Invoke-LoggedExternal $Python @('-I', '-m', 'pip', 'freeze', '--all')) -ne 0) {
         throw 'Unable to record the installed Python package versions.'
     }
 }
 
+$stagedRuntime = $null
 try {
-    $pythonCommand = Get-OrInstallPythonCommand
-    Write-InstallLog "Using CPython $SupportedPythonVersion (x64): $($pythonCommand -join ' ')"
-    Invoke-PythonCommand $pythonCommand @('-c', 'import platform, sys; print(platform.python_implementation(), sys.version)')
-
-    $venvPath = Join-Path $projectRoot '.venv'
-    $venvPython = Join-Path $venvPath 'Scripts\python.exe'
-    Set-InstallStatus 1 'Creating the local Python environment...'
-    if ((Test-Path $venvPath) -and -not (Test-SupportedVirtualEnvironment $venvPython)) {
-        Write-InstallLog "Recreating the app-owned virtual environment because it is not CPython $SupportedPythonVersion."
-        Remove-Item -LiteralPath $venvPath -Recurse -Force
-    }
-    if (-not (Test-Path $venvPython)) {
-        Invoke-PythonCommand $pythonCommand @('-m', 'venv', $venvPath)
-    }
+    Recover-RuntimePromotion $projectRoot
+    Remove-AbandonedRuntimeStages $projectRoot
+    Set-InstallStatus 1 'Preparing the bundled private Python runtime...'
+    $stagedRuntime = New-StagedRuntime $projectRoot
+    $runtimePython = Join-Path $stagedRuntime 'python.exe'
+    Invoke-RuntimeSetup $runtimePython 'requirements' $stagedRuntime
 
     $constraintsFileName = if ($UseCuda) { 'constraints-cuda.txt' } else { 'constraints-cpu.txt' }
     $constraintsFile = Join-Path $projectRoot $constraintsFileName
-    if (-not (Test-Path $constraintsFile)) {
+    if (-not (Test-Path -LiteralPath $constraintsFile -PathType Leaf)) {
         throw "The required dependency constraints file is missing: $constraintsFileName"
     }
     $torchIndexUrl = if ($UseCuda) { 'https://download.pytorch.org/whl/cu128' } else { 'https://download.pytorch.org/whl/cpu' }
-    Write-InstallLog "Using $constraintsFileName and the selected PyTorch wheel index."
-
+    Write-InstallLog "Using the bundled private Python runtime, $constraintsFileName, and the selected PyTorch wheel index."
     Set-InstallStatus 2 'Installing the pinned Python and PyTorch packages...'
-    if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile, 'pip')) -ne 0) {
+    if ((Invoke-LoggedExternal $runtimePython @('-I', '-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile, 'pip')) -ne 0) {
         throw 'Unable to install the pinned pip version.'
     }
-    # The selected PyTorch index supplies the CPU or CUDA wheels. PyPI remains
-    # available for ordinary pinned Python dependencies that are not mirrored
-    # in that wheel index, such as setuptools and filelock.
-    if ((Invoke-LoggedExternal $venvPython @('-m', 'pip', 'install', '--upgrade', '--force-reinstall', '--constraint', $constraintsFile, '--index-url', $torchIndexUrl, '--extra-index-url', 'https://pypi.org/simple', 'torch', 'torchvision')) -ne 0) {
+    if ((Invoke-LoggedExternal $runtimePython @('-I', '-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile, '--index-url', $torchIndexUrl, '--extra-index-url', 'https://pypi.org/simple', 'torch', 'torchvision')) -ne 0) {
         throw 'Unable to install the pinned PyTorch and torchvision packages.'
     }
     if ($UseCuda) {
@@ -263,7 +257,7 @@ try {
             throw 'The GPU validation script is missing. Run the installer again.'
         }
         Write-InstallLog 'Checking NVIDIA CUDA with a small GPU computation...'
-        $gpuCheckExitCode = Invoke-LoggedExternal $venvPython @($gpuCheckPath)
+        $gpuCheckExitCode = Invoke-LoggedExternal $runtimePython @('-I', $gpuCheckPath)
         switch ($gpuCheckExitCode) {
             0 { }
             10 { throw 'PyTorch could not be loaded. See the preceding package or DLL error in bootstrap.log. Repair the Microsoft Visual C++ x64 runtime and Python/PyTorch installation, then retry setup.' }
@@ -275,41 +269,46 @@ try {
     }
 
     Set-InstallStatus 3 'Installing pinned ESPImageServer packages...'
-    $applicationInstallArguments = @('-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile)
-    if ($UseCuda) {
-        # The editable install resolves torch again through the project's
-        # dependencies, so make the CUDA wheel index available here as well.
-        $applicationInstallArguments += @('--extra-index-url', $torchIndexUrl)
-    }
-    $applicationInstallArguments += @('--editable', $projectRoot)
-    if ((Invoke-LoggedExternal $venvPython $applicationInstallArguments) -ne 0) {
+    $applicationInstallArguments = @('-I', '-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile)
+    if ($UseCuda) { $applicationInstallArguments += @('--extra-index-url', $torchIndexUrl) }
+    $applicationInstallArguments += @('-r', (Join-Path $stagedRuntime 'generation-requirements.txt'))
+    if ((Invoke-LoggedExternal $runtimePython $applicationInstallArguments) -ne 0) {
         throw 'Unable to install the pinned ESPImageServer dependencies.'
     }
-    # Verify tokenizer and export imports as well as bundled FFmpeg before a
-    # user spends time generating a video that cannot be encoded.
-    if ((Invoke-LoggedExternal $venvPython @('-c', 'import imageio, imageio_ffmpeg, sentencepiece; print(imageio_ffmpeg.get_ffmpeg_exe())')) -ne 0) {
-        throw 'Unable to verify the video tokenizer, MP4 exporter, and bundled FFmpeg dependencies.'
+    if ((Invoke-LoggedExternal $runtimePython @('-I', '-m', 'pip', 'check')) -ne 0) {
+        throw 'The installed Python dependencies are inconsistent. See bootstrap.log and retry setup.'
     }
+    Invoke-RuntimeSetup $runtimePython 'verify' $stagedRuntime
 
     Set-InstallStatus 4 'Recording installed package versions...'
-    Write-ResolvedDependencyVersions $venvPython
+    Write-ResolvedDependencyVersions $runtimePython
+    Set-Content -LiteralPath (Join-Path $stagedRuntime 'runtime-ready.txt') -Value 'ready' -Encoding ascii
 
     Set-InstallStatus 5 'Saving your server settings...'
     $modelCachePath = Join-Path $env:LOCALAPPDATA 'ESPImageServer\models'
     New-Item -ItemType Directory -Force $modelCachePath | Out-Null
-    $env:ESP_IMAGE_MODEL_CACHE = $modelCachePath
     $settingsFile = Join-Path $projectRoot 'server_settings.bat'
 @"
 @echo off
 set "ESP_IMAGE_MODEL_CACHE=%LOCALAPPDATA%\ESPImageServer\models"
-"@ | Set-Content -Path $settingsFile -Encoding ascii
+"@ | Set-Content -LiteralPath $settingsFile -Encoding ascii
 
+    Complete-RuntimePromotion $projectRoot $stagedRuntime {
+        param($activeRuntime)
+        Invoke-RuntimeSetup (Join-Path $activeRuntime 'python.exe') 'verify' $activeRuntime
+    }
+    $stagedRuntime = $null
     Write-InstallLog 'Models will download when you select one in ESPImageServer.'
     Set-InstallStatus 6 'Environment is ready. Finishing installation...'
-    Set-Content -Path $resultPath -Value 'success' -Encoding ascii
+    Set-Content -LiteralPath $resultPath -Value 'success' -Encoding ascii
 } catch {
     Write-InstallLog "ERROR: $($_.Exception.Message)"
     Set-InstallStatus 0 'Installation failed. See bootstrap.log for details.'
-    Set-Content -Path $resultPath -Value 'failed' -Encoding ascii
+    Set-Content -LiteralPath $resultPath -Value 'failed' -Encoding ascii
     exit 1
+} finally {
+    if ($stagedRuntime -and -not (Test-Path -LiteralPath (Join-Path $projectRoot 'runtime-promotion.json'))) {
+        try { Remove-StagedRuntime $projectRoot ([IO.Path]::GetFileName($stagedRuntime)) }
+        catch { Write-InstallLog "Could not remove the incomplete runtime: $($_.Exception.Message)" }
+    }
 }

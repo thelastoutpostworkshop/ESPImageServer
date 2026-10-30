@@ -50,24 +50,25 @@ def test_cpu_and_cuda_installers_use_compatible_tested_package_versions() -> Non
     assert cuda_constraints["setuptools"] == "81.0.0"
 
 
-def test_installer_requires_python_312_instead_of_using_the_default_launcher_version() -> None:
+def test_installer_uses_private_python_and_pinned_generation_packages() -> None:
     bootstrap = (INSTALLER_ROOT / "bootstrap.ps1").read_text(encoding="utf-8")
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     installer_definition = (INSTALLER_ROOT / "ESPImageServer.iss").read_text(
         encoding="utf-8"
     )
 
-    assert "$SupportedPythonVersion = '3.12'" in bootstrap
-    assert "Python.Python.3.12" in bootstrap
-    assert "return @('py')" not in bootstrap
+    assert "'runtime-base'" in bootstrap
+    assert "Get-OrInstallPythonCommand" not in bootstrap
+    assert "winget" not in bootstrap.lower()
+    assert "New-StagedRuntime" in bootstrap
     assert "--constraint" in bootstrap
     assert "'verify-gpu.py'" in bootstrap
     assert "CPU-only PyTorch was installed" in bootstrap
     assert "--extra-index-url" in bootstrap
     assert "pip', 'freeze', '--all" in bootstrap
-    assert "Recreating the app-owned virtual environment" in bootstrap
-    assert 'print(platform.python_implementation(), sys.version)' in bootstrap
-    assert 'print(f"Using' not in bootstrap
+    assert "Complete-RuntimePromotion" in bootstrap
+    assert "--editable" not in bootstrap
+    assert "generation-requirements.txt" in bootstrap
     assert 'requires-python = ">=3.12,<3.13"' in pyproject
     assert 'requires = ["setuptools==84.0.0"]' in pyproject
     assert 'Source: "constraints-cpu.txt"; DestDir: "{app}"' in installer_definition

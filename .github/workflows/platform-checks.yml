@@ -117,7 +117,6 @@ jobs:
         if: runner.os == 'Windows'
         run: python ci/verify-windows-upgrade.py
       - name: Build standalone management backend
-        if: runner.os != 'Windows'
         run: python installer/build-native-runtime.py dist/native-backend
       - name: Verify relocated backend without system Python
         if: runner.os != 'Windows'
@@ -126,6 +125,21 @@ jobs:
           mkdir -p 'dist/runtime-check é'
           mv dist/native-backend 'dist/runtime-check é/backend'
           'dist/runtime-check é/backend/.venv/bin/python' -I -B ci/verify-native-runtime.py 'dist/runtime-check é/backend'
+      - name: Verify relocated Windows backend without system Python
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $checkRoot = Join-Path $PWD 'dist/runtime-check é'
+          New-Item -ItemType Directory -Path $checkRoot | Out-Null
+          Move-Item -LiteralPath (Join-Path $PWD 'dist/native-backend') -Destination (Join-Path $checkRoot 'backend')
+          $backend = Join-Path $checkRoot 'backend'
+          $env:PYTHONHOME = Join-Path $checkRoot 'conflicting-python'
+          $env:PYTHONPATH = Join-Path $checkRoot 'conflicting-modules'
+          & (Join-Path $backend '.venv/python.exe') -I -B ci/verify-native-runtime.py $backend
+          if ($LASTEXITCODE -ne 0) { throw 'Relocated Windows runtime verification failed.' }
+          Copy-Item -LiteralPath (Join-Path $backend 'runtime-manifest.json') -Destination (Join-Path $backend '.venv/runtime-manifest.json')
+          & (Join-Path $backend '.venv/python.exe') -I -B installer/runtime-setup.py validate (Join-Path $backend '.venv')
+          if ($LASTEXITCODE -ne 0) { throw 'Windows bootstrap runtime validation failed.' }
       - name: Desktop module tests
         run: npm --prefix desktop test
       - name: Check desktop entry-point syntax

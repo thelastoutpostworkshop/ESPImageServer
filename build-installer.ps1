@@ -9,7 +9,8 @@ Builds the ESPImageServer Windows installer from the repository root.
 [CmdletBinding()]
 param(
     [switch]$SynchronizeOnly,
-    [string]$InnoSetupPath
+    [string]$InnoSetupPath,
+    [string]$BuildPython
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,14 +44,41 @@ function Set-DerivedVersion([string]$Path, [string]$Pattern, [scriptblock]$Repla
     }
 }
 
-function Invoke-InstallerCompile([string]$Compiler, [string]$ScriptPath, [string]$DesktopOutput, [string]$OutputRoot, [string]$Version) {
+function Get-BuildPythonCommand([string]$RequestedPath) {
+    $candidates = @()
+    if ($RequestedPath) {
+        $candidates += ,@((Resolve-Path -LiteralPath $RequestedPath).Path)
+    } else {
+        $localPython = Join-Path $projectRoot '.venv\Scripts\python.exe'
+        if (Test-Path -LiteralPath $localPython -PathType Leaf) { $candidates += ,@($localPython) }
+        foreach ($name in @('python', 'py')) {
+            $application = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($application -and $application.Source -notlike '*\Microsoft\WindowsApps\*') {
+                $candidate = @($application.Source)
+                if ($name -eq 'py') { $candidate += '-3.12' }
+                $candidates += ,$candidate
+            }
+        }
+    }
+    foreach ($candidate in $candidates) {
+        $arguments = @($candidate | Select-Object -Skip 1) + @('-I', '-c', 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)')
+        try {
+            $global:LASTEXITCODE = 1
+            & $candidate[0] @arguments
+            if ($LASTEXITCODE -eq 0) { return $candidate }
+        } catch { Write-Verbose "Build interpreter unavailable: $($_.Exception.Message)" }
+    }
+    throw 'Building the installer requires Python 3.12 or newer. Prepare the project virtual environment or pass -BuildPython with a Python executable. People installing the app do not need system Python.'
+}
+
+function Invoke-InstallerCompile([string]$Compiler, [string]$ScriptPath, [string]$DesktopOutput, [string]$RuntimeOutput, [string]$OutputRoot, [string]$Version) {
     for ($attempt = 0; $attempt -lt 3; $attempt++) {
         # Resource updates can collide with scanners or a previous setup process.
         # Compile to a new path on every attempt; publish only a finished EXE.
         $stagingDirectory = Join-Path $OutputRoot ('installer-staging-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
         Write-Host "`n==> Compiling the installer (attempt $($attempt + 1) of 3)" -ForegroundColor Cyan
-        & $Compiler "/O$stagingDirectory" "/DDesktopBuildOutput=$DesktopOutput" $ScriptPath | Out-Host
+        & $Compiler "/O$stagingDirectory" "/DDesktopBuildOutput=$DesktopOutput" "/DRuntimeBuildOutput=$RuntimeOutput" $ScriptPath | Out-Host
         if ($LASTEXITCODE -eq 0) {
             $stagedInstaller = Join-Path $stagingDirectory "ESPImageServer-Setup-$Version.exe"
             if (-not (Test-Path -LiteralPath $stagedInstaller)) {
@@ -111,6 +139,13 @@ try {
 
     Invoke-BuildStep 'Preparing the bundled flashing tool' { npm --prefix desktop run prepare:esptool }
     Invoke-BuildStep 'Building the web app' { npm --prefix frontend run build }
+    $buildPythonCommand = @(Get-BuildPythonCommand $BuildPython)
+    $runtimeBuildOutput = Join-Path $projectRoot ('dist\windows-runtime-' + [guid]::NewGuid().ToString('N'))
+    $runtimeBuildArguments = @($buildPythonCommand | Select-Object -Skip 1) + @(
+        '-I', (Join-Path $projectRoot 'installer\build-native-runtime.py'), $runtimeBuildOutput)
+    Invoke-BuildStep 'Preparing the verified private Python runtime and basic server dependencies' {
+        & $buildPythonCommand[0] @runtimeBuildArguments
+    }
     # Build to a fresh staging directory every time. This avoids an antivirus
     # scanner or previous Electron run keeping the old app.asar locked.
     $desktopBuildOutput = Join-Path $projectRoot ("desktop\release\installer-staging-" + [guid]::NewGuid().ToString('N'))
@@ -126,7 +161,7 @@ try {
     if (-not (Test-Path -LiteralPath $desktopAppOutput)) {
         throw "Electron packaging completed but the expected staging folder was not found: $desktopAppOutput"
     }
-    $stagedInstaller = Invoke-InstallerCompile $innoSetup (Join-Path $projectRoot 'installer\ESPImageServer.iss') $desktopAppOutput (Join-Path $projectRoot 'dist') $version
+    $stagedInstaller = Invoke-InstallerCompile $innoSetup (Join-Path $projectRoot 'installer\ESPImageServer.iss') $desktopAppOutput $runtimeBuildOutput (Join-Path $projectRoot 'dist') $version
     $installerPath = Join-Path $projectRoot "dist\ESPImageServer-Setup-$version.exe"
     for ($copyAttempt = 0; $copyAttempt -lt 3; $copyAttempt++) {
         try {

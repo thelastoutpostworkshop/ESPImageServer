@@ -43,13 +43,18 @@ def main():
         assert installed.resolve().is_relative_to(root)
         shutil.copytree(PROJECT / "installer", stage / "installer", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copytree(PROJECT / "src", stage / "src", ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"))
-        for name in ("pyproject.toml", "README.md"):
+        for name in ("pyproject.toml", "README.md", "LICENSE"):
             shutil.copy2(PROJECT / name, stage / name)
         (stage / "frontend/dist").mkdir(parents=True)
         (stage / "frontend/dist/index.html").write_text("CI upgrade fixture")
         desktop = stage / "desktop/release/win-unpacked"
         desktop.mkdir(parents=True)
         (desktop / "ESPImageServer.exe").write_bytes(b"CI fixture; never launched")
+        runtime_bundle = stage / "runtime-bundle"
+        (runtime_bundle / ".venv").mkdir(parents=True)
+        (runtime_bundle / ".venv/python.exe").write_bytes(b"CI fixture; never launched")
+        (runtime_bundle / "runtime-manifest.json").write_text('{"target":"win32-x64","mode":"management"}')
+        (runtime_bundle / "requirements-resolved.txt").write_text("CI fixture; no installed dependencies")
         # Keep the real Inno [Code] and all file destinations. Replace both
         # prerequisite installation and heavyweight bootstrap work with fixtures:
         # this test must never download/install the system-wide VC++ runtime.
@@ -71,13 +76,15 @@ Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value
 ''', encoding="utf-8")
         template = (stage / "installer/ESPImageServer.iss").read_text(encoding="utf-8")
         template = template.replace('#define AppName "ESPImageServer"', '#define AppName "ESPImageServerUpgradeCI"')
+        template = template.replace('SetupMutex=Global\\ESPImageServerSetup', 'SetupMutex=Global\\ESPImageServerUpgradeCISetup')
         template = re.sub(r"^AppId=.*$", "AppId={{" + APP_ID + "}", template, flags=re.M)
         def installer(version):
             set_backend_version(stage, version)
             script = re.sub(r'^#define AppVersion ".*"$', f'#define AppVersion "{version}"', template, flags=re.M)
             script = re.sub(r"^OutputBaseFilename=.*$", f"OutputBaseFilename=upgrade-{version}", script, flags=re.M)
             (stage / "installer/ESPImageServer.iss").write_text(script, encoding="utf-8")
-            subprocess.run([compiler, "/Q", str(stage / "installer/ESPImageServer.iss")], check=True, timeout=180)
+            subprocess.run([compiler, "/Q", f"/DRuntimeBuildOutput={runtime_bundle}",
+                            str(stage / "installer/ESPImageServer.iss")], check=True, timeout=180)
             return stage / "dist" / f"upgrade-{version}.exe"
         try:
             # Prerequisite failures must stop before copying the application or
@@ -92,7 +99,7 @@ Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value
                 prerequisite_fixture(body)
                 failure_package = installer(current)
                 result = subprocess.run(
-                    [str(failure_package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER",
+                    [str(failure_package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
                      f"/DIR={installed}", f"/LOG={root / (scenario + '.log')}"],
                     check=False, timeout=60,
                 )
@@ -105,17 +112,19 @@ Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value
             latest = installer(current)
             saved = None
             for package, version, phase in ((previous, OLD_VERSION, "save"), (latest, current, "restart")):
-                subprocess.run([str(package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER",
+                subprocess.run([str(package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
                                 f"/DIR={installed}", f"/LOG={root / (version + '.log')}"], check=True, timeout=180)
                 assert registered_version() == version
                 if saved is not None:
                     assert_preserved(root / "user", saved)
-                    assert (installed / ".venv/upgrade-marker").read_text() == "keep runtime"
+                    assert (installed / "runtime/upgrade-marker").read_text() == "keep runtime"
+                    assert not (installed / "runtime-base/stale-package.txt").exists()
                 storage_probe(installed, root / "user", phase, version)
                 if phase == "save":
                     saved = snapshot(root / "user")
-                    (installed / ".venv").mkdir()
-                    (installed / ".venv/upgrade-marker").write_text("keep runtime")
+                    (installed / "runtime").mkdir()
+                    (installed / "runtime/upgrade-marker").write_text("keep runtime")
+                    (installed / "runtime-base/stale-package.txt").write_text("must not survive base replacement")
             assert (installed / "fixture-bootstrap-runs.txt").read_text().splitlines() == ["completed", "completed"]
             # Exercise the real Inno process monitor and finished/exit state,
             # using harmless workers instead of downloading dependencies.
@@ -132,7 +141,7 @@ Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value
                 )
                 failure_package = installer(current)
                 result = subprocess.run(
-                    [str(failure_package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER",
+                    [str(failure_package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
                      f"/DIR={installed}", f"/LOG={root / (scenario + '.log')}"],
                     check=False, timeout=60,
                 )

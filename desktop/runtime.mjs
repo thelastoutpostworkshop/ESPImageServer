@@ -8,8 +8,9 @@ export function runtimePaths({ desktopDirectory, resourcesPath, packaged = false
   const projectRoot = packaged
     ? (platform === 'win32' ? paths.resolve(resourcesPath, '..', '..') : paths.join(resourcesPath, 'backend'))
     : paths.resolve(desktopDirectory, '..')
-  // Non-Windows bundle layout is a contract for future packaging, not a bundled runtime yet.
-  const pythonPath = paths.join(projectRoot, '.venv', ...(platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']))
+  const pythonPath = packaged && platform === 'win32'
+    ? paths.join(projectRoot, 'runtime', 'python.exe')
+    : paths.join(projectRoot, '.venv', ...(platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']))
   const toolTargets = { 'win32-x64': 'windows-amd64', 'linux-x64': 'linux-amd64',
     'linux-arm64': 'linux-aarch64', 'darwin-x64': 'macos-amd64', 'darwin-arm64': 'macos-arm64' }
   const target = toolTargets[`${platform}-${arch}`]
@@ -53,11 +54,12 @@ export function registerWindowLifecycle(app, { platform = process.platform, getW
 // Own only the Python process we launch. Connecting to an existing server never
 // gives this desktop instance authority to stop it.
 export class ServerRuntime {
-  constructor(runtime, { spawnProcess = spawn, exists = existsSync, onOutput = () => {} } = {}) {
+  constructor(runtime, { spawnProcess = spawn, exists = existsSync, onOutput = () => {}, environment = process.env } = {}) {
     this.runtime = runtime
     this.spawnProcess = spawnProcess
     this.exists = exists
     this.onOutput = onOutput
+    this.environment = environment
     this.child = null
     this.error = null
     this.stopping = false
@@ -68,8 +70,18 @@ export class ServerRuntime {
     this.error = null
     this.stopping = false
     const executable = requireRuntimeFile(this.runtime.pythonPath, 'Python runtime', this.runtime, this.exists)
-    const child = this.spawnProcess(executable, ['-u', '-m', 'esp_image_server'], {
-      cwd: this.runtime.projectRoot, env: { ...process.env, ESP_IMAGE_OPEN_BROWSER: '0' },
+    const environment = { ...this.environment, ESP_IMAGE_OPEN_BROWSER: '0' }
+    const arguments_ = ['-u', '-m', 'esp_image_server']
+    if (this.runtime.platform === 'win32') {
+      // Windows environment names are case-insensitive. Remove both common
+      // overrides without changing the desktop's own environment or app settings.
+      for (const key of Object.keys(environment)) {
+        if (['PYTHONHOME', 'PYTHONPATH'].includes(key.toUpperCase())) delete environment[key]
+      }
+      arguments_.unshift(this.runtime.packaged ? '-I' : '-E')
+    }
+    const child = this.spawnProcess(executable, arguments_, {
+      cwd: this.runtime.projectRoot, env: environment,
       windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe']
     })
     this.child = child
@@ -100,7 +112,7 @@ export class ServerRuntime {
       }, timeout)
       try {
         if (this.runtime.platform === 'win32' && child.pid) {
-          // The venv launcher can own the real Python process on Windows.
+          // Development venvs and Python subprocesses can own child processes.
           const killer = this.spawnProcess('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'],
             { windowsHide: true, shell: false, stdio: 'ignore' })
           killer.once('error', () => { try { child.kill() } catch { finish() } })

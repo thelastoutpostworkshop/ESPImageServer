@@ -64,4 +64,29 @@ if ($customLibrary -and -not (Test-ESPImageServerSamePath $customLibrary $defaul
     Remove-ESPImageServerFolder $localData
 }
 Remove-ESPImageServerFolder $roamingData
-Remove-ESPImageServerFolder (Join-Path $InstallRoot '.venv')
+
+# Runtime folders are created by setup after Inno has copied the base payload,
+# so Inno's file list alone cannot remove them. Reject links and stay inside
+# the explicit installation directory; never traverse a user-data location.
+$installFull = [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\', '/')
+if ($installFull -and $installFull -ne [IO.Path]::GetPathRoot($installFull).TrimEnd('\', '/')) {
+    foreach ($directory in Get-ChildItem -LiteralPath $installFull -Directory -Force -ErrorAction SilentlyContinue) {
+        if ($directory.Name -notmatch '^(runtime|runtime-base|runtime-(staging|backup)-[0-9a-f]{32})$') { continue }
+        $runtimeFull = [IO.Path]::GetFullPath($directory.FullName)
+        if ([IO.Path]::GetDirectoryName($runtimeFull) -ne $installFull) { continue }
+        if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-Warning "Preserving linked runtime directory: $runtimeFull"
+            continue
+        }
+        $links = @(Get-ChildItem -LiteralPath $runtimeFull -Recurse -Force | Where-Object {
+            ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+        })
+        if ($links.Count) {
+            Write-Warning "Preserving runtime directory containing linked files: $runtimeFull"
+            continue
+        }
+        Remove-ESPImageServerFolder $runtimeFull
+    }
+    Remove-Item -LiteralPath (Join-Path $installFull 'runtime-promotion.json') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $installFull 'runtime-promotion.pending.json') -Force -ErrorAction SilentlyContinue
+}

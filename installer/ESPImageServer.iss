@@ -7,12 +7,16 @@
 #ifndef DesktopBuildOutput
   #define DesktopBuildOutput "..\desktop\release\win-unpacked"
 #endif
+#ifndef RuntimeBuildOutput
+  #error Run build-installer.ps1 to prepare and supply the private Python runtime (RuntimeBuildOutput).
+#endif
 
 [Setup]
 AppId={{18AA2901-70A7-4C30-9C55-6B78F51F6CC0}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
+SetupMutex=Global\ESPImageServerSetup
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
@@ -26,7 +30,8 @@ WizardSmallImageFile=assets\wizard-corner.png
 WizardImageBackColor=#071426
 WizardSmallImageBackColor=#FFFFFF
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+; CUDA 12.8 requires Windows 10 22H2; InitializeSetup also rejects Windows 11 21H2.
+MinVersion=10.0.19045
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#AppName}
@@ -36,9 +41,14 @@ Source: "ensure-vc-runtime.ps1"; Flags: dontcopy
 Source: "..\src\*"; DestDir: "{app}\src"; Excludes: "__pycache__\*,*.pyc,*.egg-info\*"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\frontend\dist\*"; DestDir: "{app}\web"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#DesktopBuildOutput}\*"; DestDir: "{app}\desktop"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#RuntimeBuildOutput}\.venv\*"; DestDir: "{app}\runtime-base"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#RuntimeBuildOutput}\runtime-manifest.json"; DestDir: "{app}\runtime-base"; Flags: ignoreversion
+Source: "{#RuntimeBuildOutput}\requirements-resolved.txt"; DestDir: "{app}\runtime-base"; Flags: ignoreversion
 Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "runtime-setup.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "verify-gpu.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap-supervisor.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "BootstrapProcess.cs"; DestDir: "{app}"; Flags: ignoreversion
@@ -49,8 +59,13 @@ Source: "start_server.bat"; DestDir: "{app}"; DestName: "Start ESPImageServer.ba
 Source: "assets\espimageserver-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#AppName}\ESPImageServer"; Filename: "{app}\desktop\ESPImageServer.exe"; IconFilename: "{app}\espimageserver-icon.ico"
-Name: "{autodesktop}\ESPImageServer"; Filename: "{app}\desktop\ESPImageServer.exe"; IconFilename: "{app}\espimageserver-icon.ico"; Tasks: desktopicon
+Name: "{userprograms}\{#AppName}\ESPImageServer"; Filename: "{app}\desktop\ESPImageServer.exe"; IconFilename: "{app}\espimageserver-icon.ico"
+Name: "{userdesktop}\ESPImageServer"; Filename: "{app}\desktop\ESPImageServer.exe"; IconFilename: "{app}\espimageserver-icon.ico"; Tasks: desktopicon
+
+[InstallDelete]
+; Replace only the packaged base. The active runtime is promoted by bootstrap
+; after all checks pass; settings, models, and creations are separate.
+Type: filesandordirs; Name: "{app}\runtime-base"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
@@ -112,6 +127,18 @@ external 'GetCurrentProcessId@kernel32.dll stdcall';
 
 function BootstrapLastError: Longword;
 external 'GetLastError@kernel32.dll stdcall';
+
+function InitializeSetup: Boolean;
+var
+  WindowsVersion: TWindowsVersion;
+begin
+  GetWindowsVersionEx(WindowsVersion);
+  Result := not ((WindowsVersion.Major = 10) and
+    (WindowsVersion.Build >= 22000) and (WindowsVersion.Build < 22621));
+  if not Result then
+    SuppressibleMsgBox('ESPImageServer requires Windows 10 22H2 or Windows 11 22H2 or newer. Update Windows before running setup.',
+      mbError, MB_OK, IDOK);
+end;
 
 function CanLaunchApplication: Boolean;
 begin
@@ -375,7 +402,7 @@ begin
   BootstrapOutput.ScrollBars := ssVertical;
   BootstrapOutput.ReadOnly := True;
   BootstrapOutput.Text := 'Installation is in progress.' + #13#10 + #13#10 +
-    '- Creating the local Python environment' + #13#10 +
+    '- Preparing the bundled private Python runtime' + #13#10 +
     '- Installing PyTorch and ESPImageServer packages' + #13#10 +
     '- Models will download only when selected in the app' + #13#10 + #13#10 +
     'The installer will continue automatically when this is complete.';

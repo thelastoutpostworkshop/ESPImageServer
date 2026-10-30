@@ -100,7 +100,9 @@ Quit ESPImageServer, run `ESPImageServer-Setup-{version}.exe`, and follow setup.
 2. Open **ESPImageServer** from the Start Menu or desktop shortcut.
 3. Choose an image or video model in the app; its files download when selected.
 
-Setup uses CPython 3.12. If it is not already installed, the installer asks Windows Package Manager to install it; other Python versions already on the computer are left alone.
+Setup installs for your current Windows account and includes its own CPython 3.12 runtime and basic server packages. You do not need Python or WinGet installed. Windows 10 22H2 or Windows 11 22H2 or newer is required.
+
+The Microsoft Visual C++ x64 prerequisite may request administrator approval. If setup reports that a restart is needed, restart Windows and run setup again. Updates and repairs prepare and validate a separate Python runtime before activating it; settings, downloaded models, and creations are preserved.
 
 ## Ubuntu 24.04 installation
 

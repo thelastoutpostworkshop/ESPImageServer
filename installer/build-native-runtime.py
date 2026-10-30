@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -45,12 +46,24 @@ def dependency_arguments(target, mode):
             "torch", "setuptools", *dependencies]
 
 
+def isolated_build_environment(environment=None):
+    # -I isolates this interpreter. Clear inherited settings as well for pip's
+    # child processes, and disable config files that can redirect installation
+    # into a user's Python, an arbitrary target, or a different package index.
+    source = os.environ if environment is None else environment
+    result = {name: value for name, value in source.items()
+              if not name.upper().startswith(("PYTHON", "PIP_")) and name.upper() != "VIRTUAL_ENV"}
+    result.update(PIP_CONFIG_FILE=os.devnull, PIP_NO_INPUT="1", PIP_DISABLE_PIP_VERSION_CHECK="1")
+    return result
+
+
 def build(destination, mode="management"):
     manifest = json.loads((PROJECT / "installer/native-python.json").read_text())
     target = host_target()
     if target not in manifest["targets"]:
-        raise ValueError(f"Build on Linux x64 or macOS ARM64, not {target}")
+        raise ValueError(f"Build on Windows x64, Linux x64, or macOS ARM64, not {target}")
     dependencies = dependency_arguments(target, mode)
+    environment = isolated_build_environment()
     if destination.exists():
         raise ValueError(f"Output already exists; choose a new directory: {destination}")
     web = PROJECT / "frontend/dist"
@@ -67,14 +80,19 @@ def build(destination, mode="management"):
         bundle = staging / "backend"
         bundle.mkdir()
         (staging / "python").rename(bundle / ".venv")
-        python = bundle / ".venv/bin/python3"
-        # Use the full standalone prefix at the existing runtime path, not a venv.
-        launcher = bundle / ".venv/bin/python"
-        if not launcher.exists():
-            launcher.symlink_to("python3")
+        # Retain the entire standalone prefix, including pip and its license
+        # notices. This is not a virtual environment copied from the build PC.
+        windows = target == "win32-x64"
+        python = bundle / (".venv/python.exe" if windows else ".venv/bin/python3")
+        if not python.is_file():
+            raise ValueError(f"The standalone Python archive lacks its interpreter: {python.name}")
+        if not windows:
+            launcher = bundle / ".venv/bin/python"
+            if not launcher.exists():
+                launcher.symlink_to("python3")
         subprocess.run([str(python), "-I", "-m", "pip", "install", "--only-binary=:all:",
-                        "--no-cache-dir", *dependencies], check=True)
-        subprocess.run([str(python), "-I", "-m", "pip", "check"], check=True)
+                        "--no-cache-dir", *dependencies], check=True, env=environment)
+        subprocess.run([str(python), "-I", "-m", "pip", "check"], check=True, env=environment)
         shutil.copytree(PROJECT / "src/esp_image_server", bundle / "src/esp_image_server",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         shutil.copytree(web, bundle / "web")
@@ -87,9 +105,11 @@ def build(destination, mode="management"):
                 shutil.copy2(PROJECT / "installer" / name, setup / name)
             requirements = tomllib.loads((PROJECT / "pyproject.toml").read_text())["project"]["dependencies"]
             (setup / "generation-requirements.txt").write_text("\n".join(["torch", "setuptools", *requirements]) + "\n")
-        site = bundle / ".venv/lib/python3.12/site-packages"
-        (site / "esp-image-server.pth").write_text("../../../../src\n", encoding="utf-8")
-        resolved = subprocess.check_output([str(python), "-I", "-m", "pip", "freeze", "--all"], text=True)
+        site = bundle / (".venv/Lib/site-packages" if windows else ".venv/lib/python3.12/site-packages")
+        relative_source = "../../../src\n" if windows else "../../../../src\n"
+        (site / "esp-image-server.pth").write_text(relative_source, encoding="utf-8")
+        resolved = subprocess.check_output([str(python), "-I", "-m", "pip", "freeze", "--all"],
+                                           text=True, env=environment)
         (bundle / "requirements-resolved.txt").write_text(resolved, encoding="utf-8")
         (bundle / "runtime-manifest.json").write_text(json.dumps({
             "target": target, "mode": mode, "python": manifest["version"],
