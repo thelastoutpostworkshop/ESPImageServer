@@ -4715,7 +4715,7 @@ onUnmounted(() => {
               <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-bookmark-plus" :loading="savingVideoToCreationLibrary" :disabled="videoSavedToCreationLibrary" :aria-label="videoSavedToCreationLibrary ? 'Saved to Creation Gallery' : 'Save to Creation Gallery'" @click="saveVideoToCreationLibrary" /></template>
             </v-tooltip>
             <v-tooltip :text="showOnDisplayLabel">
-              <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardCommandsBlocked" :aria-label="showOnDisplayLabel" @click="showSavedVideoOnDisplay" /></template>
+              <template #activator="{ props }"><v-btn v-bind="props" color="primary" icon="mdi-play-circle-outline" :loading="showingVideoOnDisplay" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardCommandsBlocked" :aria-label="showOnDisplayLabel" @click="showSavedVideoOnDisplay()" /></template>
             </v-tooltip>
             <v-tooltip :text="saveToDisplaySdCardLabel">
               <template #activator="{ props }"><v-btn v-bind="props" color="primary" variant="tonal" icon="mdi-sd" :loading="savingVideoToDisplaySdCard" :disabled="!activeDisplayOnline || savingVideoToDisplaySdCard || sdCardCommandsBlocked" :aria-label="saveToDisplaySdCardLabel" @click="saveCompletedVideoToDisplaySdCard" /></template>
