@@ -130,6 +130,9 @@ external 'GetCurrentProcessId@kernel32.dll stdcall';
 function BootstrapLastError: Longword;
 external 'GetLastError@kernel32.dll stdcall';
 
+function VcRuntimeTickCount: Int64;
+external 'GetTickCount64@kernel32.dll stdcall';
+
 function InitializeSetup: Boolean;
 var
   WindowsVersion: TWindowsVersion;
@@ -278,12 +281,90 @@ begin
     'Generation requires a supported NVIDIA GPU and driver. Setup downloads the generation dependencies and tests a GPU computation. Memory needs vary by model; detection does not guarantee every model will fit. Models download when selected in the app.');
 end;
 
+function VcRuntimeStageMessage(const Stage: String): String;
+begin
+  case Stage of
+    'download': Result := 'Downloading Microsoft Visual C++ runtime...';
+    'verify': Result := 'Verifying the Microsoft runtime download...';
+    'check': Result := 'Checking the installed Visual C++ runtime...';
+    'install': Result := 'Installing Microsoft Visual C++ runtime...';
+    'repair': Result := 'Repairing Microsoft Visual C++ runtime...';
+    'validate': Result := 'Verifying the installed Visual C++ runtime...';
+    'ready': Result := 'Microsoft Visual C++ runtime is ready.';
+    'restart': Result := 'Microsoft Visual C++ runtime needs a Windows restart.';
+  else
+    Result := 'Starting the Microsoft Visual C++ runtime check...';
+  end;
+end;
+
+function RunVcRuntimeHelper(const Executable, Parameters, WorkDirectory: String;
+  Progress: TOutputMarqueeProgressWizardPage): Integer;
+var
+  StartupInfo: TBootstrapStartupInfo;
+  ProcessInfo: TBootstrapProcessInfo;
+  CommandLine, Stage, LastStage: String;
+  StageText: AnsiString;
+  StartedAt: Int64;
+  ElapsedSeconds, LastSecond: Integer;
+  WaitResult, ExitCode: Longword;
+begin
+  { Retain a handle to this helper only. It is deliberately not in the Python
+    job: never terminate Microsoft's machine-wide prerequisite transaction. }
+  CommandLine := '"' + Executable + '" ' + Parameters;
+  StartupInfo.Size := SizeOf(StartupInfo);
+  StartupInfo.Reserved := 0; StartupInfo.Desktop := 0; StartupInfo.Title := 0;
+  StartupInfo.X := 0; StartupInfo.Y := 0; StartupInfo.XSize := 0; StartupInfo.YSize := 0;
+  StartupInfo.XCountChars := 0; StartupInfo.YCountChars := 0; StartupInfo.FillAttribute := 0;
+  StartupInfo.Flags := 1; { STARTF_USESHOWWINDOW }
+  StartupInfo.ShowWindow := SW_HIDE;
+  StartupInfo.ReservedSize := 0; StartupInfo.ReservedData := 0;
+  StartupInfo.StdInput := 0; StartupInfo.StdOutput := 0; StartupInfo.StdError := 0;
+  if not BootstrapCreateProcess(Executable, CommandLine, 0, 0, False,
+    $08000000, 0, WorkDirectory, StartupInfo, ProcessInfo) then
+    RaiseException('Could not start the Visual C++ runtime check: ' + SysErrorMessage(BootstrapLastError));
+  BootstrapCloseHandle(ProcessInfo.ThreadHandle);
+  StartedAt := VcRuntimeTickCount;
+  LastSecond := -1;
+  LastStage := '';
+  Stage := '';
+  try
+    repeat
+      WaitResult := BootstrapWaitForProcess(ProcessInfo.ProcessHandle, 0);
+      if WaitResult = 0 then Break;
+      if WaitResult <> $00000102 then { WAIT_TIMEOUT }
+        RaiseException('Could not monitor the Visual C++ runtime check: ' + SysErrorMessage(BootstrapLastError));
+      StageText := '';
+      if LoadStringFromFile(WorkDirectory + '\progress.txt', StageText) then
+        Stage := Trim(String(StageText));
+      ElapsedSeconds := (VcRuntimeTickCount - StartedAt) div 1000;
+      if (ElapsedSeconds <> LastSecond) or (Stage <> LastStage) then begin
+        Progress.SetText(VcRuntimeStageMessage(Stage),
+          Format('Elapsed: %d:%.2d. Approve the Microsoft prompt if asked.', [
+            ElapsedSeconds div 60, ElapsedSeconds mod 60]));
+        LastSecond := ElapsedSeconds;
+        LastStage := Stage;
+      end;
+      { Animate also pumps wizard messages. Cancel and window-close requests
+        still pass through the existing VcRuntimeRunning guard. }
+      Progress.Animate;
+      Sleep(100);
+    until False;
+    if not BootstrapGetExitCode(ProcessInfo.ProcessHandle, ExitCode) then
+      RaiseException('Could not read the Visual C++ runtime check exit code.');
+    Result := Integer(ExitCode);
+  finally
+    { The helper retains its own bounded wait; closing this observation handle
+      must not kill it or an elevated Windows Installer service. }
+    BootstrapCloseHandle(ProcessInfo.ProcessHandle);
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   WorkDirectory, LogDirectory, CommandLine: String;
   Outcome, ErrorText: AnsiString;
   ResultCode: Integer;
-  Progress: TOutputProgressWizardPage;
+  Progress: TOutputMarqueeProgressWizardPage;
   CancelWasEnabled: Boolean;
 begin
   Result := '';
@@ -296,15 +377,15 @@ begin
   WorkDirectory := ExpandConstant('{tmp}\vc-runtime');
   LogDirectory := ExpandConstant('{localappdata}\{#AppName}\setup-logs\') +
     ExtractFileName(ExpandConstant('{tmp}'));
-  Progress := CreateOutputProgressPage('Preparing Microsoft Visual C++ runtime',
-    'Checking the system libraries needed by ESPImageServer.');
-  Progress.SetText('Checking and preparing the Microsoft Visual C++ x64 runtime...',
-    'If Windows asks for administrator approval, approve the Microsoft runtime installer. Please wait for this step to finish.');
-  Progress.SetProgress(0, 1);
+  Progress := CreateOutputMarqueeProgressPage('Preparing Microsoft Visual C++ runtime',
+    'This step may take several minutes. Please keep setup open.');
+  Progress.SetText(VcRuntimeStageMessage(''),
+    'Elapsed: 0:00. Approve the Microsoft prompt if asked.');
   VcRuntimeRunning := True;
   CancelWasEnabled := WizardForm.CancelButton.Enabled;
   WizardForm.CancelButton.Enabled := False;
   Progress.Show;
+  Progress.Animate;
   try
     try
       if not ForceDirectories(WorkDirectory) then
@@ -312,15 +393,17 @@ begin
       { A retry must never accept an earlier helper result. }
       DeleteFile(WorkDirectory + '\outcome.txt');
       DeleteFile(WorkDirectory + '\error.txt');
-      if FileExists(WorkDirectory + '\outcome.txt') or FileExists(WorkDirectory + '\error.txt') then
+      DeleteFile(WorkDirectory + '\progress.txt');
+      DeleteFile(WorkDirectory + '\progress.pending');
+      if FileExists(WorkDirectory + '\outcome.txt') or FileExists(WorkDirectory + '\error.txt') or
+        FileExists(WorkDirectory + '\progress.txt') or FileExists(WorkDirectory + '\progress.pending') then
         RaiseException('Could not clear the previous runtime prerequisite result.');
       ExtractTemporaryFile('ensure-vc-runtime.ps1');
       CommandLine := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
         ExpandConstant('{tmp}\ensure-vc-runtime.ps1') + '" -WorkDirectory "' +
         WorkDirectory + '" -LogDirectory "' + LogDirectory + '"';
-      if not Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'),
-        CommandLine, ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-        RaiseException('Could not start the Visual C++ runtime check: ' + SysErrorMessage(ResultCode));
+      ResultCode := RunVcRuntimeHelper(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'),
+        CommandLine, WorkDirectory, Progress);
       Outcome := '';
       ErrorText := '';
       LoadStringFromFile(WorkDirectory + '\outcome.txt', Outcome);

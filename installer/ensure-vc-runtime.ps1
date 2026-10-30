@@ -15,6 +15,23 @@ function Write-VcRuntimeLog([string]$Message) {
     Write-Host $Message
 }
 
+function Write-VcRuntimeStage([string]$Directory, [string]$Stage) {
+    # Publish whole stage tokens so the wizard never reads a partially written
+    # message. Feedback is best-effort and must not fail a runtime transaction.
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        try {
+            $pending = Join-Path $Directory 'progress.pending'
+            [IO.File]::WriteAllText($pending, $Stage, [Text.Encoding]::ASCII)
+            Move-Item -LiteralPath $pending -Destination (Join-Path $Directory 'progress.txt') -Force -ErrorAction Stop
+            return
+        } catch {
+            # The wizard may briefly hold the old file open while reading it.
+            if ($attempt -lt 2) { Start-Sleep -Milliseconds 25 }
+        }
+    }
+    Write-Host 'Runtime progress feedback is temporarily unavailable.'
+}
+
 function Receive-VcRedistributable([string]$Destination) {
     $previousProtocol = [Net.ServicePointManager]::SecurityProtocol
     $previousProgress = $ProgressPreference
@@ -112,25 +129,31 @@ function Invoke-VcRuntimePrerequisite([string]$WorkDirectory, [string]$LogDirect
     $download = Join-Path $WorkDirectory 'vc_redist.x64.exe'
     $installerLog = Join-Path $LogDirectory 'vc-redist.log'
     try {
+        Write-VcRuntimeStage $WorkDirectory 'download'
         Write-VcRuntimeLog "Downloading Microsoft's current Visual C++ x64 runtime from $VcRedistributableUrl"
         try {
             Receive-VcRedistributable $download
         } catch {
             throw "Unable to download the Visual C++ x64 runtime. Check your internet connection and retry setup. $($_.Exception.Message)"
         }
+        Write-VcRuntimeStage $WorkDirectory 'verify'
         $required = Get-VcRedistributableVersion $download
         Write-VcRuntimeLog "Verified Microsoft Visual C++ x64 Redistributable version $required."
+        Write-VcRuntimeStage $WorkDirectory 'check'
         $installed = Get-InstalledVcRuntimeVersion
         if ($null -ne $installed -and $installed -ge $required -and (Test-VcRuntimeFiles $required)) {
             Write-VcRuntimeLog "Visual C++ x64 runtime $installed is already installed."
+            Write-VcRuntimeStage $WorkDirectory 'ready'
             return 0
         }
         $operation = if ($null -ne $installed -and $installed -ge $required) { '/repair' } else { '/install' }
+        Write-VcRuntimeStage $WorkDirectory $operation.TrimStart('/')
         Write-VcRuntimeLog "Preparing the Visual C++ x64 runtime ($operation). Approve the Windows administrator prompt if shown."
         $exitCode = Invoke-VcRedistributable $download $operation $installerLog
         Write-VcRuntimeLog "Microsoft runtime setup exited with code $exitCode. Details: $installerLog"
         if ($exitCode -eq 3010) {
             Write-VcRuntimeLog 'The Visual C++ runtime requires a Windows restart. Restart, then run ESPImageServer setup again.'
+            Write-VcRuntimeStage $WorkDirectory 'restart'
             return 3010
         }
         if ($exitCode -in @(1223, -2147023673, 1602, -2147023294)) {
@@ -141,11 +164,13 @@ function Invoke-VcRuntimePrerequisite([string]$WorkDirectory, [string]$LogDirect
         if ($exitCode -notin @(0, 1638, -2147023258)) {
             throw "Visual C++ x64 runtime installation failed (exit code $exitCode). See $installerLog."
         }
+        Write-VcRuntimeStage $WorkDirectory 'validate'
         $installed = Get-InstalledVcRuntimeVersion
         if ($null -eq $installed -or $installed -lt $required -or -not (Test-VcRuntimeFiles $required)) {
             throw "The required Visual C++ x64 runtime is still missing or incomplete. Repair the Microsoft Visual C++ x64 Redistributable and retry setup. See $installerLog."
         }
         Write-VcRuntimeLog "Visual C++ x64 runtime $installed is ready."
+        Write-VcRuntimeStage $WorkDirectory 'ready'
         return 0
     } finally {
         # The work directory belongs to this setup invocation. Never remove a

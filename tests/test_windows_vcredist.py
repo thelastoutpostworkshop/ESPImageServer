@@ -56,8 +56,14 @@ $script:registrationReads = 0
 $script:fileChecks = 0
 $script:installCalls = [Collections.Generic.List[object]]::new()
 $script:messages = [Collections.Generic.List[string]]::new()
+$script:stages = [Collections.Generic.List[string]]::new()
 function Write-VcRuntimeLog([string]$Message) { $script:messages.Add($Message) }
+function Write-VcRuntimeStage([string]$Directory, [string]$Stage) {
+    Assert-True ($Directory.StartsWith($FixtureRoot + [IO.Path]::DirectorySeparatorChar)) 'Stage stays inside fixture'
+    $script:stages.Add($Stage)
+}
 function Receive-VcRedistributable([string]$Destination) {
+    Assert-Equal $script:stages[-1] 'download' 'Publish download feedback before the network operation'
     $script:downloads += 1
     if ($script:downloadFailure) { throw 'Synthetic network failure' }
     Assert-True ($Destination.StartsWith($FixtureRoot + [IO.Path]::DirectorySeparatorChar)) 'Download stays inside fixture'
@@ -65,6 +71,7 @@ function Receive-VcRedistributable([string]$Destination) {
     [IO.File]::WriteAllBytes($Destination, [byte[]](0))
 }
 function Get-VcRedistributableVersion([string]$Path) {
+    Assert-Equal $script:stages[-1] 'verify' 'Publish validation feedback before checking the signature'
     $script:signatureChecks += 1
     Assert-True ([IO.File]::Exists($Path)) 'Validate downloaded file before use'
     if ($script:signatureFailure) { throw 'Synthetic invalid Microsoft signature' }
@@ -80,6 +87,7 @@ function Test-VcRuntimeFiles([version]$RequiredVersion) {
     return $script:filesValid
 }
 function Invoke-VcRedistributable([string]$Path, [string]$Operation, [string]$LogPath) {
+    Assert-Equal $script:stages[-1] $Operation.TrimStart('/') 'Publish install/repair feedback before the blocking transaction'
     Assert-True ([IO.File]::Exists($Path)) 'Only invoke the downloaded fixture'
     Assert-Equal $script:signatureChecks 1 'Verify package before invoking it'
     Assert-True ($LogPath.StartsWith($FixtureRoot + [IO.Path]::DirectorySeparatorChar)) 'Logs stay inside fixture'
@@ -119,6 +127,7 @@ $script:filesValid = $true
 Assert-Equal (Run-Prerequisite) 0 'Healthy runtime satisfies prerequisite'
 Assert-Equal $script:installCalls.Count 0 'Do not reinstall or downgrade a working runtime'
 Assert-Equal $script:signatureChecks 1 'The required version comes from a validated package'
+Assert-Equal $script:stages[-1] 'ready' 'A verified existing runtime reports ready'
 ''')
 
 
@@ -131,6 +140,7 @@ Assert-Equal $script:installCalls.Count 1 'Only one prerequisite install'
 Assert-Equal $script:installCalls[0].Operation '/install' 'Install instead of repair'
 Assert-True ($script:registrationReads -ge 2) 'Re-read registration after installation'
 Assert-True ($script:fileChecks -ge 1) 'Check runtime DLLs after installation'
+Assert-Equal $script:stages[-1] 'ready' 'Report ready only after the post-install checks'
 ''')
 
 
@@ -152,6 +162,7 @@ Assert-Equal (Run-Prerequisite) 3010 'Propagate restart requirement to Inno'
 Assert-Equal $script:installCalls.Count 1 'Run the prerequisite once'
 Assert-Equal $script:registrationReads 1 'Do not use registry changes as proof before restart'
 Assert-True (-not $script:filesValid) 'Fixture still requires restart'
+Assert-Equal $script:stages[-1] 'restart' 'A pending restart must not appear ready'
 ''')
 
 
@@ -162,6 +173,7 @@ $script:installCompletes = $false
 Assert-Fails { Run-Prerequisite } 'runtime|installed|verif|version'
 Assert-Equal $script:installCalls.Count 1 'Never loop installation on a failed postcondition'
 Assert-True ($script:registrationReads -ge 2) 'Validate registration even when the process claims success'
+Assert-True (-not $script:stages.Contains('ready')) 'Failed postconditions never publish ready'
 ''')
 
 
@@ -392,4 +404,51 @@ $script:waitFailure = $true
 Assert-Fails { Invoke-VcRedistributable 'fixture.exe' '/install' 'fixture log.txt' } 'process-wait failure'
 Assert-Equal $script:exitCodeReads 0 'Do not claim an exit code after a failed wait'
 Assert-ProcessReleased
+''', mocks=False)
+
+
+def test_stage_file_replaces_whole_message_without_publishing_partial_bytes(tmp_path):
+    run_powershell(tmp_path, r'''
+$directory = Join-Path $FixtureRoot 'stage feedback'
+$null = [IO.Directory]::CreateDirectory($directory)
+foreach ($stage in @('download', 'verify', 'install', 'validate', 'ready')) {
+    Write-VcRuntimeStage $directory $stage
+    Assert-Equal ([IO.File]::ReadAllText((Join-Path $directory 'progress.txt'))) $stage 'Publish the complete latest stage'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $directory 'progress.pending'))) 'No incomplete progress file remains after publication'
+}
+''', mocks=False)
+
+
+def test_stage_publication_retries_short_file_sharing_collisions(tmp_path):
+    run_powershell(tmp_path, r'''
+$directory = Join-Path $FixtureRoot 'stage feedback'
+$null = [IO.Directory]::CreateDirectory($directory)
+$script:moveAttempts = 0
+function Move-Item {
+    [CmdletBinding()]
+    param([string]$LiteralPath, [string]$Destination, [switch]$Force)
+    $script:moveAttempts += 1
+    if ($script:moveAttempts -lt 3) { throw [IO.IOException]::new('Synthetic brief read lock') }
+    Microsoft.PowerShell.Management\Move-Item -LiteralPath $LiteralPath -Destination $Destination -Force:$Force
+}
+Write-VcRuntimeStage $directory 'install'
+Assert-Equal $script:moveAttempts 3 'Retry a short sharing collision before the long runtime transaction'
+Assert-Equal ([IO.File]::ReadAllText((Join-Path $directory 'progress.txt'))) 'install' 'Publish the current stage after the reader releases the file'
+''', mocks=False)
+
+
+def test_unavailable_feedback_does_not_fail_the_runtime_transaction(tmp_path):
+    run_powershell(tmp_path, r'''
+$directory = Join-Path $FixtureRoot 'stage feedback'
+$null = [IO.Directory]::CreateDirectory($directory)
+Write-VcRuntimeStage $directory 'download'
+$path = Join-Path $directory 'progress.txt'
+$lock = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+try {
+    # A temporarily locked feedback file must never abort Microsoft's setup.
+    Write-VcRuntimeStage $directory 'install'
+} finally { $lock.Dispose() }
+Assert-Equal ([IO.File]::ReadAllText($path)) 'download' 'A failed publication leaves the previous whole stage'
+Write-VcRuntimeStage $directory 'ready'
+Assert-Equal ([IO.File]::ReadAllText($path)) 'ready' 'Later feedback can recover normally'
 ''', mocks=False)
