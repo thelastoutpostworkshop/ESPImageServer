@@ -93,7 +93,7 @@ type
 
 var
   HardwarePage: TOutputMsgWizardPage;
-  BootstrapProgress: TOutputProgressWizardPage;
+  BootstrapProgress: TOutputMarqueeProgressWizardPage;
   BootstrapOutput: TNewMemo;
   BootstrapCancelButton: TNewButton;
   BootstrapCancelRequested, BootstrapCancelled: Boolean;
@@ -130,8 +130,10 @@ external 'GetCurrentProcessId@kernel32.dll stdcall';
 function BootstrapLastError: Longword;
 external 'GetLastError@kernel32.dll stdcall';
 
-function VcRuntimeTickCount: Int64;
+function SetupTickCount: Int64;
 external 'GetTickCount64@kernel32.dll stdcall';
+
+#include "bootstrap-progress.iss"
 
 function InitializeSetup: Boolean;
 var
@@ -323,7 +325,7 @@ begin
     $08000000, 0, WorkDirectory, StartupInfo, ProcessInfo) then
     RaiseException('Could not start the Visual C++ runtime check: ' + SysErrorMessage(BootstrapLastError));
   BootstrapCloseHandle(ProcessInfo.ThreadHandle);
-  StartedAt := VcRuntimeTickCount;
+  StartedAt := SetupTickCount;
   LastSecond := -1;
   LastStage := '';
   Stage := '';
@@ -336,7 +338,7 @@ begin
       StageText := '';
       if LoadStringFromFile(WorkDirectory + '\progress.txt', StageText) then
         Stage := Trim(String(StageText));
-      ElapsedSeconds := (VcRuntimeTickCount - StartedAt) div 1000;
+      ElapsedSeconds := (SetupTickCount - StartedAt) div 1000;
       if (ElapsedSeconds <> LastSecond) or (Stage <> LastStage) then begin
         Progress.SetText(VcRuntimeStageMessage(Stage),
           Format('Elapsed: %d:%.2d. Approve the Microsoft prompt if asked.', [
@@ -463,7 +465,9 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultText, ErrorText: AnsiString;
   ExitCode, WaitResult: Longword;
-  CancelPolls: Integer;
+  CancelPolls, Step, LastStep, ElapsedSeconds, LastSecond: Integer;
+  Message, LastMessage: String;
+  StartedAt: Int64;
   CancelSent, WizardCancelWasEnabled: Boolean;
 begin
   if CurStep <> ssPostInstall then
@@ -474,11 +478,15 @@ begin
   BootstrapFailure := 'Setup did not finish.';
   BootstrapControlDirectory := ExpandConstant('{tmp}\bootstrap-control');
 
-  BootstrapProgress := CreateOutputProgressPage('Installing ESPImageServer',
+  BootstrapProgress := CreateOutputMarqueeProgressPage('Installing ESPImageServer',
     'Setting up the local image and video generation environment.');
-  BootstrapProgress.SetProgress(1, 6);
-  BootstrapProgress.SetText('Installing the local image and video generation environment...',
-    'This can take several minutes while PyTorch and ESPImageServer are prepared. Please keep this window open.');
+  Message := 'Starting Python package setup...';
+  Step := 0;
+  LastStep := -1;
+  LastMessage := '';
+  LastSecond := -1;
+  StartedAt := SetupTickCount;
+  BootstrapProgress.SetText(Message, BootstrapElapsedCaption(0));
   BootstrapOutput := TNewMemo.Create(BootstrapProgress);
   BootstrapOutput.Left := 0;
   BootstrapOutput.Top := BootstrapProgress.ProgressBar.Top + BootstrapProgress.ProgressBar.Height + ScaleY(12);
@@ -486,11 +494,9 @@ begin
   BootstrapOutput.Height := BootstrapProgress.SurfaceHeight - BootstrapOutput.Top - ScaleY(38);
   BootstrapOutput.ScrollBars := ssVertical;
   BootstrapOutput.ReadOnly := True;
-  BootstrapOutput.Text := 'Installation is in progress.' + #13#10 + #13#10 +
-    '- Preparing the bundled private Python runtime' + #13#10 +
-    '- Installing PyTorch and ESPImageServer packages' + #13#10 +
-    '- Models will download only when selected in the app' + #13#10 + #13#10 +
-    'The installer will continue automatically when this is complete.';
+  BootstrapOutput.Text := 'Large packages can take several minutes to download and install.' + #13#10 +
+    'Models will download when you select them in the app.' + #13#10 + #13#10 +
+    'Setup activity:';
   BootstrapOutput.Parent := BootstrapProgress.Surface;
   BootstrapCancelButton := TNewButton.Create(BootstrapProgress);
   BootstrapCancelButton.Caption := 'Cancel installation';
@@ -533,8 +539,25 @@ begin
             RaiseException('Installation was cancelled. The unresponsive setup supervisor was stopped.');
           end;
         end;
-        { SetProgress pumps messages, including the Cancel button and window Close. }
-        BootstrapProgress.SetProgress(1, 6);
+        { This setup's temp directory cannot contain a previous run's status.
+          Never let a late progress update overwrite cancellation feedback. }
+        if not BootstrapCancelRequested then begin
+          ReadBootstrapProgress(BootstrapControlDirectory + '\progress.txt', Step, Message);
+          ElapsedSeconds := (SetupTickCount - StartedAt) div 1000;
+          if (Step <> LastStep) or (Message <> LastMessage) then begin
+            { Bound the activity history even if a worker repeats many updates. }
+            if BootstrapOutput.Lines.Count >= 16 then BootstrapOutput.Lines.Delete(4);
+            BootstrapOutput.Lines.Add(BootstrapProgressCaption(Step, Message));
+          end;
+          if (ElapsedSeconds <> LastSecond) or (Step <> LastStep) or (Message <> LastMessage) then
+            BootstrapProgress.SetText(BootstrapProgressCaption(Step, Message),
+              BootstrapElapsedCaption(ElapsedSeconds));
+          LastStep := Step;
+          LastMessage := Message;
+          LastSecond := ElapsedSeconds;
+        end;
+        { Animate pumps messages, including Cancel, throughout long downloads. }
+        BootstrapProgress.Animate;
         Sleep(250);
       until False;
 
@@ -560,7 +583,6 @@ begin
           IntToStr(ExitCode) + '). It may have been blocked or stopped before it could write a result.');
       end;
       BootstrapSucceeded := True;
-      BootstrapProgress.SetProgress(6, 6);
       BootstrapProgress.SetText('Installation complete.', 'ESPImageServer is ready to start.');
     except
       BootstrapFailure := GetExceptionMessage;

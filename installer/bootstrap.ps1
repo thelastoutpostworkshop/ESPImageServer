@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$UseCuda
+    [switch]$UseCuda,
+    [string]$ProgressDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,8 +66,28 @@ function Invoke-LoggedExternal([string]$Command, [string[]]$Arguments) {
     return $exitCode
 }
 
+function Write-InstallProgress([string]$Path, [string]$Text) {
+    # Publish a whole status record. A brief wizard read lock or unavailable
+    # feedback file must not abort package installation or runtime activation.
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        try {
+            if (-not [IO.Path]::IsPathRooted($Path)) { return }
+            [IO.File]::WriteAllText(($Path + '.pending'), $Text, [Text.UTF8Encoding]::new($false))
+            Move-Item -LiteralPath ($Path + '.pending') -Destination $Path -Force -ErrorAction Stop
+            return
+        } catch {
+            if ($attempt -lt 2) { Start-Sleep -Milliseconds 25 }
+        }
+    }
+    Remove-Item -LiteralPath ($Path + '.pending') -Force -ErrorAction SilentlyContinue
+    Write-Host 'Setup progress feedback is temporarily unavailable.'
+}
+
 function Set-InstallStatus([int]$Step, [string]$Message) {
-    Write-SharedText $statusPath "$Step|$Message"
+    if ($ProgressDirectory) {
+        Write-InstallProgress (Join-Path $ProgressDirectory 'progress.txt') "$Step|$Message"
+    }
+    Write-InstallProgress $statusPath "$Step|$Message"
     Write-InstallLog "[$Step/6] $Message"
 }
 
@@ -241,10 +262,11 @@ try {
     }
     $torchIndexUrl = if ($UseCuda) { 'https://download.pytorch.org/whl/cu128' } else { 'https://download.pytorch.org/whl/cpu' }
     Write-InstallLog "Using the bundled private Python runtime, $constraintsFileName, and the selected PyTorch wheel index."
-    Set-InstallStatus 2 'Installing the pinned Python and PyTorch packages...'
+    Set-InstallStatus 2 'Updating the Python package installer...'
     if ((Invoke-LoggedExternal $runtimePython @('-I', '-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile, 'pip')) -ne 0) {
         throw 'Unable to install the pinned pip version.'
     }
+    Set-InstallStatus 2 'Downloading and installing PyTorch...'
     if ((Invoke-LoggedExternal $runtimePython @('-I', '-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile, '--index-url', $torchIndexUrl, '--extra-index-url', 'https://pypi.org/simple', 'torch', 'torchvision')) -ne 0) {
         throw 'Unable to install the pinned PyTorch and torchvision packages.'
     }
@@ -256,7 +278,7 @@ try {
         if (-not (Test-Path -LiteralPath $gpuCheckPath -PathType Leaf)) {
             throw 'The GPU validation script is missing. Run the installer again.'
         }
-        Write-InstallLog 'Checking NVIDIA CUDA with a small GPU computation...'
+        Set-InstallStatus 2 'Checking NVIDIA GPU support...'
         $gpuCheckExitCode = Invoke-LoggedExternal $runtimePython @('-I', $gpuCheckPath)
         switch ($gpuCheckExitCode) {
             0 { }
@@ -268,16 +290,18 @@ try {
         }
     }
 
-    Set-InstallStatus 3 'Installing pinned ESPImageServer packages...'
+    Set-InstallStatus 3 'Downloading and installing ESPImageServer packages...'
     $applicationInstallArguments = @('-I', '-m', 'pip', 'install', '--upgrade', '--constraint', $constraintsFile)
     if ($UseCuda) { $applicationInstallArguments += @('--extra-index-url', $torchIndexUrl) }
     $applicationInstallArguments += @('-r', (Join-Path $stagedRuntime 'generation-requirements.txt'))
     if ((Invoke-LoggedExternal $runtimePython $applicationInstallArguments) -ne 0) {
         throw 'Unable to install the pinned ESPImageServer dependencies.'
     }
+    Set-InstallStatus 3 'Checking installed package dependencies...'
     if ((Invoke-LoggedExternal $runtimePython @('-I', '-m', 'pip', 'check')) -ne 0) {
         throw 'The installed Python dependencies are inconsistent. See bootstrap.log and retry setup.'
     }
+    Set-InstallStatus 3 'Checking Python imports and video tools...'
     Invoke-RuntimeSetup $runtimePython 'verify' $stagedRuntime
 
     Set-InstallStatus 4 'Recording installed package versions...'
@@ -293,13 +317,14 @@ try {
 set "ESP_IMAGE_MODEL_CACHE=%LOCALAPPDATA%\ESPImageServer\models"
 "@ | Set-Content -LiteralPath $settingsFile -Encoding ascii
 
+    Set-InstallStatus 5 'Activating and checking the Python runtime...'
     Complete-RuntimePromotion $projectRoot $stagedRuntime {
         param($activeRuntime)
         Invoke-RuntimeSetup (Join-Path $activeRuntime 'python.exe') 'verify' $activeRuntime
     }
     $stagedRuntime = $null
     Write-InstallLog 'Models will download when you select one in ESPImageServer.'
-    Set-InstallStatus 6 'Environment is ready. Finishing installation...'
+    Set-InstallStatus 6 'Finishing installation...'
     Set-Content -LiteralPath $resultPath -Value 'success' -Encoding ascii
 } catch {
     Write-InstallLog "ERROR: $($_.Exception.Message)"

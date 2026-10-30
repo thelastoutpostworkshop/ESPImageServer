@@ -64,7 +64,8 @@ try {
             $exitCode = 2
             $failure = 'Installation was cancelled before bootstrap started.'
         } else {
-            $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $BootstrapPath)
+            $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $BootstrapPath,
+                '-ProgressDirectory', $ControlDirectory)
             if ($UseCuda) { $arguments += '-UseCuda' }
             $worker = [EspImageServer.Setup.BootstrapProcess]::Start(
                 (Join-Path $PSHOME 'powershell.exe'), [string[]]$arguments,

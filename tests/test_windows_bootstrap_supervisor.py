@@ -31,10 +31,10 @@ def ps_string(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def write_script(path, body):
+def write_script(path, body, parameters=""):
     path.parent.mkdir(parents=True, exist_ok=True)
     # Windows PowerShell 5.1 needs a BOM for Unicode fixture source text.
-    path.write_text("$ErrorActionPreference = 'Stop'\n" + body, encoding="utf-8-sig")
+    path.write_text(parameters + "\n$ErrorActionPreference = 'Stop'\n" + body, encoding="utf-8-sig")
     return path
 
 
@@ -84,8 +84,8 @@ class FixtureProcess:
 
 @contextmanager
 def running_supervisor(tmp_path, body, *, parent_pid=None, seed_result=None, worker_name="worker.ps1",
-                       cancel_before_start=False):
-    worker = write_script(tmp_path / worker_name, body)
+                       cancel_before_start=False, parameters=""):
+    worker = write_script(tmp_path / worker_name, body, parameters)
     control = tmp_path / "control"
     control.mkdir()
     if cancel_before_start:
@@ -121,6 +121,20 @@ def finish(process, control, outcome):
 
 
 SUCCESS = "Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value 'success' -Encoding ascii\n"
+
+
+def test_worker_receives_current_progress_directory_and_feedback_cannot_imply_success(tmp_path):
+    body = r'''
+if (-not [IO.Path]::IsPathRooted($ProgressDirectory)) { throw 'Missing progress directory' }
+[IO.File]::WriteAllText((Join-Path $ProgressDirectory 'progress.txt'), '6|Finishing installation...')
+exit 17
+'''
+    with running_supervisor(
+        tmp_path / "setup é 日本語", body,
+        parameters="[CmdletBinding()]\nparam([string]$ProgressDirectory, [switch]$UseCuda)",
+    ) as (process, control, _):
+        assert "code 17" in finish(process, control, "failed")
+        assert (control / "progress.txt").read_text() == "6|Finishing installation..."
 
 
 @pytest.mark.parametrize("body,seed_result,expected_error", [

@@ -113,11 +113,11 @@ jobs:
             choco install innosetup --yes --no-progress
             if ($LASTEXITCODE -ne 0) { throw 'Could not install the CI Inno Setup compiler.' }
           }
-      - name: Verify Windows source packaging excludes development metadata
+      - name: Verify Windows source packaging and setup progress
         if: runner.os == 'Windows'
         env:
           ESP_REQUIRE_INNO_TEST: '1'
-        run: python -m pytest tests/test_windows_source_packaging.py -q
+        run: python -m pytest tests/test_windows_source_packaging.py tests/test_windows_bootstrap_progress.py -q
       - name: Windows installer upgrade and user-data preservation
         if: runner.os == 'Windows'
         run: python ci/verify-windows-upgrade.py
