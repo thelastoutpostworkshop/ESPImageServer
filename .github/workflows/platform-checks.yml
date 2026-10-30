@@ -27,6 +27,31 @@ jobs:
       CUDA_VISIBLE_DEVICES: ''
     steps:
       - uses: actions/checkout@v6
+      - name: Reserve disk space for the CUDA dependency check
+        shell: bash
+        run: |
+          # Only this disposable hosted job removes these unused toolchains.
+          # Keep Python, Node, compilers, and the libraries used by the app.
+          if [[ "$RUNNER_ENVIRONMENT" != 'github-hosted' || "$RUNNER_OS" != 'Linux' ]]; then
+            echo '::error::Disk preparation requires a disposable GitHub-hosted Linux runner.'
+            exit 1
+          fi
+          df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP" /tmp
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet
+          python3 - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          # Allow for installed CUDA libraries, cached wheels, and pip's
+          # temporary extraction space, while preserving the real setup path.
+          required = 24 * 1024**3
+          for path in (Path.cwd(), Path(os.environ['RUNNER_TEMP']), Path('/tmp')):
+              free = shutil.disk_usage(path).free
+              print(f'{path}: {free / 1024**3:.1f} GiB available', flush=True)
+              if free < required:
+                  raise SystemExit(f'::error::CUDA setup needs at least 24 GiB free at {path}.')
+          PY
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -42,6 +67,14 @@ jobs:
         run: python installer/build-native-runtime.py dist/setup-backend
       - name: Download, verify, reuse, and recover generation dependencies
         run: python ci/verify-generation-setup.py dist/setup-backend dist/user-generation-runtime
+      - name: Report generation check disk usage
+        if: always()
+        shell: bash
+        run: |
+          df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP" /tmp
+          if [[ -d dist/user-generation-runtime ]]; then
+            du -h --max-depth=2 dist/user-generation-runtime
+          fi
   tests:
     name: ${{ matrix.label }}
     strategy:

@@ -1,6 +1,6 @@
 """Exercise the production GPU-check invocation under Windows PowerShell 5.1.
 
-Only the GPU block and logging function are evaluated; the bootstrap installer
+Only the GPU block and its helper functions are evaluated; the bootstrap installer
 body is never executed. A local fake torch module records checks and computation
 without importing real PyTorch, touching a GPU, or installing anything.
 """
@@ -28,12 +28,13 @@ $tokens = $null
 $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($Bootstrap, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
-$function = @($ast.EndBlock.Statements | Where-Object {
-    $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and
-    $_.Name -eq 'Invoke-LoggedExternal'
-})
-if ($function.Count -ne 1) { throw 'Missing production invocation helper' }
-. ([scriptblock]::Create($function[0].Extent.Text))
+foreach ($name in @('Invoke-LoggedExternal', 'Write-InstallProgress', 'Set-InstallStatus')) {
+    $function = @($ast.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -eq $name
+    })
+    if ($function.Count -ne 1) { throw "Missing production helper: $name" }
+    . ([scriptblock]::Create($function[0].Extent.Text))
+}
 $gpuBlock = @($ast.FindAll({ param($node)
     $node -is [Management.Automation.Language.IfStatementAst] -and
     $node.Extent.Text.Contains("'verify-gpu.py'")
@@ -43,6 +44,9 @@ function Write-InstallLog([string]$Message) { Write-Host $Message }
 $UseCuda = $true
 $runtimePython = $Interpreter
 $projectRoot = $FixtureRoot
+$statusPath = Join-Path $FixtureRoot 'installer_status.txt'
+$ProgressDirectory = Join-Path $FixtureRoot 'control'
+$null = New-Item -ItemType Directory -Path $ProgressDirectory
 $gpuCheckExitCode = $null
 $failure = $null
 $global:LASTEXITCODE = 0
@@ -152,6 +156,10 @@ def run_validation(tmp_path, scenario="success", *, check_source=None, missing_s
         env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    if not missing_script:
+        expected_progress = "2|Checking NVIDIA GPU support..."
+        assert (fixture / "control/progress.txt").read_text(encoding="utf-8") == expected_progress
+        assert (fixture / "installer_status.txt").read_text(encoding="utf-8") == expected_progress
     details = json.loads(outcome.read_text(encoding="utf-8-sig"))
     calls_path = site / "calls.jsonl"
     calls = [json.loads(line) for line in calls_path.read_text(encoding="utf-8").splitlines()] if calls_path.exists() else []

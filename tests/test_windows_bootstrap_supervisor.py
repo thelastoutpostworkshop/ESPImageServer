@@ -76,7 +76,11 @@ class FixtureProcess:
     def close(self):
         try:
             if not self.stopped():
-                assert kernel32().TerminateProcess(self.handle, 99), ctypes.get_last_error()
+                if not kernel32().TerminateProcess(self.handle, 99):
+                    # Termination can win the race with this cleanup call.
+                    # ERROR_ACCESS_DENIED is expected for an already exiting
+                    # process; still require its retained handle to signal.
+                    assert ctypes.get_last_error() == 5, ctypes.get_last_error()
                 assert kernel32().WaitForSingleObject(self.handle, 5000) == 0
         finally:
             kernel32().CloseHandle(self.handle)
@@ -118,6 +122,15 @@ def finish(process, control, outcome):
         assert error, diagnostic
         return error
     return ""
+
+
+def wait_for_tree_exit(descendants):
+    # TerminateJobObject initiates asynchronous TerminateProcess calls. The
+    # supervisor requires zero active job members, but process handles can
+    # signal later as Windows finishes pending I/O and kernel teardown. Keep a
+    # bounded wait: a leaked fixture sleeps for 45 seconds and must still fail.
+    wait_until(lambda: all(child.stopped() for child in descendants),
+               "all retained process handles to signal", timeout=10)
 
 
 SUCCESS = "Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value 'success' -Encoding ascii\n"
@@ -245,7 +258,7 @@ def test_cancel_stops_worker_and_descendants_but_preserves_unrelated_process(tmp
             with retain_tree(tmp_path) as descendants:
                 (control / "cancel.request").touch()
                 finish(process, control, "cancelled")
-                assert all(child.stopped() for child in descendants), "Cancellation must wait for the entire job"
+                wait_for_tree_exit(descendants)
                 assert unrelated.poll() is None
 
 
@@ -254,7 +267,7 @@ def test_forced_supervisor_death_stops_its_process_tree(tmp_path):
         with retain_tree(tmp_path) as descendants:
             process.kill()
             process.communicate(timeout=10)
-            wait_until(lambda: all(child.stopped() for child in descendants), "kill-on-close job cleanup", timeout=10)
+            wait_for_tree_exit(descendants)
 
 
 def test_success_drains_leftover_descendants_before_reporting_completion(tmp_path):
@@ -262,7 +275,7 @@ def test_success_drains_leftover_descendants_before_reporting_completion(tmp_pat
         with retain_tree(tmp_path) as descendants:
             (tmp_path / "may-exit").touch()
             finish(process, control, "success")
-            assert all(child.stopped() for child in descendants)
+            wait_for_tree_exit(descendants)
 
 
 def test_parent_exit_cancels_and_drains_process_tree(tmp_path):
@@ -272,4 +285,4 @@ def test_parent_exit_cancels_and_drains_process_tree(tmp_path):
                 parent.kill()
                 parent.wait(timeout=10)
                 finish(process, control, "cancelled")
-                assert all(child.stopped() for child in descendants)
+                wait_for_tree_exit(descendants)
