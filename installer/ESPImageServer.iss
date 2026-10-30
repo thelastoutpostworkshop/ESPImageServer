@@ -38,7 +38,9 @@ UninstallDisplayName={#AppName}
 
 [Files]
 Source: "ensure-vc-runtime.ps1"; Flags: dontcopy
-Source: "..\src\*"; DestDir: "{app}\src"; Excludes: "__pycache__\*,*.pyc,*.egg-info\*"; Flags: recursesubdirs createallsubdirs ignoreversion
+; Package only application source. Developer metadata beside the package must
+; not become empty .egg-info directories that pip discovers as broken installs.
+Source: "..\src\esp_image_server\*"; DestDir: "{app}\src\esp_image_server"; Excludes: "__pycache__,__pycache__\*,*.pyc"; Flags: recursesubdirs ignoreversion
 Source: "..\frontend\dist\*"; DestDir: "{app}\web"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#DesktopBuildOutput}\*"; DestDir: "{app}\desktop"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#RuntimeBuildOutput}\.venv\*"; DestDir: "{app}\runtime-base"; Flags: recursesubdirs createallsubdirs ignoreversion

@@ -46,4 +46,6 @@ checks web assets and FFmpeg, and verifies failure behavior using harmless Inno
 fixtures. These checks do not establish GPU generation or interactive Windows
 installer acceptance. Use a freshly requested installer build in Sandbox for
 those installation checks; test actual generation separately on supported
-NVIDIA hardware.
+NVIDIA hardware. The [Sandbox test launcher and guide](../scripts/sandbox/README.md)
+prepare isolated inputs, collect guest logs, and exercise cancellation and retry
+without sharing the host installation or image library with the guest.
