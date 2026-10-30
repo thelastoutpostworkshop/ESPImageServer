@@ -32,12 +32,14 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#AppName}
 
 [Files]
+Source: "ensure-vc-runtime.ps1"; Flags: dontcopy
 Source: "..\src\*"; DestDir: "{app}\src"; Excludes: "__pycache__\*,*.pyc,*.egg-info\*"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\frontend\dist\*"; DestDir: "{app}\web"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#DesktopBuildOutput}\*"; DestDir: "{app}\desktop"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "verify-gpu.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bootstrap-supervisor.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "BootstrapProcess.cs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "constraints-cpu.txt"; DestDir: "{app}"; Flags: ignoreversion
@@ -82,6 +84,7 @@ var
   BootstrapFailure, BootstrapControlDirectory: String;
   BootstrapProcessHandle: Longword;
   NvidiaSummary: String;
+  VcRuntimeRunning, VcRuntimeReady, VcRuntimeRestartRequired: Boolean;
 
 procedure Sleep(Milliseconds: Longword);
 external 'Sleep@kernel32.dll stdcall';
@@ -173,6 +176,13 @@ end;
 
 procedure CancelButtonClick(CurPageID: Integer; var Cancel, Confirm: Boolean);
 begin
+  if VcRuntimeRunning then begin
+    { The Microsoft prerequisite can use an elevated Windows Installer service.
+      Let its transaction finish before allowing setup to close. }
+    Cancel := False;
+    Confirm := False;
+    Exit;
+  end;
   if BootstrapRunning then begin
     Cancel := False;
     Confirm := False;
@@ -239,6 +249,77 @@ begin
     'Generation requires a supported NVIDIA GPU and driver. Setup downloads the generation dependencies and tests a GPU computation. Memory needs vary by model; detection does not guarantee every model will fit. Models download when selected in the app.');
 end;
 
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  WorkDirectory, LogDirectory, CommandLine: String;
+  Outcome, ErrorText: AnsiString;
+  ResultCode: Integer;
+  Progress: TOutputProgressWizardPage;
+  CancelWasEnabled: Boolean;
+begin
+  Result := '';
+  if VcRuntimeRestartRequired then begin
+    NeedsRestart := True;
+    Result := 'Restart Windows to finish installing the Microsoft Visual C++ runtime, then run ESPImageServer setup again.';
+    Exit;
+  end;
+  if VcRuntimeReady then Exit;
+  WorkDirectory := ExpandConstant('{tmp}\vc-runtime');
+  LogDirectory := ExpandConstant('{localappdata}\{#AppName}\setup-logs\') +
+    ExtractFileName(ExpandConstant('{tmp}'));
+  Progress := CreateOutputProgressPage('Preparing Microsoft Visual C++ runtime',
+    'Checking the system libraries needed by ESPImageServer.');
+  Progress.SetText('Checking and preparing the Microsoft Visual C++ x64 runtime...',
+    'If Windows asks for administrator approval, approve the Microsoft runtime installer. Please wait for this step to finish.');
+  Progress.SetProgress(0, 1);
+  VcRuntimeRunning := True;
+  CancelWasEnabled := WizardForm.CancelButton.Enabled;
+  WizardForm.CancelButton.Enabled := False;
+  Progress.Show;
+  try
+    try
+      if not ForceDirectories(WorkDirectory) then
+        RaiseException('Could not create the runtime prerequisite work directory.');
+      { A retry must never accept an earlier helper result. }
+      DeleteFile(WorkDirectory + '\outcome.txt');
+      DeleteFile(WorkDirectory + '\error.txt');
+      if FileExists(WorkDirectory + '\outcome.txt') or FileExists(WorkDirectory + '\error.txt') then
+        RaiseException('Could not clear the previous runtime prerequisite result.');
+      ExtractTemporaryFile('ensure-vc-runtime.ps1');
+      CommandLine := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
+        ExpandConstant('{tmp}\ensure-vc-runtime.ps1') + '" -WorkDirectory "' +
+        WorkDirectory + '" -LogDirectory "' + LogDirectory + '"';
+      if not Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'),
+        CommandLine, ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+        RaiseException('Could not start the Visual C++ runtime check: ' + SysErrorMessage(ResultCode));
+      Outcome := '';
+      ErrorText := '';
+      LoadStringFromFile(WorkDirectory + '\outcome.txt', Outcome);
+      LoadStringFromFile(WorkDirectory + '\error.txt', ErrorText);
+      if (ResultCode = 3010) and (Trim(Outcome) = 'restart') then begin
+        VcRuntimeRestartRequired := True;
+        NeedsRestart := True;
+        Result := 'Restart Windows to finish installing the Microsoft Visual C++ runtime, then run ESPImageServer setup again.';
+      end else if (ResultCode = 0) and (Trim(Outcome) = 'success') then
+        VcRuntimeReady := True
+      else if Trim(ErrorText) <> '' then
+        Result := UTF8Decode(ErrorText)
+      else
+        Result := 'The Visual C++ runtime check did not finish successfully (exit code ' + IntToStr(ResultCode) + ').';
+    except
+      Result := GetExceptionMessage;
+    end;
+    if Result <> '' then begin
+      Result := Result + #13#10#13#10 + 'Runtime setup logs (if created): ' + LogDirectory;
+      Log(Result);
+    end;
+  finally
+    Progress.Hide;
+    WizardForm.CancelButton.Enabled := CancelWasEnabled;
+    VcRuntimeRunning := False;
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;
@@ -262,6 +343,7 @@ begin
     MemoGroupInfo + MemoTasksInfo + NewLine + 'Image and video generation:' + NewLine +
     Space + 'Hardware: NVIDIA CUDA acceleration' + NewLine +
     Space + NvidiaSummary + NewLine +
+    Space + 'Microsoft Visual C++ runtime: checked before installation; Windows may request administrator approval' + NewLine +
     Space + 'Models: choose and download them later in the app';
 end;
 

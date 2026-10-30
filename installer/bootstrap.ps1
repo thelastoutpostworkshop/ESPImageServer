@@ -43,6 +43,8 @@ function Invoke-LoggedExternal([string]$Command, [string[]]$Arguments) {
     $ErrorActionPreference = 'Continue'
     $exitCode = 1
     try {
+        # A failed process launch must not reuse a previous command's success.
+        $global:LASTEXITCODE = 1
         & $Command @Arguments 2>&1 | ForEach-Object {
             Write-InstallLog $_.ToString()
         }
@@ -253,12 +255,22 @@ try {
         throw 'Unable to install the pinned PyTorch and torchvision packages.'
     }
     if ($UseCuda) {
-        # Do not finish a CUDA-selected install with a CPU-only fallback wheel.
-        # This also gives a clear failure when the selected PC's NVIDIA driver
-        # cannot make CUDA available to PyTorch.
-        Write-Host 'Checking NVIDIA CUDA with a small GPU computation...'
-        if ((Invoke-LoggedExternal $venvPython @('-c', 'import torch; assert torch.version.cuda, "CPU-only PyTorch was installed"; assert torch.cuda.is_available(), "PyTorch cannot access a compatible NVIDIA GPU"; a = torch.ones((16, 16), device="cuda"); result = a @ a; torch.cuda.synchronize(); assert bool((result == 16).all().item()), "CUDA computation returned an incorrect result"; gpu = torch.cuda.get_device_properties(0); print(f"CUDA computation passed: {gpu.name}, {gpu.total_memory / (1024 ** 3):.1f} GiB total graphics memory, PyTorch {torch.__version__}")')) -ne 0) {
-            throw 'The NVIDIA CUDA computation check failed. See the preceding error. Confirm this computer has a supported NVIDIA GPU, install or update its driver, and run setup again.'
+        # A script file avoids Windows PowerShell 5.1 stripping embedded quotes
+        # from Python source. Explicit Python checks also work with optimization
+        # enabled, which would otherwise remove assert-based validation.
+        $gpuCheckPath = Join-Path $projectRoot 'verify-gpu.py'
+        if (-not (Test-Path -LiteralPath $gpuCheckPath -PathType Leaf)) {
+            throw 'The GPU validation script is missing. Run the installer again.'
+        }
+        Write-InstallLog 'Checking NVIDIA CUDA with a small GPU computation...'
+        $gpuCheckExitCode = Invoke-LoggedExternal $venvPython @($gpuCheckPath)
+        switch ($gpuCheckExitCode) {
+            0 { }
+            10 { throw 'PyTorch could not be loaded. See the preceding package or DLL error in bootstrap.log. Repair the Microsoft Visual C++ x64 runtime and Python/PyTorch installation, then retry setup.' }
+            11 { throw 'CPU-only PyTorch was installed. Setup requires the pinned CUDA-enabled PyTorch packages; see bootstrap.log and retry setup.' }
+            12 { throw 'PyTorch cannot access a compatible NVIDIA GPU. Confirm this computer has a supported NVIDIA GPU and install or update its driver, then retry setup.' }
+            13 { throw 'The NVIDIA CUDA computation check failed. See the preceding error in bootstrap.log. Check GPU support and the NVIDIA driver, then retry setup.' }
+            default { throw "The GPU validation process failed unexpectedly (exit code $gpuCheckExitCode). See bootstrap.log for details." }
         }
     }
 

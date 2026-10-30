@@ -61,8 +61,7 @@ def test_installer_requires_python_312_instead_of_using_the_default_launcher_ver
     assert "Python.Python.3.12" in bootstrap
     assert "return @('py')" not in bootstrap
     assert "--constraint" in bootstrap
-    assert "torch.version.cuda" in bootstrap
-    assert "torch.cuda.is_available()" in bootstrap
+    assert "'verify-gpu.py'" in bootstrap
     assert "CPU-only PyTorch was installed" in bootstrap
     assert "--extra-index-url" in bootstrap
     assert "pip', 'freeze', '--all" in bootstrap
@@ -73,3 +72,4 @@ def test_installer_requires_python_312_instead_of_using_the_default_launcher_ver
     assert 'requires = ["setuptools==84.0.0"]' in pyproject
     assert 'Source: "constraints-cpu.txt"; DestDir: "{app}"' in installer_definition
     assert 'Source: "constraints-cuda.txt"; DestDir: "{app}"' in installer_definition
+    assert 'Source: "verify-gpu.py"; DestDir: "{app}"' in installer_definition

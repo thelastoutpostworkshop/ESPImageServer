@@ -50,8 +50,20 @@ def main():
         desktop = stage / "desktop/release/win-unpacked"
         desktop.mkdir(parents=True)
         (desktop / "ESPImageServer.exe").write_bytes(b"CI fixture; never launched")
-        # Keep the real Inno [Code] and all file destinations. Only heavyweight
-        # bootstrap work is replaced with a deterministic completion fixture.
+        # Keep the real Inno [Code] and all file destinations. Replace both
+        # prerequisite installation and heavyweight bootstrap work with fixtures:
+        # this test must never download/install the system-wide VC++ runtime.
+        prerequisite_script = stage / "installer/ensure-vc-runtime.ps1"
+        prerequisite_prefix = '''param([string]$WorkDirectory, [string]$LogDirectory)
+$ErrorActionPreference = 'Stop'
+$null = New-Item -ItemType Directory -Path $WorkDirectory -Force
+'''
+        prerequisite_success = "Set-Content -LiteralPath (Join-Path $WorkDirectory 'outcome.txt') -Value 'success' -Encoding ascii\nexit 0\n"
+
+        def prerequisite_fixture(body):
+            prerequisite_script.write_text(prerequisite_prefix + body, encoding="utf-8")
+
+        prerequisite_fixture(prerequisite_success)
         (stage / "installer/bootstrap.ps1").write_text('''param([switch]$UseCuda)
 $ErrorActionPreference = 'Stop'
 Add-Content -LiteralPath (Join-Path $PSScriptRoot 'fixture-bootstrap-runs.txt') -Value 'completed'
@@ -67,9 +79,30 @@ Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value
             (stage / "installer/ESPImageServer.iss").write_text(script, encoding="utf-8")
             subprocess.run([compiler, "/Q", str(stage / "installer/ESPImageServer.iss")], check=True, timeout=180)
             return stage / "dist" / f"upgrade-{version}.exe"
-        previous = installer(OLD_VERSION)
-        latest = installer(current)
         try:
+            # Prerequisite failures must stop before copying the application or
+            # starting Python. Exercise Inno's dedicated failure/restart codes
+            # using only temporary files, without installing any prerequisite.
+            for scenario, body, expected_exit in (
+                ("prerequisite-failure", "Set-Content -LiteralPath (Join-Path $WorkDirectory 'error.txt') -Value 'Fixture runtime installation failed' -Encoding utf8\nexit 91\n", 7),
+                ("prerequisite-missing-result", "exit 0\n", 7),
+                ("prerequisite-success-then-error", "Set-Content -LiteralPath (Join-Path $WorkDirectory 'outcome.txt') -Value 'success' -Encoding ascii\nexit 91\n", 7),
+                ("prerequisite-restart", "Set-Content -LiteralPath (Join-Path $WorkDirectory 'outcome.txt') -Value 'restart' -Encoding ascii\nexit 3010\n", 8),
+            ):
+                prerequisite_fixture(body)
+                failure_package = installer(current)
+                result = subprocess.run(
+                    [str(failure_package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER",
+                     f"/DIR={installed}", f"/LOG={root / (scenario + '.log')}"],
+                    check=False, timeout=60,
+                )
+                assert result.returncode == expected_exit, f"{scenario}: expected {expected_exit}, got {result.returncode}"
+                assert registered_version() is None, f"{scenario}: app was registered before prerequisite completion"
+                assert not installed.exists() or not any(installed.iterdir()), f"{scenario}: app files were copied or bootstrap ran"
+
+            prerequisite_fixture(prerequisite_success)
+            previous = installer(OLD_VERSION)
+            latest = installer(current)
             saved = None
             for package, version, phase in ((previous, OLD_VERSION, "save"), (latest, current, "restart")):
                 subprocess.run([str(package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER",
@@ -110,7 +143,7 @@ Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value
             if uninstaller.exists():
                 subprocess.run([str(uninstaller), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], check=True, timeout=120)
         assert registered_version() is None
-    print("PASS: real Inno upgrade/data preservation and bootstrap failures return nonzero without hanging")
+    print("PASS: real Inno prerequisite failures/restart, upgrade/data preservation, and bootstrap failures")
 
 
 if __name__ == "__main__":

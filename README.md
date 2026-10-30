@@ -22,6 +22,8 @@ Choose the installer for your computer from the release's **Assets** list. Insta
 
 Both platforms require a supported NVIDIA GPU with CUDA for image and video generation. macOS installers are not included in the current release.
 
+On Windows, setup checks the Microsoft Visual C++ x64 runtime before installing the app. It downloads the current Microsoft package, verifies its signature, and installs or repairs it when needed. Windows may request administrator approval for this prerequisite. If a restart is required, restart Windows and run the ESPImageServer installer again. Runtime setup logs are kept in `%LOCALAPPDATA%\ESPImageServer\setup-logs`.
+
 The app checks for newer public GitHub releases at most once every 24 hours, including across restarts and failed attempts. An update notice links to the matching installer and release notes; close the app when you are ready to install the update. Use **About > Check for updates** for a manual check, which uses the cached result within the same 24-hour period, or turn off **Automatically check for app updates** in **Settings**; changes save automatically. Drafts and prereleases are ignored. While the repository is private or GitHub is unavailable, automatic checks stay quiet; the same feature starts notifying once a newer release with its installer and checksum is published publicly. Checks use public release metadata without a GitHub token.
 
 ## Supported boards
