@@ -84,12 +84,33 @@ Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value
                     (installed / ".venv").mkdir()
                     (installed / ".venv/upgrade-marker").write_text("keep runtime")
             assert (installed / "fixture-bootstrap-runs.txt").read_text().splitlines() == ["completed", "completed"]
+            # Exercise the real Inno process monitor and finished/exit state,
+            # using harmless workers instead of downloading dependencies.
+            # In particular, ssPostInstall exceptions alone do not make Inno
+            # return a failure exit code.
+            for scenario, script_name, body in (
+                ("early-exit", "bootstrap.ps1", "exit 17\n"),
+                ("missing-result", "bootstrap.ps1", "exit 0\n"),
+                ("success-then-error", "bootstrap.ps1", "Set-Content -LiteralPath (Join-Path $PSScriptRoot 'installer_result.txt') -Value 'success'\nexit 23\n"),
+                ("supervisor-early-exit", "bootstrap-supervisor.ps1", "exit 31\n"),
+            ):
+                (stage / "installer" / script_name).write_text(
+                    "param([switch]$UseCuda)\n" + body, encoding="utf-8"
+                )
+                failure_package = installer(current)
+                result = subprocess.run(
+                    [str(failure_package), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER",
+                     f"/DIR={installed}", f"/LOG={root / (scenario + '.log')}"],
+                    check=False, timeout=60,
+                )
+                assert result.returncode == 1, f"{scenario}: expected failed setup, got {result.returncode}"
+                assert_preserved(root / "user", saved)
         finally:
             uninstaller = installed / "unins000.exe"
             if uninstaller.exists():
                 subprocess.run([str(uninstaller), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], check=True, timeout=120)
         assert registered_version() is None
-    print("PASS: real Inno 0.0.1-to-current upgrade, registered version, persisted app data and retained runtime fixture")
+    print("PASS: real Inno upgrade/data preservation and bootstrap failures return nonzero without hanging")
 
 
 if __name__ == "__main__":
