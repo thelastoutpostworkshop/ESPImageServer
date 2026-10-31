@@ -2893,7 +2893,7 @@ function buildGenerationMetadata() {
     prompt: prompt.value,
     steps: Number(steps.value),
     seed: seed.value === '' ? null : Number(seed.value),
-    negativePrompt: negativePrompt.value,
+    negative_prompt: negativePrompt.value,
     rotation: displayRotation.value,
     display: display.value?.connected
       ? { name: display.value.name, width: display.value.width, height: display.value.height }
@@ -2981,7 +2981,10 @@ async function useSavedImageSettings(metadata, setting) {
   if (!metadata) return
   savedImageContextMenu.value = false
 
-  if (setting === 'prompt' || setting === 'all') prompt.value = metadata.prompt
+  if (setting === 'prompt' || setting === 'all') {
+    prompt.value = metadata.prompt
+    negativePrompt.value = metadata.negative_prompt ?? ''
+  }
   if (setting === 'steps' || setting === 'all') steps.value = metadata.steps
   if (setting === 'seed' || setting === 'all') seed.value = metadata.seed ?? createRandomSeed()
   if ((setting === 'rotation' || setting === 'all') && rotationOptions.some(option => option.value === metadata.rotation)) {
