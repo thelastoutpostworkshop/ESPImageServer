@@ -78,6 +78,10 @@ All three image models support negative prompts to describe what the image shoul
 
 Image and video generation share the GPU and run one job at a time. Generated media is resized to the selected display's dimensions.
 
+## Example prompts
+
+Browse [87 image prompts and 45 video prompts](docs/example-prompts.md) from saved creations, grouped by model. Each example includes its prompt, negative prompt, and recorded settings, with instructions for trying it in the app.
+
 ## Troubleshooting
 
 Start with the symptom below. **Queue** shows generation progress, **Diagnostics** shows recent errors and console output, and **About** shows your app version and generation hardware.
