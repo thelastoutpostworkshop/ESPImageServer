@@ -4731,6 +4731,11 @@ onUnmounted(() => {
           <v-card-text class="text-body-1">
             Compare the available models. Choose the model to use from the Generate image page; it downloads once and stays on this computer.
             All models require NVIDIA CUDA. Available graphics-card memory also matters: DreamShaper uses smaller 512-pixel working images; SSD-1B and SDXL use 1024-pixel working images and need more memory. CUDA availability alone does not guarantee that every model will fit.
+            <div class="mt-3">
+              <a href="https://github.com/thelastoutpostworkshop/ESPImageServer/blob/main/docs/example-prompts.md" target="_blank" rel="noopener noreferrer" class="text-primary">
+                Browse image and video prompt examples <v-icon size="16">mdi-open-in-new</v-icon>
+              </a>
+            </div>
           </v-card-text>
           <v-table v-if="!compact" class="model-table" hover density="comfortable">
             <thead>
