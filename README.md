@@ -8,6 +8,8 @@ ESPImageServer is a free app that creates images and videos using AI models runn
 
 Turn a supported ESP32 board into a small digital art display: show images, play videos, and save your favorites to its SD card over Wi-Fi. Configure a **Display Experience** to keep playing saved images and videos when the server is unavailable.
 
+[See the Tutorial](https://youtu.be/4_eT38NmxBw)
+
 
 ## Download and install
 
